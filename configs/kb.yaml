@@ -9,11 +9,11 @@ source:
   dump: dump-20260520
 
 embedding:
-  provider: local                  # local | openai
-  model: BAAI/bge-m3
-  dimension: 1024
+  provider: openai                 # openai | local
+  model: text-embedding-3-large
+  dimension: 3072                  # 3-large supports shortening via `dimensions`
   normalize: true
-  batch_size: 32
+  batch_size: 64
 
 store:
   backend: chroma                  # chroma | qdrant

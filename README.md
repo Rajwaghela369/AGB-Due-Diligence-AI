@@ -44,5 +44,5 @@ Phase 0. `make smoke` is the gate; `make kb` and the later targets are not imple
 
 ## Stack
 
-Python 3.12, uv, LangGraph, FastAPI, Chroma, bge-m3 embeddings (local), OpenAI for the
+Python 3.12, uv, LangGraph, FastAPI, Chroma, OpenAI for embeddings and for the
 router and judge models, Langfuse (Cloud EU) for traces, prompts, datasets and scores.

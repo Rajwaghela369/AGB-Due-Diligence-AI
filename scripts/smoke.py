@@ -30,11 +30,12 @@ def check_dataset() -> dict[str, Any]:
 
 
 def check_embedding() -> dict[str, Any]:
-    from sentence_transformers import SentenceTransformer
+    from openai import OpenAI
 
-    model = SentenceTransformer("BAAI/bge-m3")
-    vector = model.encode([GERMAN_SENTENCE], normalize_embeddings=True)[0]
-    return {"model": "BAAI/bge-m3", "dimension": int(vector.shape[0])}
+    model = "text-embedding-3-large"
+    client = OpenAI(api_key=load_settings().openai_api_key)
+    vector = client.embeddings.create(model=model, input=[GERMAN_SENTENCE]).data[0].embedding
+    return {"model": model, "dimension": len(vector)}
 
 
 def check_vector_store() -> dict[str, Any]:

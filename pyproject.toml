@@ -16,8 +16,12 @@ pipelines = [
     "pyarrow>=17.0",
     "requests>=2.32",
     "lxml>=5.3",
-    "sentence-transformers>=3.3",
+    "openai>=1.54",
     "chromadb>=0.5",
+]
+local-embeddings = [
+    # Only needed to A/B bge-m3 against the OpenAI model in Phase 1.
+    "sentence-transformers>=3.3",
 ]
 app = [
     "langgraph>=0.2",
