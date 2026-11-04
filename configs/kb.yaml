@@ -1,0 +1,34 @@
+# P1 KB-INGEST configuration.
+# This file is part of the index's lineage: it is hashed into the store manifest,
+# so any change here means the index must be rebuilt.
+
+source:
+  # Confirmed against the provider on first download (Phase 0 smoke test).
+  provider: open_legal_data        # open_legal_data | gesetze_im_internet  (open: decide in Phase 1)
+  dataset: openlegaldata/laws-germany
+  dump: dump-20260520
+
+embedding:
+  provider: local                  # local | openai
+  model: BAAI/bge-m3
+  dimension: 1024
+  normalize: true
+  batch_size: 32
+
+store:
+  backend: chroma                  # chroma | qdrant
+  path: stores/chroma
+  collection: bgb_agb_v1
+
+chunking:
+  # Per-paragraph level is set in kb_paragraphs.yaml; this is the fallback.
+  default_level: absatz            # absatz | item
+  # Item chunks are grammatical fragments of the paragraph's stem sentence,
+  # so the stem is carried into both embed_text and text.
+  include_stem_sentence: true
+  embed_text_template: "{law} {paragraph} {title}{stem}{item_label}: {text}"
+
+retrieval:
+  top_k: 5
+  # Chunks tagged "general" are always in the candidate set, whatever the router says.
+  always_include_topics: ["general"]

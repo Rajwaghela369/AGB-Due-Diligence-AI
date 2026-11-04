@@ -1,0 +1,42 @@
+# Single entry point: CI runs exactly these targets, so local and CI never diverge.
+.PHONY: help install smoke kb eval-data baseline eval lint format test check clean
+
+PY := uv run
+
+help:
+	@grep -E '^[a-z-]+:.*?##' $(MAKEFILE_LIST) | sed 's/:.*##/\t/' | expand -t24
+
+install:  ## Create the venv and install all dependency groups
+	uv sync --all-extras
+
+smoke:  ## Phase 0 gate: prove every external dependency works
+	$(PY) python scripts/smoke.py
+
+kb:  ## P1 KB-INGEST: build and validate the BGB vector index
+	@echo "Phase 1 - not implemented yet"
+
+eval-data:  ## P2 EVAL-PREP: build the clause table and the Langfuse dataset
+	@echo "Phase 2 - not implemented yet"
+
+baseline:  ## Phase 3: one-shot classifier baseline as a Langfuse experiment
+	@echo "Phase 3 - not implemented yet"
+
+eval:  ## Run the eval suite against the current agent
+	@echo "Phase 3 - not implemented yet"
+
+lint:  ## Lint, format check, and component boundary contracts
+	$(PY) ruff check .
+	$(PY) ruff format --check .
+	$(PY) lint-imports --config .importlinter
+
+format:  ## Apply formatting
+	$(PY) ruff format .
+	$(PY) ruff check --fix .
+
+test:  ## Unit tests (pipelines logic only; the agent is measured by evals)
+	$(PY) pytest -q
+
+check: lint test  ## What CI runs
+
+clean:  ## Remove build artifacts, keep raw data and gold files
+	rm -rf .pytest_cache .ruff_cache **/__pycache__ stores/chroma_smoke

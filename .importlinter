@@ -1,0 +1,21 @@
+# Enforces the component boundaries from docs/Development Phases.md.
+#   core      shared schemas and config, imports nothing of ours
+#   pipelines offline jobs, write the stores
+#   app       agent + API, read the stores
+#   evals     runs against the app
+# app and pipelines sit on the same layer, so neither may import the other.
+
+[importlinter]
+root_packages =
+    core
+    pipelines
+    app
+    evals
+
+[importlinter:contract:layers]
+name = Component layers
+type = layers
+layers =
+    evals
+    app : pipelines
+    core

@@ -1,0 +1,33 @@
+# Secrets and local env
+.env
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Data: raw/interim/processed are rebuildable from the pipelines.
+# data/gold is hand-labeled work product and IS committed.
+data/raw/**
+data/interim/**
+data/processed/**
+!data/**/.gitkeep
+
+# Vector store and app database are build artifacts
+stores/**
+!stores/.gitkeep
+
+# Model caches
+.cache/
+models/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,19 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+      - run: make check
+
+# Evals are deliberately NOT in CI yet: they need API keys and cost money per run.
+# They join this workflow in Phase 3, once there is a baseline to regress against.

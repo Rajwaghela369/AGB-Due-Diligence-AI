@@ -1,0 +1,28 @@
+# Runtime configuration for the agent. Not part of the index lineage.
+
+models:
+  # Two slots on purpose: routing is cheap classification, judging needs reasoning.
+  router:
+    provider: openai
+    name: gpt-4o-mini
+    temperature: 0
+  judge:
+    provider: openai
+    name: gpt-4o
+    temperature: 0
+
+agent:
+  max_retrieval_retries: 1
+  confidence_uncertain_below: 0.6
+
+store:
+  # Must match the collection the pipeline built; checked against the manifest at startup.
+  backend: chroma
+  path: stores/chroma
+  collection: bgb_agb_v1
+
+database:
+  path: stores/app.db
+
+langfuse:
+  enabled: true
