@@ -23,7 +23,7 @@ app/
 evals/           runs in CI against app/agent; not a pipeline
 configs/         versioned pipeline inputs, hashed into the store manifest
 data/            raw -> interim -> processed; only data/gold is committed
-stores/          Chroma collection and app.db (build artifacts)
+stores/          app.db (build artifact); vectors live in Qdrant Cloud
 reports/         quality gate output, committed for its git history
 ```
 
@@ -44,5 +44,6 @@ Phase 0. `make smoke` is the gate; `make kb` and the later targets are not imple
 
 ## Stack
 
-Python 3.12, uv, LangGraph, FastAPI, Chroma, OpenAI for embeddings and for the
-router and judge models, Langfuse (Cloud EU) for traces, prompts, datasets and scores.
+Python 3.12, uv, LangGraph, FastAPI, Qdrant Cloud for vectors, Prefect Cloud for
+pipeline orchestration and run observability, OpenAI for embeddings and for the router
+and judge models, Langfuse (Cloud EU) for traces, prompts, datasets and scores.

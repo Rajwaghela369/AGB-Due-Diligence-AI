@@ -17,7 +17,8 @@ pipelines = [
     "requests>=2.32",
     "lxml>=5.3",
     "openai>=1.54",
-    "chromadb>=0.5",
+    "qdrant-client>=1.12",
+    "prefect>=3.1",
 ]
 local-embeddings = [
     # Only needed to A/B bge-m3 against the OpenAI model in Phase 1.
@@ -30,7 +31,7 @@ app = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "langfuse>=2.53",
-    "chromadb>=0.5",
+    "qdrant-client>=1.12",
 ]
 evals = [
     "langfuse>=2.53",

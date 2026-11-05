@@ -13,6 +13,9 @@ class Settings(BaseSettings):
 
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
 
+    qdrant_url: str = Field(default="", alias="QDRANT_URL")
+    qdrant_api_key: str = Field(default="", alias="QDRANT_API_KEY")
+
     langfuse_public_key: str = Field(default="", alias="LANGFUSE_PUBLIC_KEY")
     langfuse_secret_key: str = Field(default="", alias="LANGFUSE_SECRET_KEY")
     langfuse_host: str = Field(default="https://cloud.langfuse.com", alias="LANGFUSE_HOST")

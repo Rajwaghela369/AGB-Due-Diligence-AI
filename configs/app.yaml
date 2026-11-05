@@ -16,10 +16,10 @@ agent:
   confidence_uncertain_below: 0.6
 
 store:
-  # Must match the collection the pipeline built; checked against the manifest at startup.
-  backend: chroma
-  path: stores/chroma
-  collection: bgb_agb_v1
+  # The app reads the ALIAS, never a versioned collection directly.
+  # The manifest behind it is asserted at startup.
+  backend: qdrant
+  alias: bgb_agb
 
 database:
   path: stores/app.db

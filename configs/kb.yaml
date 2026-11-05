@@ -15,9 +15,14 @@ embedding:
   batch_size: 64
 
 store:
-  backend: chroma                  # chroma | qdrant
-  path: stores/chroma
+  backend: qdrant                  # Qdrant Cloud; URL and key come from the environment
   collection: bgb_agb_v1
+  alias: bgb_agb                   # what the app reads; flipped only after the gate passes
+  distance: Cosine
+  # Qdrant point IDs must be int or UUID, so chunk_id is hashed to a
+  # deterministic UUID5 and kept verbatim in the payload.
+  id_strategy: uuid5_of_chunk_id
+  payload_indexes: [topics, paragraph, kind]
 
 chunking:
   # Per-paragraph level is set in kb_paragraphs.yaml; this is the fallback.

@@ -12,8 +12,8 @@ install:  ## Create the venv and install all dependency groups
 smoke:  ## Phase 0 gate: prove every external dependency works
 	$(PY) python scripts/smoke.py
 
-kb:  ## P1 KB-INGEST: build and validate the BGB vector index
-	@echo "Phase 1 - not implemented yet"
+kb:  ## P1 KB-INGEST: run the Prefect flow that builds and validates the index
+	$(PY) python -m pipelines.p1_kb.flow
 
 eval-data:  ## P2 EVAL-PREP: build the clause table and the Langfuse dataset
 	@echo "Phase 2 - not implemented yet"
@@ -39,4 +39,4 @@ test:  ## Unit tests (pipelines logic only; the agent is measured by evals)
 check: lint test  ## What CI runs
 
 clean:  ## Remove build artifacts, keep raw data and gold files
-	rm -rf .pytest_cache .ruff_cache **/__pycache__ stores/chroma_smoke
+	rm -rf .pytest_cache .ruff_cache **/__pycache__

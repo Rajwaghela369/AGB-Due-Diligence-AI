@@ -19,7 +19,7 @@ data/interim/**
 data/processed/**
 !data/**/.gitkeep
 
-# Vector store and app database are build artifacts
+# app.db is a build artifact; the vector store now lives in Qdrant Cloud
 stores/**
 !stores/.gitkeep
 

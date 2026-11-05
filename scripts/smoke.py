@@ -1,6 +1,6 @@
 """Phase 0 gate: prove every external dependency works before any real code exists.
 
-Five checks, each independent, each reporting pass/fail with the detail worth
+Six checks, each independent, each reporting pass/fail with the detail worth
 keeping. Writes reports/p0_smoke.json.
 
 Run: make smoke
@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from core.logging import get_logger
-from core.paths import REPORTS, STORES
+from core.paths import REPORTS
 from core.settings import load_settings
 
 log = get_logger("smoke")
@@ -39,13 +39,40 @@ def check_embedding() -> dict[str, Any]:
 
 
 def check_vector_store() -> dict[str, Any]:
-    import chromadb
+    """Qdrant Cloud roundtrip, including the UUID5 point-id strategy we rely on."""
+    import uuid
 
-    client = chromadb.PersistentClient(path=str(STORES / "chroma_smoke"))
-    coll = client.get_or_create_collection("smoke")
-    coll.upsert(ids=["smoke-1"], documents=[GERMAN_SENTENCE], metadatas=[{"topic": "liability"}])
-    got = coll.get(ids=["smoke-1"])
-    return {"roundtrip_ok": got["documents"][0] == GERMAN_SENTENCE, "count": coll.count()}
+    from qdrant_client import QdrantClient
+    from qdrant_client.models import Distance, PointStruct, VectorParams
+
+    s = load_settings()
+    client = QdrantClient(url=s.qdrant_url, api_key=s.qdrant_api_key)
+    name = "smoke"
+    if not client.collection_exists(name):
+        client.create_collection(name, vectors_config=VectorParams(size=4, distance=Distance.COSINE))
+    point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "bgb-309-7-a"))
+    client.upsert(
+        name,
+        points=[PointStruct(id=point_id, vector=[0.1, 0.2, 0.3, 0.4],
+                            payload={"chunk_id": "bgb-309-7-a", "text": GERMAN_SENTENCE})],
+    )
+    got = client.retrieve(name, ids=[point_id], with_payload=True)
+    client.delete_collection(name)
+    return {"roundtrip_ok": got[0].payload["chunk_id"] == "bgb-309-7-a", "uuid5_ok": True}
+
+
+def check_prefect() -> dict[str, Any]:
+    """Confirm the local client is attached to a Prefect Cloud workspace."""
+    import asyncio
+
+    from prefect.client.orchestration import get_client
+
+    async def _ping() -> dict[str, Any]:
+        async with get_client() as client:
+            healthy = await client.api_healthcheck()
+            return {"api_url": str(client.api_url), "healthy": healthy is None}
+
+    return asyncio.run(_ping())
 
 
 def check_llm_structured_output() -> dict[str, Any]:
@@ -93,6 +120,7 @@ CHECKS = {
     "dataset_fields": check_dataset,
     "embedding": check_embedding,
     "vector_store": check_vector_store,
+    "prefect": check_prefect,
     "llm_structured_output": check_llm_structured_output,
     "langfuse": check_langfuse,
 }
@@ -119,7 +147,7 @@ def main() -> int:
     if failed:
         log.error("Phase 0 gate NOT met: %s", ", ".join(failed))
         return 1
-    log.info("Phase 0 gate met: all five dependencies proven")
+    log.info("Phase 0 gate met: all dependencies proven")
     return 0
 
 
