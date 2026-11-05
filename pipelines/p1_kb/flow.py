@@ -4,12 +4,14 @@ import argparse
 from pathlib import Path
 
 from core.config import load_yaml
-from core.paths import CONFIGS, RAW
+from core.paths import CONFIGS, INTERIM, RAW
 from core.settings import load_settings
 from prefect import flow, get_run_logger, task
 from prefect.artifacts import create_table_artifact
 
 from pipelines.p1_kb.s1_fetch_laws import FetchResult, fetch_bgb_snapshot, resolve_revision
+from pipelines.p1_kb.s2_select_norms import SelectResult
+from pipelines.p1_kb.s2_select_norms import select_norms as run_select
 
 FULL_CONFIG = "dump-20260520"
 SAMPLE_CONFIG = "dump-20260520-1k"
@@ -39,14 +41,23 @@ def fetch_laws(source: dict, dataset_config: str) -> FetchResult:
 
 
 @task
-def select_norms(snapshot: Path) -> int:
+def select_norms(snapshot: Path, source: dict, revision: str) -> SelectResult:
     """1.2 Resolve the whitelist against the snapshot. Fails on any missing section."""
-    get_run_logger().info("select_norms: not implemented (%s)", snapshot.name)
-    return 0
+    whitelist = load_yaml(CONFIGS / "kb_paragraphs.yaml")["paragraphs"]
+    result = run_select(
+        snapshot=snapshot,
+        whitelist=whitelist,
+        source={**source, "revision": revision},
+        out_dir=INTERIM,
+    )
+    get_run_logger().info(
+        "resolved %d/%d sections -> %s", result.selected, len(whitelist), result.path.name
+    )
+    return result
 
 
 @task
-def chunk_norms(selected: int) -> int:
+def chunk_norms(selected: SelectResult) -> int:
     """1.3 Parse the content HTML into Absatz and item chunks."""
     get_run_logger().info("chunk_norms: not implemented")
     return 0
@@ -78,14 +89,19 @@ def kb_ingest(dataset_config: str = FULL_CONFIG, publish: bool = True) -> None:
 
     fetched = fetch_laws(kb["source"], dataset_config)
 
-    # A sample dump contains no BGB at all, so the row gate would fail by design.
-    # Failing a deliberate plumbing run teaches people to ignore red runs.
+    # A sample dump holds an arbitrary subset of sections, so neither the row
+    # count nor the whitelist can resolve. Failing a deliberate plumbing run
+    # would just teach people to ignore red runs.
     if sampling:
         log.warning("sample run: %d BGB rows (row gate skipped)", fetched.rows_kept)
     elif fetched.rows_kept != EXPECTED_BGB_ROWS:
         raise ValueError(f"expected {EXPECTED_BGB_ROWS} BGB rows, snapshot has {fetched.rows_kept}")
 
-    selected = select_norms(fetched.path)
+    if sampling:
+        log.warning("sample run: stopping after the snapshot, the whitelist cannot resolve")
+        return
+
+    selected = select_norms(fetched.path, kb["source"], fetched.revision)
     chunks = chunk_norms(selected)
     indexed = build_index(chunks)
     scores = check_retrieval(indexed)
@@ -94,7 +110,11 @@ def kb_ingest(dataset_config: str = FULL_CONFIG, publish: bool = True) -> None:
         key="p1-kb-ingest-summary",
         table=[
             {"step": "1.1 fetch", "result": f"{fetched.rows_kept} rows -> {fetched.path.name}"},
-            {"step": "1.2 select", "result": str(selected)},
+            {
+                "step": "1.2 select",
+                "result": f"{selected.selected} paragraphs "
+                f"({selected.item_level} item, {selected.absatz_level} Absatz)",
+            },
             {"step": "1.3 chunk", "result": str(chunks)},
             {"step": "1.4 index", "result": str(indexed)},
             {"step": "1.5 retrieval", "result": str(scores)},
