@@ -53,6 +53,9 @@ def scan(
             if TARGETS <= found.keys():
                 return found, scanned, fields
 
+        if scanned % 20_000 == 0:
+            log.info("scanned %d rows, found %d/%d targets", scanned, len(found), len(TARGETS))
+
         if limit and scanned >= limit:
             return found, scanned, fields
 
