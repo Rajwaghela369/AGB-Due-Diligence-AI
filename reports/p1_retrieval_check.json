@@ -1,0 +1,405 @@
+{
+  "collection": "bgb_agb_v1",
+  "embedding_model": "jina-embeddings-v5-text-small",
+  "query_task": "retrieval.query",
+  "metrics": {
+    "queries": 30.0,
+    "primary_at_1": 0.3667,
+    "primary_at_3": 0.7,
+    "primary_at_5": 0.8667,
+    "mrr": 0.566,
+    "query_tokens": 1111.0
+  },
+  "queries": [
+    {
+      "query_id": "gq-01",
+      "topic": "liability",
+      "expected": "bgb-309-7-a",
+      "rank": 2,
+      "top5": [
+        "bgb-309-7-b",
+        "bgb-309-7-a",
+        "bgb-309-8-a",
+        "bgb-309-8-b",
+        "bgb-276-abs1"
+      ]
+    },
+    {
+      "query_id": "gq-02",
+      "topic": "liability",
+      "expected": "bgb-309-7-a",
+      "rank": 1,
+      "top5": [
+        "bgb-309-7-a",
+        "bgb-309-7-b",
+        "bgb-276-abs1",
+        "bgb-276-abs3",
+        "bgb-280-abs1"
+      ]
+    },
+    {
+      "query_id": "gq-03",
+      "topic": "liability",
+      "expected": "bgb-309-7-b",
+      "rank": 2,
+      "top5": [
+        "bgb-276-abs1",
+        "bgb-309-7-b",
+        "bgb-276-abs2",
+        "bgb-309-7-a",
+        "bgb-278"
+      ]
+    },
+    {
+      "query_id": "gq-04",
+      "topic": "liability",
+      "expected": "bgb-309-7-b",
+      "rank": 4,
+      "top5": [
+        "bgb-309-8-b",
+        "bgb-276-abs1",
+        "bgb-309-11",
+        "bgb-309-7-b",
+        "bgb-309-7-a"
+      ]
+    },
+    {
+      "query_id": "gq-05",
+      "topic": "liability",
+      "expected": "bgb-309-7-b",
+      "rank": 11,
+      "top5": [
+        "bgb-280-abs1",
+        "bgb-280-abs3",
+        "bgb-276-abs3",
+        "bgb-276-abs1",
+        "bgb-280-abs2"
+      ]
+    },
+    {
+      "query_id": "gq-06",
+      "topic": "liability",
+      "expected": "bgb-278",
+      "rank": 2,
+      "top5": [
+        "bgb-276-abs1",
+        "bgb-278",
+        "bgb-309-8-b",
+        "bgb-309-11",
+        "bgb-276-abs3"
+      ]
+    },
+    {
+      "query_id": "gq-07",
+      "topic": "liability",
+      "expected": "bgb-309-5",
+      "rank": 1,
+      "top5": [
+        "bgb-309-5",
+        "bgb-309-8-b",
+        "bgb-280-abs1",
+        "bgb-309-12",
+        "bgb-280-abs3"
+      ]
+    },
+    {
+      "query_id": "gq-08",
+      "topic": "liability",
+      "expected": "bgb-309-12",
+      "rank": 1,
+      "top5": [
+        "bgb-309-12",
+        "bgb-276-abs1",
+        "bgb-309-8-b",
+        "bgb-280-abs1",
+        "bgb-280-abs3"
+      ]
+    },
+    {
+      "query_id": "gq-09",
+      "topic": "liability",
+      "expected": "bgb-309-11",
+      "rank": 1,
+      "top5": [
+        "bgb-309-11",
+        "bgb-278",
+        "bgb-276-abs1",
+        "bgb-280-abs1",
+        "bgb-310-abs3"
+      ]
+    },
+    {
+      "query_id": "gq-10",
+      "topic": "liability",
+      "expected": "bgb-276-abs3",
+      "rank": 1,
+      "top5": [
+        "bgb-276-abs3",
+        "bgb-310-abs3",
+        "bgb-280-abs1",
+        "bgb-280-abs3",
+        "bgb-309-8-b"
+      ]
+    },
+    {
+      "query_id": "gq-11",
+      "topic": "liability",
+      "expected": "bgb-202-abs1",
+      "rank": 3,
+      "top5": [
+        "bgb-280-abs2",
+        "bgb-309-8-b",
+        "bgb-202-abs1",
+        "bgb-280-abs3",
+        "bgb-280-abs1"
+      ]
+    },
+    {
+      "query_id": "gq-12",
+      "topic": "liability",
+      "expected": "bgb-309-8-a",
+      "rank": 2,
+      "top5": [
+        "bgb-309-8-b",
+        "bgb-309-8-a",
+        "bgb-280-abs1",
+        "bgb-309-11",
+        "bgb-307-abs1"
+      ]
+    },
+    {
+      "query_id": "gq-13",
+      "topic": "liability",
+      "expected": "bgb-307-abs1",
+      "rank": 17,
+      "top5": [
+        "bgb-309-7-a",
+        "bgb-309-7-b",
+        "bgb-276-abs1",
+        "bgb-309-5",
+        "bgb-309-11"
+      ]
+    },
+    {
+      "query_id": "gq-14",
+      "topic": "general",
+      "expected": "bgb-305c-abs1",
+      "rank": 5,
+      "top5": [
+        "bgb-305-abs2",
+        "bgb-307-abs1",
+        "bgb-305-abs1",
+        "bgb-310-abs3",
+        "bgb-305c-abs1"
+      ]
+    },
+    {
+      "query_id": "gq-15",
+      "topic": "general",
+      "expected": "bgb-306-abs2",
+      "rank": 3,
+      "top5": [
+        "bgb-306-abs3",
+        "bgb-306-abs1",
+        "bgb-306-abs2",
+        "bgb-307-abs1",
+        "bgb-307-abs3"
+      ]
+    },
+    {
+      "query_id": "gq-16",
+      "topic": "warranty",
+      "expected": "bgb-309-8-b",
+      "rank": 1,
+      "top5": [
+        "bgb-309-8-b",
+        "bgb-438-abs3",
+        "bgb-442-abs1",
+        "bgb-444",
+        "bgb-434-abs3"
+      ]
+    },
+    {
+      "query_id": "gq-17",
+      "topic": "warranty",
+      "expected": "bgb-309-8-b",
+      "rank": 2,
+      "top5": [
+        "bgb-440",
+        "bgb-309-8-b",
+        "bgb-437",
+        "bgb-475-abs5",
+        "bgb-439-abs1"
+      ]
+    },
+    {
+      "query_id": "gq-18",
+      "topic": "warranty",
+      "expected": "bgb-309-8-b",
+      "rank": 5,
+      "top5": [
+        "bgb-438-abs1",
+        "bgb-438-abs3",
+        "bgb-476-abs2",
+        "bgb-438-abs2",
+        "bgb-309-8-b"
+      ]
+    },
+    {
+      "query_id": "gq-19",
+      "topic": "warranty",
+      "expected": "bgb-309-13",
+      "rank": null,
+      "top5": [
+        "bgb-438-abs3",
+        "bgb-438-abs1",
+        "bgb-442-abs1",
+        "bgb-309-8-b",
+        "bgb-476-abs1"
+      ]
+    },
+    {
+      "query_id": "gq-20",
+      "topic": "warranty",
+      "expected": "bgb-309-8-b",
+      "rank": 2,
+      "top5": [
+        "bgb-443-abs1",
+        "bgb-309-8-b",
+        "bgb-438-abs3",
+        "bgb-479-abs3",
+        "bgb-478-abs2"
+      ]
+    },
+    {
+      "query_id": "gq-21",
+      "topic": "warranty",
+      "expected": "bgb-434-abs2",
+      "rank": 4,
+      "top5": [
+        "bgb-434-abs3",
+        "bgb-476-abs1",
+        "bgb-477-abs2",
+        "bgb-434-abs2",
+        "bgb-475-abs6"
+      ]
+    },
+    {
+      "query_id": "gq-22",
+      "topic": "warranty",
+      "expected": "bgb-439-abs2",
+      "rank": 1,
+      "top5": [
+        "bgb-439-abs2",
+        "bgb-475-abs4",
+        "bgb-439-abs3",
+        "bgb-439-abs1",
+        "bgb-439-abs4"
+      ]
+    },
+    {
+      "query_id": "gq-23",
+      "topic": "warranty",
+      "expected": "bgb-441-abs1",
+      "rank": 1,
+      "top5": [
+        "bgb-441-abs1",
+        "bgb-441-abs3",
+        "bgb-441-abs4",
+        "bgb-442-abs1",
+        "bgb-437"
+      ]
+    },
+    {
+      "query_id": "gq-24",
+      "topic": "warranty",
+      "expected": "bgb-443-abs1",
+      "rank": 5,
+      "top5": [
+        "bgb-479-abs1",
+        "bgb-443-abs2",
+        "bgb-479-abs2",
+        "bgb-479-abs3",
+        "bgb-443-abs1"
+      ]
+    },
+    {
+      "query_id": "gq-25",
+      "topic": "warranty",
+      "expected": "bgb-476-abs1",
+      "rank": 1,
+      "top5": [
+        "bgb-476-abs1",
+        "bgb-476-abs2",
+        "bgb-309-8-b",
+        "bgb-442-abs1",
+        "bgb-435"
+      ]
+    },
+    {
+      "query_id": "gq-26",
+      "topic": "warranty",
+      "expected": "bgb-477-abs1",
+      "rank": 1,
+      "top5": [
+        "bgb-477-abs1",
+        "bgb-438-abs3",
+        "bgb-438-abs1",
+        "bgb-434-abs3",
+        "bgb-309-8-b"
+      ]
+    },
+    {
+      "query_id": "gq-27",
+      "topic": "warranty",
+      "expected": "bgb-440",
+      "rank": 1,
+      "top5": [
+        "bgb-440",
+        "bgb-438-abs4",
+        "bgb-437",
+        "bgb-439-abs6",
+        "bgb-309-8-b"
+      ]
+    },
+    {
+      "query_id": "gq-28",
+      "topic": "warranty",
+      "expected": "bgb-476-abs2",
+      "rank": 2,
+      "top5": [
+        "bgb-438-abs1",
+        "bgb-476-abs2",
+        "bgb-438-abs3",
+        "bgb-438-abs5",
+        "bgb-438-abs2"
+      ]
+    },
+    {
+      "query_id": "gq-29",
+      "topic": "warranty",
+      "expected": "bgb-444",
+      "rank": 2,
+      "top5": [
+        "bgb-438-abs3",
+        "bgb-444",
+        "bgb-442-abs1",
+        "bgb-309-8-b",
+        "bgb-445"
+      ]
+    },
+    {
+      "query_id": "gq-30",
+      "topic": "warranty",
+      "expected": "bgb-474-abs1",
+      "rank": 16,
+      "top5": [
+        "bgb-310-abs3",
+        "bgb-310-abs1",
+        "bgb-479-abs1",
+        "bgb-479-abs3",
+        "bgb-476-abs1"
+      ]
+    }
+  ]
+}
