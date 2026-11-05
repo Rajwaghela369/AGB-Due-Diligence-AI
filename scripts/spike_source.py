@@ -7,6 +7,7 @@ from typing import Any
 
 from core.logging import get_logger
 from core.paths import REPORTS
+from core.settings import load_settings
 
 log = get_logger("spike")
 
@@ -18,18 +19,17 @@ DATASET = "openlegaldata/laws-germany"
 TARGETS = {"309", "307", "434"}
 
 
-def pinnable_revision() -> str | None:
+def pinnable_revision(token: str | None) -> str | None:
     from huggingface_hub import HfApi
 
-    info = HfApi().dataset_info(DATASET)
-    return info.sha
+    return HfApi(token=token).dataset_info(DATASET).sha
 
 
-def scan(limit: int | None) -> tuple[dict[str, dict[str, Any]], int, list[str]]:
+def scan(limit: int | None, token: str | None) -> tuple[dict[str, dict[str, Any]], int, list[str]]:
     """Stream until every target BGB section is found, or the limit is reached."""
     from datasets import load_dataset
 
-    ds = load_dataset(DATASET, split="train", streaming=True)
+    ds = load_dataset(DATASET, split="train", streaming=True, token=token)
     found: dict[str, dict[str, Any]] = {}
     fields: list[str] = []
     scanned = 0
@@ -73,15 +73,20 @@ def main() -> int:
     )
     args = ap.parse_args()
 
+    # An empty HF_TOKEN means anonymous; the token is never exported to the
+    # environment, so it has to be handed to both HF clients explicitly.
+    token = load_settings().hf_token or None
+    auth_mode = "token from .env" if token else "anonymous"
+
     try:
-        revision = pinnable_revision()
-        log.info("dataset reachable anonymously, revision %s", revision)
+        revision = pinnable_revision(token)
+        log.info("dataset reachable (%s), revision %s", auth_mode, revision)
     except Exception as exc:  # noqa: BLE001 - a gated dataset is a finding, not a crash
-        log.error("could not reach %s anonymously: %s", DATASET, exc)
-        log.error("if this is an auth error, stop here - a HF token is needed")
+        log.error("could not reach %s (%s): %s", DATASET, auth_mode, exc)
+        log.error("if this is an auth error, set HF_TOKEN in .env and retry")
         return 1
 
-    found, scanned, fields = scan(args.limit)
+    found, scanned, fields = scan(args.limit, token)
     missing = sorted(TARGETS - found.keys())
 
     lines = [
@@ -89,7 +94,7 @@ def main() -> int:
         "",
         f"- dataset: `{DATASET}`",
         f"- pinnable revision: `{revision}`",
-        "- anonymous access: yes (no HF token needed)",
+        f"- access: {auth_mode}",
         f"- rows streamed: {scanned}" + (f" (limit {args.limit})" if args.limit else ""),
         f"- record fields: {', '.join(fields)}",
         "",
