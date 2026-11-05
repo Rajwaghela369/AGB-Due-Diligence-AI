@@ -4,10 +4,10 @@
   "query_task": "retrieval.query",
   "metrics": {
     "queries": 30.0,
-    "primary_at_1": 0.3667,
-    "primary_at_3": 0.7,
-    "primary_at_5": 0.8667,
-    "mrr": 0.566,
+    "primary_at_1": 0.4333,
+    "primary_at_3": 0.7667,
+    "primary_at_5": 0.9333,
+    "mrr": 0.6286,
     "query_tokens": 1111.0
   },
   "queries": [
@@ -170,8 +170,8 @@
     {
       "query_id": "gq-13",
       "topic": "liability",
-      "expected": "bgb-307-abs1",
-      "rank": 17,
+      "expected": "bgb-309-7-a",
+      "rank": 1,
       "top5": [
         "bgb-309-7-a",
         "bgb-309-7-b",
@@ -391,8 +391,8 @@
     {
       "query_id": "gq-30",
       "topic": "warranty",
-      "expected": "bgb-474-abs1",
-      "rank": 16,
+      "expected": "bgb-310-abs3",
+      "rank": 1,
       "top5": [
         "bgb-310-abs3",
         "bgb-310-abs1",

@@ -9,6 +9,7 @@ due diligence area.
 - `docs/AGB-Check Agentic AGB Review for German Legal Due Diligence.md` - project brief, system design, evaluation
 - `docs/Data pipelines.md` - P1 knowledge base ingestion, P2 evaluation data preparation
 - `docs/Development Phases.md` - build order and the gate for each phase
+- `docs/Phase 1 Results.md` - knowledge base numbers, what the spikes settled, limitations
 
 ## Layout
 
@@ -40,7 +41,9 @@ make smoke               # Phase 0 gate
 
 ## Current state
 
-Phase 0. `make smoke` is the gate; `make kb` and the later targets are not implemented yet.
+Phase 1 complete: `make kb` builds and validates the BGB knowledge base, primary@5 0.933
+against the 0.90 gate. See `docs/Phase 1 Results.md`, including the known limitations.
+`make eval-data` and the later targets are not implemented yet.
 
 ## Stack
 
