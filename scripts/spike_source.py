@@ -12,6 +12,7 @@ from core.settings import load_settings
 log = get_logger("spike")
 
 DATASET = "openlegaldata/laws-germany"
+DEFAULT_CONFIG = "dump-20260520"
 
 # The three paragraphs that stress every assumption in the chunker design:
 # 309 is a 13-item list with lettered sub-items, 307 is prose where the Satz
@@ -25,11 +26,19 @@ def pinnable_revision(token: str | None) -> str | None:
     return HfApi(token=token).dataset_info(DATASET).sha
 
 
-def scan(limit: int | None, token: str | None) -> tuple[dict[str, dict[str, Any]], int, list[str]]:
+def available_configs(token: str | None) -> list[str]:
+    from datasets import get_dataset_config_names
+
+    return get_dataset_config_names(DATASET, token=token)
+
+
+def scan(
+    config: str, limit: int | None, token: str | None
+) -> tuple[dict[str, dict[str, Any]], int, list[str]]:
     """Stream until every target BGB section is found, or the limit is reached."""
     from datasets import load_dataset
 
-    ds = load_dataset(DATASET, split="train", streaming=True, token=token)
+    ds = load_dataset(DATASET, config, split="train", streaming=True, token=token)
     found: dict[str, dict[str, Any]] = {}
     fields: list[str] = []
     scanned = 0
@@ -66,6 +75,11 @@ def structure_report(html: str) -> dict[str, Any]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument(
+        "--config",
+        default=DEFAULT_CONFIG,
+        help="dataset config; the -1k and -10k variants are small samples",
+    )
+    ap.add_argument(
         "--limit",
         type=int,
         default=None,
@@ -80,20 +94,28 @@ def main() -> int:
 
     try:
         revision = pinnable_revision(token)
+        configs = available_configs(token)
         log.info("dataset reachable (%s), revision %s", auth_mode, revision)
+        log.info("available configs: %s", ", ".join(configs))
     except Exception as exc:  # noqa: BLE001 - a gated dataset is a finding, not a crash
         log.error("could not reach %s (%s): %s", DATASET, auth_mode, exc)
         log.error("if this is an auth error, set HF_TOKEN in .env and retry")
         return 1
 
-    found, scanned, fields = scan(args.limit, token)
+    if args.config not in configs:
+        log.error("unknown config %r; available: %s", args.config, ", ".join(configs))
+        return 1
+
+    found, scanned, fields = scan(args.config, args.limit, token)
     missing = sorted(TARGETS - found.keys())
 
     lines = [
         "# P1 spike findings",
         "",
         f"- dataset: `{DATASET}`",
+        f"- config: `{args.config}`",
         f"- pinnable revision: `{revision}`",
+        f"- available configs: {', '.join(f'`{c}`' for c in configs)}",
         f"- access: {auth_mode}",
         f"- rows streamed: {scanned}" + (f" (limit {args.limit})" if args.limit else ""),
         f"- record fields: {', '.join(fields)}",

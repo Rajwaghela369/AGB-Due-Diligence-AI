@@ -5,7 +5,8 @@
 source:
   provider: open_legal_data
   dataset: openlegaldata/laws-germany
-  revision: null                   # pin to a commit sha in step 1.1; recorded in the manifest
+  config: dump-20260520            # the dump to read; -1k and -10k variants exist for sampling
+  revision: ad694182262416ad204f43d0c13ca0a7dd12057e
 
 embedding:
   provider: openai                 # openai | local

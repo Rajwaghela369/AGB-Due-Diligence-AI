@@ -47,6 +47,7 @@ local-embeddings = [
 ]
 pipelines = [
     { name = "datasets" },
+    { name = "huggingface-hub" },
     { name = "lxml" },
     { name = "openai" },
     { name = "pandas" },
@@ -60,6 +61,7 @@ pipelines = [
 requires-dist = [
     { name = "datasets", marker = "extra == 'pipelines'", specifier = ">=3.0" },
     { name = "fastapi", marker = "extra == 'app'", specifier = ">=0.115" },
+    { name = "huggingface-hub", marker = "extra == 'pipelines'", specifier = ">=0.26" },
     { name = "import-linter", marker = "extra == 'dev'", specifier = ">=2.1" },
     { name = "langchain-openai", marker = "extra == 'app'", specifier = ">=0.2" },
     { name = "langfuse", marker = "extra == 'app'", specifier = ">=2.53" },
