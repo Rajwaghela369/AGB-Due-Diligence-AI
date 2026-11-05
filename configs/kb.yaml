@@ -3,10 +3,9 @@
 # so any change here means the index must be rebuilt.
 
 source:
-  # Confirmed against the provider on first download (Phase 0 smoke test).
-  provider: open_legal_data        # open_legal_data | gesetze_im_internet  (open: decide in Phase 1)
+  provider: open_legal_data
   dataset: openlegaldata/laws-germany
-  dump: dump-20260520
+  revision: null                   # pin to a commit sha in step 1.1; recorded in the manifest
 
 embedding:
   provider: openai                 # openai | local
