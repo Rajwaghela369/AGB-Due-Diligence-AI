@@ -42,6 +42,7 @@ paragraphs:
   - ref: "§ 309"
     level: item
     topics: [other]
+    split_subitems: ["7", "8"]
     items:
       "1":  [other]                  # kurzfristige Preiserhöhungen
       "2":  [other]                  # Leistungsverweigerungsrechte

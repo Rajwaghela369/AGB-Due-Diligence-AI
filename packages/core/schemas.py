@@ -23,6 +23,7 @@ class LawChunk(BaseModel):
     item: str | None = None
     sub_item: str | None = None
     title: str
+    citation: str  # human-readable: "§ 309 Nr. 7 lit. a"
     topics: list[Topic]
     embed_text: str  # law/§/title/stem prefix, used only for embedding
     text: str  # clean text for display and citation

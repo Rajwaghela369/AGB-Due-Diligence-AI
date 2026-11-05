@@ -61,6 +61,7 @@ def select_norms(
                 "level": entry["level"],
                 "topics": entry["topics"],
                 "item_topics": entry.get("items", {}),
+                "split_subitems": entry.get("split_subitems", []),
                 "source": source,
             }
         )

@@ -4,14 +4,16 @@ import argparse
 from pathlib import Path
 
 from core.config import load_yaml
-from core.paths import CONFIGS, INTERIM, RAW
+from core.paths import CONFIGS, INTERIM, PROCESSED, RAW, REPORTS
 from core.settings import load_settings
 from prefect import flow, get_run_logger, task
-from prefect.artifacts import create_table_artifact
+from prefect.artifacts import create_markdown_artifact, create_table_artifact
 
 from pipelines.p1_kb.s1_fetch_laws import FetchResult, fetch_bgb_snapshot, resolve_revision
 from pipelines.p1_kb.s2_select_norms import SelectResult
 from pipelines.p1_kb.s2_select_norms import select_norms as run_select
+from pipelines.p1_kb.s3_chunk_norms import ChunkResult
+from pipelines.p1_kb.s3_chunk_norms import chunk_norms as run_chunk
 
 FULL_CONFIG = "dump-20260520"
 SAMPLE_CONFIG = "dump-20260520-1k"
@@ -57,14 +59,22 @@ def select_norms(snapshot: Path, source: dict, revision: str) -> SelectResult:
 
 
 @task
-def chunk_norms(selected: SelectResult) -> int:
-    """1.3 Parse the content HTML into Absatz and item chunks."""
-    get_run_logger().info("chunk_norms: not implemented")
-    return 0
+def chunk_norms(selected: SelectResult) -> ChunkResult:
+    """1.3 Parse the content markup into Absatz and item chunks."""
+    result = run_chunk(selected.path, out_dir=PROCESSED, report_dir=REPORTS)
+    get_run_logger().info("produced %d chunks -> %s", len(result.chunks), result.path.name)
+
+    # The manual review in task 1.3g happens on this artifact.
+    create_markdown_artifact(
+        key="p1-bgb-chunks",
+        markdown=result.report_path.read_text(encoding="utf-8"),
+        description=f"{len(result.chunks)} BGB chunks for review",
+    )
+    return result
 
 
 @task(retries=3, retry_delay_seconds=10)
-def build_index(chunks: int) -> int:
+def build_index(chunks: ChunkResult) -> int:
     """1.4 Embed the chunks via the OpenAI API and upsert them into a versioned collection."""
     get_run_logger().info("build_index: not implemented")
     return 0
@@ -115,7 +125,7 @@ def kb_ingest(dataset_config: str = FULL_CONFIG, publish: bool = True) -> None:
                 "result": f"{selected.selected} paragraphs "
                 f"({selected.item_level} item, {selected.absatz_level} Absatz)",
             },
-            {"step": "1.3 chunk", "result": str(chunks)},
+            {"step": "1.3 chunk", "result": f"{len(chunks.chunks)} chunks"},
             {"step": "1.4 index", "result": str(indexed)},
             {"step": "1.5 retrieval", "result": str(scores)},
         ],

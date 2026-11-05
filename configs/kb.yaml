@@ -31,7 +31,6 @@ chunking:
   # Item chunks are grammatical fragments of the paragraph's stem sentence,
   # so the stem is carried into both embed_text and text.
   include_stem_sentence: true
-  embed_text_template: "{law} {paragraph} {title}{stem}{item_label}: {text}"
 
 retrieval:
   top_k: 5
