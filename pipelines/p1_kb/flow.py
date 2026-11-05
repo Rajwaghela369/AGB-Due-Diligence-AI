@@ -3,8 +3,9 @@
 import argparse
 from pathlib import Path
 
+from core import qdrant as store
 from core.config import config_hash, load_yaml
-from core.paths import CONFIGS, INTERIM, PROCESSED, RAW, REPORTS, STORES
+from core.paths import CONFIGS, GOLD, INTERIM, PROCESSED, RAW, REPORTS, STORES
 from core.settings import load_settings
 from prefect import flow, get_run_logger, task
 from prefect.artifacts import create_markdown_artifact, create_table_artifact
@@ -16,6 +17,8 @@ from pipelines.p1_kb.s3_chunk_norms import ChunkResult
 from pipelines.p1_kb.s3_chunk_norms import chunk_norms as run_chunk
 from pipelines.p1_kb.s4_build_index import IndexResult
 from pipelines.p1_kb.s4_build_index import build_index as run_index
+from pipelines.p1_kb.s5_check_retrieval import RetrievalResult, render_misses
+from pipelines.p1_kb.s5_check_retrieval import check_retrieval as run_check
 
 FULL_CONFIG = "dump-20260520"
 SAMPLE_CONFIG = "dump-20260520-1k"
@@ -86,10 +89,38 @@ def build_index(chunks: ChunkResult, kb: dict, lineage: str) -> IndexResult:
 
 
 @task
-def check_retrieval(indexed: IndexResult) -> dict[str, float]:
+def check_retrieval(indexed: IndexResult, kb: dict) -> RetrievalResult:
     """1.5 Score the gold queries. The gate that decides whether the alias moves."""
-    get_run_logger().info("check_retrieval: not implemented")
-    return {}
+    result = run_check(GOLD / "kb_queries.jsonl", kb=kb, report_dir=REPORTS)
+    log = get_run_logger()
+    log.info(
+        "primary@5 %.2f (gate %.2f), MRR %.3f, %d misses",
+        result.metrics["primary_at_5"],
+        kb["retrieval"]["gate_primary_at_5"],
+        result.metrics["mrr"],
+        len(result.misses),
+    )
+
+    # Written before the gate can fail the run, so error analysis has something
+    # to work from either way.
+    create_markdown_artifact(
+        key="p1-retrieval-misses",
+        markdown=render_misses(result),
+        description=(
+            f"primary@5 {result.metrics['primary_at_5']:.2f}, MRR {result.metrics['mrr']:.3f}"
+        ),
+    )
+    return result
+
+
+@task
+def publish_alias(kb: dict) -> str:
+    """Move the alias the app reads. Only ever called once the gate has passed."""
+    alias = kb["store"]["alias"]
+    collection = kb["store"]["collection"]
+    store.point_alias(store.client(), alias=alias, collection=collection)
+    get_run_logger().info("alias %s now points at %s", alias, collection)
+    return alias
 
 
 @flow(name="p1-kb-ingest")
@@ -122,7 +153,7 @@ def kb_ingest(dataset_config: str = FULL_CONFIG, publish: bool = True) -> None:
     selected = select_norms(fetched.path, kb["source"], fetched.revision)
     chunks = chunk_norms(selected)
     indexed = build_index(chunks, kb, lineage)
-    scores = check_retrieval(indexed)
+    checked = check_retrieval(indexed, kb)
 
     create_table_artifact(
         key="p1-kb-ingest-summary",
@@ -139,7 +170,11 @@ def kb_ingest(dataset_config: str = FULL_CONFIG, publish: bool = True) -> None:
                 "result": f"{indexed.points} points in {indexed.collection} "
                 f"({indexed.tokens} tokens)",
             },
-            {"step": "1.5 retrieval", "result": str(scores)},
+            {
+                "step": "1.5 retrieval",
+                "result": f"primary@5 {checked.metrics['primary_at_5']:.2f} "
+                f"· MRR {checked.metrics['mrr']:.3f} · {len(checked.misses)} misses",
+            },
         ],
         description=(
             f"P1 knowledge base ingestion · {dataset_config} @ {fetched.revision[:12]} "
@@ -147,8 +182,21 @@ def kb_ingest(dataset_config: str = FULL_CONFIG, publish: bool = True) -> None:
         ),
     )
 
+    gate = kb["retrieval"]["gate_primary_at_5"]
+    passed = checked.metrics["primary_at_5"] >= gate
+
     if not publish:
         log.info("publish disabled, alias left untouched")
+    elif passed:
+        publish_alias(kb)
+    else:
+        log.warning("gate not met, alias left untouched")
+
+    if not passed:
+        raise ValueError(
+            f"primary@5 {checked.metrics['primary_at_5']:.2f} is below the gate {gate:.2f}; "
+            f"see reports/{checked.report_path.name}"
+        )
 
 
 if __name__ == "__main__":

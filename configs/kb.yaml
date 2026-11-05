@@ -39,3 +39,5 @@ retrieval:
   top_k: 5
   # Chunks tagged "general" are always in the candidate set, whatever the router says.
   always_include_topics: ["general"]
+  # Phase 1 gate: below this the alias does not move.
+  gate_primary_at_5: 0.90
