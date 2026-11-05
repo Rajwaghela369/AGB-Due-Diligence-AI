@@ -39,15 +39,21 @@ Repo skeleton, dependency setup, config loading, logging, Makefile targets. Deci
 
 ### Phase 1 · P1 KB-INGEST — BGB knowledge base
 
-Fetch the Open Legal Data dump (confirm field names on first download), select the paragraph whitelist, chunk per item with deterministic IDs, embed into Chroma collection `bgb_agb_v1`, validate against hand-written gold queries.
+Scope is the knowledge base only. **AGB-DE is not touched in this phase.**
 
-**Gate:** expected chunk in top-5 for ≥90% of ~20 gold queries, written to `reports/p1_retrieval_check.json`. Below that, fix chunking or swap the embedding model before continuing.
+Stream the Open Legal Data dataset at a pinned revision, snapshot the BGB rows, select the paragraph whitelist, parse the `content` HTML into item-level chunks with deterministic IDs, embed into Chroma collection `bgb_agb_v1`, and write a manifest. Validation uses ~30 hand-written clause-style queries, drafted after paragraph selection and before chunking so they are not fitted to the chunks.
+
+**Gate:** primary@5 >= 0.90 with primary@1/@3 and MRR also reported, written to `reports/p1_retrieval_check.json`. Below that, fix in order: topic tagging, chunk granularity, hybrid/BM25, embedding model.
+
+**Known limitation:** the synthetic gold set is cleaner than real clause text, so this gate proves the index is structurally sound, not that it works on real input. Phase 2 re-runs the same check with real clauses.
 
 ### Phase 2 · P2 EVAL-PREP — clauses and answer key
 
 Fetch AGB-DE, normalize, filter to liability and warranty, reuse the authors' train/test split. Publish clauses to SQLite without labels; labels only into the Langfuse dataset.
 
-**Gate:** `reports/p2_counts.json` matches 523 clauses / 39 void; the label-leak check passes.
+Also regenerates the retrieval gold set from **train-split** clauses via a `subtopic -> chunk_id` mapping, and re-runs the Phase 1 retrieval check against real clause text. The test split stays untouched until Phase 3.
+
+**Gate:** `reports/p2_counts.json` matches 523 clauses / 39 void; the label-leak check passes; the retrieval re-check is recorded (a drop against Phase 1's synthetic number is expected and informative, not a failure).
 
 ### Phase 3 · Baseline and eval harness
 
