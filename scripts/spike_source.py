@@ -62,6 +62,49 @@ def scan(
     return found, scanned, fields
 
 
+def diagnose(config: str, token: str | None) -> None:
+    """Why did the book_code/section filter match nothing? Print the real values."""
+    from collections import Counter
+
+    from datasets import load_dataset
+
+    ds = load_dataset(DATASET, config, split="train", streaming=True, token=token)
+
+    books: Counter[str] = Counter()
+    slugs: Counter[str] = Counter()
+    samples: list[tuple[Any, Any, Any]] = []
+    types_seen: set[str] = set()
+
+    for scanned, record in enumerate(ds, start=1):
+        books[repr(record.get("book_code"))] += 1
+        slugs[repr(record.get("book_slug"))] += 1
+        types_seen.add(type(record.get("section")).__name__)
+
+        # Anything that smells like the BGB, however it is spelled.
+        code = str(record.get("book_code") or "")
+        slug = str(record.get("book_slug") or "")
+        if len(samples) < 12 and "bgb" in f"{code}{slug}".lower():
+            samples.append((record.get("book_code"), record.get("section"), record.get("title")))
+
+        if scanned % 20_000 == 0:
+            log.info("diagnosed %d rows", scanned)
+
+    log.info("section field types: %s", ", ".join(sorted(types_seen)))
+    log.info("top 25 book_code values:")
+    for value, count in books.most_common(25):
+        log.info("  %-28s %6d", value, count)
+    log.info("top 10 book_slug values:")
+    for value, count in slugs.most_common(10):
+        log.info("  %-28s %6d", value, count)
+
+    if samples:
+        log.info("rows that look like BGB:")
+        for code, section, title in samples:
+            log.info("  book_code=%r section=%r title=%r", code, section, title)
+    else:
+        log.warning("no row anywhere mentions bgb in book_code or book_slug")
+
+
 def structure_report(html: str) -> dict[str, Any]:
     """Which markup the item-level chunker can rely on."""
     tags = re.findall(r"<\s*([A-Za-z]+)", html or "")
@@ -81,6 +124,11 @@ def main() -> int:
         "--config",
         default=DEFAULT_CONFIG,
         help="dataset config; the -1k and -10k variants are small samples",
+    )
+    ap.add_argument(
+        "--diagnose",
+        action="store_true",
+        help="print the real book_code/section values instead of scanning for targets",
     )
     ap.add_argument(
         "--limit",
@@ -104,6 +152,10 @@ def main() -> int:
         log.error("could not reach %s (%s): %s", DATASET, auth_mode, exc)
         log.error("if this is an auth error, set HF_TOKEN in .env and retry")
         return 1
+
+    if args.diagnose:
+        diagnose(args.config, token)
+        return 0
 
     if args.config not in configs:
         log.error("unknown config %r; available: %s", args.config, ", ".join(configs))
