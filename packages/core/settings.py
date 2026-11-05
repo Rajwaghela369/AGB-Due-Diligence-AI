@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     qdrant_url: str = Field(default="", alias="QDRANT_URL")
     qdrant_api_key: str = Field(default="", alias="QDRANT_API_KEY")
 
+    # Neon Postgres. The connection string is a secret, so it never sits in a
+    # YAML config; the schema that uses it is versioned code.
+    database_url: str = Field(default="", alias="DATABASE_URL")
+
     # Empty means anonymous access, which is enough for a public dataset.
     hf_token: str = Field(default="", alias="HF_TOKEN")
 

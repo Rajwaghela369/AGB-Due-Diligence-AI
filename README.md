@@ -24,7 +24,7 @@ app/
 evals/           runs in CI against app/agent; not a pipeline
 configs/         versioned pipeline inputs, hashed into the store manifest
 data/            raw -> interim -> processed; only data/gold is committed
-stores/          app.db (build artifact); vectors live in Qdrant Cloud
+stores/          index manifest; vectors in Qdrant Cloud, tables in Neon Postgres
 reports/         quality gate output, committed for its git history
 ```
 
@@ -47,6 +47,7 @@ against the 0.90 gate. See `docs/Phase 1 Results.md`, including the known limita
 
 ## Stack
 
-Python 3.12, uv, LangGraph, FastAPI, Qdrant Cloud for vectors, Prefect Cloud for
-pipeline orchestration and run observability, OpenAI for embeddings and for the router
-and judge models, Langfuse (Cloud EU) for traces, prompts, datasets and scores.
+Python 3.12, uv, LangGraph, FastAPI, Qdrant Cloud for vectors, Neon Postgres for
+tables, Prefect Cloud for pipeline orchestration and run observability, Jina for
+embeddings, OpenAI for the router and judge models, and Langfuse (Cloud EU) for traces,
+prompts, datasets and scores.

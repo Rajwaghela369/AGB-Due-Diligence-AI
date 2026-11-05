@@ -1,0 +1,45 @@
+{
+  "ran_at": "2026-11-05T15:35:52.794887+00:00",
+  "failed": [],
+  "checks": {
+    "dataset": {
+      "status": "pass",
+      "seconds": 2.94,
+      "dataset": "openlegaldata/laws-germany",
+      "revision": "ad694182262416ad204f43d0c13ca0a7dd12057e",
+      "configs": [
+        "dump-20260520",
+        "dump-20260520-10k",
+        "dump-20260520-1k"
+      ]
+    },
+    "embedding": {
+      "status": "pass",
+      "seconds": 0.52,
+      "model": "jina-embeddings-v5-text-small",
+      "dimension": 1024,
+      "tokens": 29
+    },
+    "vector_store": {
+      "status": "pass",
+      "seconds": 0.87,
+      "roundtrip_ok": true
+    },
+    "database": {
+      "status": "pass",
+      "seconds": 0.47,
+      "server": "PostgreSQL 18.6 (ac70818)"
+    },
+    "prefect": {
+      "status": "pass",
+      "seconds": 1.16,
+      "api_url": "https://api.prefect.cloud/api/accounts/d59c65d8-7ce2-486c-aabe-d4e77590c4be/workspaces/a70cbdeb-bd81-476b-be5e-4e9b06a2c1bc/"
+    },
+    "langfuse": {
+      "status": "pass",
+      "seconds": 0.33,
+      "host": "https://cloud.langfuse.com",
+      "authenticated": true
+    }
+  }
+}

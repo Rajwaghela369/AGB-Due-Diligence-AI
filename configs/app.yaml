@@ -21,8 +21,5 @@ store:
   backend: qdrant
   alias: bgb_agb
 
-database:
-  path: stores/app.db
-
 langfuse:
   enabled: true

@@ -21,6 +21,8 @@ pipelines = [
     "openai>=1.54",
     "qdrant-client>=1.12",
     "prefect>=3.1",
+    "psycopg[binary]>=3.2",
+    "langfuse>=2.53",
 ]
 local-embeddings = [
     # Only needed to A/B bge-m3 against the OpenAI model in Phase 1.
@@ -34,6 +36,7 @@ app = [
     "uvicorn[standard]>=0.32",
     "langfuse>=2.53",
     "qdrant-client>=1.12",
+    "psycopg[binary]>=3.2",
 ]
 evals = [
     "langfuse>=2.53",
