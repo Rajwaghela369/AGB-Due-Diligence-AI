@@ -9,11 +9,14 @@ source:
   revision: ad694182262416ad204f43d0c13ca0a7dd12057e
 
 embedding:
-  provider: openai                 # openai | local
-  model: text-embedding-3-large
-  dimension: 3072                  # 3-large supports shortening via `dimensions`
+  provider: jina
+  model: jina-embeddings-v5-text-small
+  dimension: 1024                  # Matryoshka: 1024 | 512 | 128 | 64
   normalize: true
   batch_size: 64
+  # Task-specific LoRA adapters: indexing and searching use different ones.
+  task_passage: retrieval.passage
+  task_query: retrieval.query
 
 store:
   backend: qdrant                  # Qdrant Cloud; URL and key come from the environment

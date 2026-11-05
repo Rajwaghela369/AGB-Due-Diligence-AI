@@ -21,6 +21,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
+    { name = "requests" },
 ]
 
 [package.optional-dependencies]
@@ -79,6 +80,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "qdrant-client", marker = "extra == 'app'", specifier = ">=1.12" },
     { name = "qdrant-client", marker = "extra == 'pipelines'", specifier = ">=1.12" },
+    { name = "requests", specifier = ">=2.32" },
     { name = "requests", marker = "extra == 'pipelines'", specifier = ">=2.32" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8" },
     { name = "scikit-learn", marker = "extra == 'evals'", specifier = ">=1.5" },

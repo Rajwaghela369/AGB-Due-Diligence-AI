@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+    jina_api_key: str = Field(default="", alias="JINA_API_KEY")
 
     qdrant_url: str = Field(default="", alias="QDRANT_URL")
     qdrant_api_key: str = Field(default="", alias="QDRANT_API_KEY")
