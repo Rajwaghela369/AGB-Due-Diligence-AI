@@ -8,7 +8,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-Topic = Literal["liability", "warranty", "general"]
+# "general" chunks join every candidate set regardless of the router's choice;
+# "other" chunks are indexed and searchable but never forced in.
+Topic = Literal["liability", "warranty", "general", "other"]
 Verdict = Literal["valid", "potentially_void", "uncertain"]
 
 

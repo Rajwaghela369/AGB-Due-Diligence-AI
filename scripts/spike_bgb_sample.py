@@ -17,7 +17,7 @@ CONFIG = "dump-20260520"
 
 # Prose, 13-item list, and the paragraph that reveals whether the text is
 # post-2022 Kaufrecht reform.
-SHOWCASE = ("§ 307", "§ 309", "§ 434")
+SHOWCASE = ("§ 307", "§ 308", "§ 309", "§ 434")
 
 SECTION_SHAPES = {
     "§ N": re.compile(r"^§ \d+$"),

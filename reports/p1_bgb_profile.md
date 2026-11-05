@@ -18,10 +18,10 @@ Non-paragraph sections (first 20): ['(XXXX) §§ 3 bis 6', '(XXXX) §§ 15 bis 2
 - sections containing <P>: **2538** of 2538
 
 - `<P>` appears in 2538 sections
-- `<LA>` appears in 282 sections
 - `<DL>` appears in 282 sections
-- `<DT>` appears in 282 sections
 - `<DD>` appears in 282 sections
+- `<LA>` appears in 282 sections
+- `<DT>` appears in 282 sections
 - `<FNR>` appears in 8 sections
 - `<I>` appears in 4 sections
 - `<NB>` appears in 2 sections
@@ -62,6 +62,112 @@ Non-paragraph sections (first 20): ['(XXXX) §§ 3 bis 6', '(XXXX) §§ 15 bis 2
 :   wesentliche Rechte oder Pflichten, die sich aus der Natur des Vertrags ergeben, so einschränkt, dass die Erreichung des Vertragszwecks gefährdet ist.
 
 (3) Die Absätze 1 und 2 sowie die §§ 308 und 309 gelten nur für Bestimmungen in Allgemeinen Geschäftsbedingungen, durch die von Rechtsvorschriften abweichende oder diese ergänzende Regelungen vereinbart werden. Andere Bestimmungen können nach Absatz 1 Satz 2 in Verbindung mit Absatz 1 Satz 1 unwirksam sein.
+```
+
+## § 308 — Klauselverbote mit Wertungsmöglichkeit
+
+- doknr: `BJNR001950896BJNE260206360` · updated_date: `2026-05-08T22:02:15Z`
+- DT/DD items extracted: **21**
+
+### extracted items
+
+- `1.` → (Annahme- und Leistungsfrist)eine Bestimmung, durch die sich der Verwender unangemessen lange oder nicht hinreichend bestimmte Fristen für die Annahme oder Ablehnung eines Angebots oder die Erbringung einer Leistung vorb
+- `1a.` → (Zahlungsfrist)eine Bestimmung, durch die sich der Verwender eine unangemessen lange Zeit für die Erfüllung einer Entgeltforderung des Vertragspartners vorbehält; ist der Verwender kein Verbraucher, ist im Zweifel anzune
+- `1b.` → (Überprüfungs- und Abnahmefrist)eine Bestimmung, durch die sich der Verwender vorbehält, eine Entgeltforderung des Vertragspartners erst nach unangemessen langer Zeit für die Überprüfung oder Abnahme der Gegenleistung zu
+- `2.` → (Nachfrist)eine Bestimmung, durch die sich der Verwender für die von ihm zu bewirkende Leistung abweichend von Rechtsvorschriften eine unangemessen lange oder nicht hinreichend bestimmte Nachfrist vorbehält;
+- `3.` → (Rücktrittsvorbehalt)die Vereinbarung eines Rechts des Verwenders, sich ohne sachlich gerechtfertigten und im Vertrag angegebenen Grund von seiner Leistungspflicht zu lösen; dies gilt nicht für Dauerschuldverhältnisse;
+- `4.` → (Änderungsvorbehalt)die Vereinbarung eines Rechts des Verwenders, die versprochene Leistung zu ändern oder von ihr abzuweichen, wenn nicht die Vereinbarung der Änderung oder Abweichung unter Berücksichtigung der Interess
+- `5.` → (Fingierte Erklärungen)eine Bestimmung, wonach eine Erklärung des Vertragspartners des Verwenders bei Vornahme oder Unterlassung einer bestimmten Handlung als von ihm abgegeben oder nicht abgegeben gilt, es sei denn, das
+- `6.` → (Fiktion des Zugangs)eine Bestimmung, die vorsieht, dass eine Erklärung des Verwenders von besonderer Bedeutung dem anderen Vertragsteil als zugegangen gilt;
+- `7.` → (Abwicklung von Verträgen)eine Bestimmung, nach der der Verwender für den Fall, dass eine Vertragspartei vom Vertrag zurücktritt oder den Vertrag kündigt,a)eine unangemessen hohe Vergütung für die Nutzung oder den Gebrau
+- `8.` → (Nichtverfügbarkeit der Leistung)die nach Nummer 3 zulässige Vereinbarung eines Vorbehalts des Verwenders, sich von der Verpflichtung zur Erfüllung des Vertrags bei Nichtverfügbarkeit der Leistung zu lösen, wenn sich der
+- `9.` → (Abtretungsausschluss)eine Bestimmung, durch die die Abtretbarkeit ausgeschlossen wird a)für einen auf Geld gerichteten Anspruch des Vertragspartners gegen den Verwender oderb)für ein anderes Recht, das der Vertragspartn
+- `a)` → dem Vertragspartner eine angemessene Frist zur Abgabe einer ausdrücklichen Erklärung eingeräumt ist und
+- `b)` → der Verwender sich verpflichtet, den Vertragspartner bei Beginn der Frist auf die vorgesehene Bedeutung seines Verhaltens besonders hinzuweisen;
+- `a)` → eine unangemessen hohe Vergütung für die Nutzung oder den Gebrauch einer Sache oder eines Rechts oder für erbrachte Leistungen oder
+- `b)` → einen unangemessen hohen Ersatz von Aufwendungen verlangen kann;
+- `a)` → den Vertragspartner unverzüglich über die Nichtverfügbarkeit zu informieren und
+- `b)` → Gegenleistungen des Vertragspartners unverzüglich zu erstatten;
+- `a)` → für einen auf Geld gerichteten Anspruch des Vertragspartners gegen den Verwender oder
+- `b)` → für ein anderes Recht, das der Vertragspartner gegen den Verwender hat, wenn aa)beim Verwender ein schützenswertes Interesse an dem Abtretungsausschluss nicht besteht oderbb)berechtigte Belange des Vertragspartners an de
+- `aa)` → beim Verwender ein schützenswertes Interesse an dem Abtretungsausschluss nicht besteht oder
+- `bb)` → berechtigte Belange des Vertragspartners an der Abtretbarkeit des Rechts das schützenswerte Interesse des Verwenders an dem Abtretungsausschluss überwiegen;
+
+### raw `content`
+
+```html
+<P>In Allgemeinen Gesch&#228;ftsbedingungen ist insbesondere unwirksam <DL Font="normal" Type="arabic"><DT>1.</DT><DD Font="normal"><LA Size="normal">(Annahme- und Leistungsfrist)</LA><LA Size="normal">eine Bestimmung, durch die sich der Verwender unangemessen lange oder nicht hinreichend bestimmte Fristen f&#252;r die Annahme oder Ablehnung eines Angebots oder die Erbringung einer Leistung vorbeh&#228;lt; ausgenommen hiervon ist der Vorbehalt, erst nach Ablauf der Widerrufsfrist nach &#167; 355 Absatz 1 und 2 zu leisten;</LA></DD><DT>1a.</DT><DD Font="normal"><LA Size="normal">(Zahlungsfrist)</LA><LA Size="normal">eine Bestimmung, durch die sich der Verwender eine unangemessen lange Zeit f&#252;r die Erf&#252;llung einer Entgeltforderung des Vertragspartners vorbeh&#228;lt; ist der Verwender kein Verbraucher, ist im Zweifel anzunehmen, dass eine Zeit von mehr als 30 Tagen nach Empfang der Gegenleistung oder, wenn dem Schuldner nach Empfang der Gegenleistung eine Rechnung oder gleichwertige Zahlungsaufstellung zugeht, von mehr als 30 Tagen nach Zugang dieser Rechnung oder Zahlungsaufstellung unangemessen lang ist;</LA></DD><DT>1b.</DT><DD Font="normal"><LA Size="normal">(&#220;berpr&#252;fungs- und Abnahmefrist)</LA><LA Size="normal">eine Bestimmung, durch die sich der Verwender vorbeh&#228;lt, eine Entgeltforderung des Vertragspartners erst nach unangemessen langer Zeit f&#252;r die &#220;berpr&#252;fung oder Abnahme der Gegenleistung zu erf&#252;llen; ist der Verwender kein Verbraucher, ist im Zweifel anzunehmen, dass eine Zeit von mehr als 15 Tagen nach Empfang der Gegenleistung unangemessen lang ist;</LA></DD><DT>2.</DT><DD Font="normal"><LA Size="normal">(Nachfrist)</LA><LA Size="normal">eine Bestimmung, durch die sich der Verwender f&#252;r die von ihm zu bewirkende Leistung abweichend von Rechtsvorschriften eine unangemessen lange oder nicht hinreichend bestimmte Nachfrist vorbeh&#228;lt;</LA></DD><DT>3.</DT><DD Font="normal"><LA Size="normal">(R&#252;cktrittsvorbehalt)</LA><LA Size="normal">die Vereinbarung eines Rechts des Verwenders, sich ohne sachlich gerechtfertigten und im Vertrag angegebenen Grund von seiner Leistungspflicht zu l&#246;sen; dies gilt nicht f&#252;r Dauerschuldverh&#228;ltnisse;</LA></DD><DT>4.</DT><DD Font="normal"><LA Size="normal">(&#196;nderungsvorbehalt)</LA><LA Size="normal">die Vereinbarung eines Rechts des Verwenders, die versprochene Leistung zu &#228;ndern oder von ihr abzuweichen, wenn nicht die Vereinbarung der &#196;nderung oder Abweichung unter Ber&#252;cksichtigung der Interessen des Verwenders f&#252;r den anderen Vertragsteil zumutbar ist;</LA></DD><DT>5.</DT><DD Font="normal"><LA Size="normal">(Fingierte Erkl&#228;rungen)</LA><LA Size="normal">eine Bestimmung, wonach eine Erkl&#228;rung des Vertragspartners des Verwenders bei Vornahme oder Unterlassung einer bestimmten Handlung als von ihm abgegeben oder nicht abgegeben gilt, es sei denn, dass<DL Font="normal" Type="arabic"><DT>a)</DT><DD Font="normal"><LA Size="normal">dem Vertragspartner eine angemessene Frist zur Abgabe einer ausdr&#252;cklichen Erkl&#228;rung einger&#228;umt ist und</LA></DD><DT>b)</DT><DD Font="normal"><LA Size="normal">der Verwender sich verpflichtet, den Vertragspartner bei Beginn der Frist auf die vorgesehene Bedeutung seines Verhaltens besonders hinzuweisen;</LA></DD></DL></LA></DD><DT>6.</DT><DD Font="normal"><LA Size="normal">(Fiktion des Zugangs)</LA><LA Size="normal">eine Bestimmung, die vorsieht, dass eine Erkl&#228;rung des Verwenders von besonderer Bedeutung dem anderen Vertragsteil als zugegangen gilt;</LA></DD><DT>7.</DT><DD Font="normal"><LA Size="normal">(Abwicklung von Vertr&#228;gen)</LA><LA Size="normal">eine Bestimmung, nach der der Verwender f&#252;r den Fall, dass eine Vertragspartei vom Vertrag zur&#252;cktritt oder den Vertrag k&#252;ndigt,<DL Font="normal" Type="arabic"><DT>a)</DT><DD Font="normal"><LA Size="normal">eine unangemessen hohe Verg&#252;tung f&#252;r die Nutzung oder den Gebrauch einer Sache oder eines Rechts oder f&#252;r erbrachte Leistungen oder</LA></DD><DT>b)</DT><DD Font="normal"><LA Size="normal">einen unangemessen hohen Ersatz von Aufwendungen verlangen kann;</LA></DD></DL></LA></DD><DT>8.</DT><DD Font="normal"><LA Size="normal">(Nichtverf&#252;gbarkeit der Leistung)</LA><LA Size="normal">die nach Nummer 3 zul&#228;ssige Vereinbarung eines Vorbehalts des Verwenders, sich von der Verpflichtung zur Erf&#252;llung des Vertrags bei Nichtverf&#252;gbarkeit der Leistung zu l&#246;sen, wenn sich der Verwender nicht verpflichtet,<DL Font="normal" Type="arabic"><DT>a)</DT><DD Font="normal"><LA Size="normal">den Vertragspartner unverz&#252;glich &#252;ber die Nichtverf&#252;gbarkeit zu informieren und</LA></DD><DT>b)</DT><DD Font="normal"><LA Size="normal">Gegenleistungen des Vertragspartners unverz&#252;glich zu erstatten;</LA></DD></DL></LA></DD><DT>9.</DT><DD Font="normal"><LA Size="normal">(Abtretungsausschluss)</LA><LA Size="normal">eine Bestimmung, durch die die Abtretbarkeit ausgeschlossen wird <DL Font="normal" Type="alpha"><DT>a)</DT><DD Font="normal"><LA Size="normal">f&#252;r einen auf Geld gerichteten Anspruch des Vertragspartners gegen den Verwender oder</LA></DD><DT>b)</DT><DD Font="normal"><LA Size="normal">f&#252;r ein anderes Recht, das der Vertragspartner gegen den Verwender hat, wenn <DL Font="normal" Type="a-alpha"><DT>aa)</DT><DD Font="normal"><LA Size="normal">beim Verwender ein sch&#252;tzenswertes Interesse an dem Abtretungsausschluss nicht besteht oder</LA></DD><DT>bb)</DT><DD Font="normal"><LA Size="normal">berechtigte Belange des Vertragspartners an der Abtretbarkeit des Rechts das sch&#252;tzenswerte Interesse des Verwenders an dem Abtretungsausschluss &#252;berwiegen;</LA></DD></DL></LA></DD></DL>Buchstabe a gilt nicht f&#252;r Anspr&#252;che aus Zahlungsdiensterahmenvertr&#228;gen und die Buchstaben a und b gelten nicht f&#252;r Anspr&#252;che auf Versorgungsleistungen im Sinne des Betriebsrentengesetzes.</LA></DD></DL></P>
+```
+
+### `markdown_content`
+
+```text
+In Allgemeinen Geschäftsbedingungen ist insbesondere unwirksam
+
+1.
+:   (Annahme- und Leistungsfrist)eine Bestimmung, durch die sich der Verwender unangemessen lange oder nicht hinreichend bestimmte Fristen für die Annahme oder Ablehnung eines Angebots oder die Erbringung einer Leistung vorbehält; ausgenommen hiervon ist der Vorbehalt, erst nach Ablauf der Widerrufsfrist nach § 355 Absatz 1 und 2 zu leisten;
+
+1a.
+:   (Zahlungsfrist)eine Bestimmung, durch die sich der Verwender eine unangemessen lange Zeit für die Erfüllung einer Entgeltforderung des Vertragspartners vorbehält; ist der Verwender kein Verbraucher, ist im Zweifel anzunehmen, dass eine Zeit von mehr als 30 Tagen nach Empfang der Gegenleistung oder, wenn dem Schuldner nach Empfang der Gegenleistung eine Rechnung oder gleichwertige Zahlungsaufstellung zugeht, von mehr als 30 Tagen nach Zugang dieser Rechnung oder Zahlungsaufstellung unangemessen lang ist;
+
+1b.
+:   (Überprüfungs- und Abnahmefrist)eine Bestimmung, durch die sich der Verwender vorbehält, eine Entgeltforderung des Vertragspartners erst nach unangemessen langer Zeit für die Überprüfung oder Abnahme der Gegenleistung zu erfüllen; ist der Verwender kein Verbraucher, ist im Zweifel anzunehmen, dass eine Zeit von mehr als 15 Tagen nach Empfang der Gegenleistung unangemessen lang ist;
+
+2.
+:   (Nachfrist)eine Bestimmung, durch die sich der Verwender für die von ihm zu bewirkende Leistung abweichend von Rechtsvorschriften eine unangemessen lange oder nicht hinreichend bestimmte Nachfrist vorbehält;
+
+3.
+:   (Rücktrittsvorbehalt)die Vereinbarung eines Rechts des Verwenders, sich ohne sachlich gerechtfertigten und im Vertrag angegebenen Grund von seiner Leistungspflicht zu lösen; dies gilt nicht für Dauerschuldverhältnisse;
+
+4.
+:   (Änderungsvorbehalt)die Vereinbarung eines Rechts des Verwenders, die versprochene Leistung zu ändern oder von ihr abzuweichen, wenn nicht die Vereinbarung der Änderung oder Abweichung unter Berücksichtigung der Interessen des Verwenders für den anderen Vertragsteil zumutbar ist;
+
+5.
+:   (Fingierte Erklärungen)eine Bestimmung, wonach eine Erklärung des Vertragspartners des Verwenders bei Vornahme oder Unterlassung einer bestimmten Handlung als von ihm abgegeben oder nicht abgegeben gilt, es sei denn, dass
+
+    a)
+    :   dem Vertragspartner eine angemessene Frist zur Abgabe einer ausdrücklichen Erklärung eingeräumt ist und
+
+    b)
+    :   der Verwender sich verpflichtet, den Vertragspartner bei Beginn der Frist auf die vorgesehene Bedeutung seines Verhaltens besonders hinzuweisen;
+
+6.
+:   (Fiktion des Zugangs)eine Bestimmung, die vorsieht, dass eine Erklärung des Verwenders von besonderer Bedeutung dem anderen Vertragsteil als zugegangen gilt;
+
+7.
+:   (Abwicklung von Verträgen)eine Bestimmung, nach der der Verwender für den Fall, dass eine Vertragspartei vom Vertrag zurücktritt oder den Vertrag kündigt,
+
+    a)
+    :   eine unangemessen hohe Vergütung für die Nutzung oder den Gebrauch einer Sache oder eines Rechts oder für erbrachte Leistungen oder
+
+    b)
+    :   einen unangemessen hohen Ersatz von Aufwendungen verlangen kann;
+
+8.
+:   (Nichtverfügbarkeit der Leistung)die nach Nummer 3 zulässige Vereinbarung eines Vorbehalts des Verwenders, sich von der Verpflichtung zur Erfüllung des Vertrags bei Nichtverfügbarkeit der Leistung zu lösen, wenn sich der Verwender nicht verpflichtet,
+
+    a)
+    :   den Vertragspartner unverzüglich über die Nichtverfügbarkeit zu informieren und
+
+    b)
+    :   Gegenleistungen des Vertragspartners unverzüglich zu erstatten;
+
+9.
+:   (Abtretungsausschluss)eine Bestimmung, durch die die Abtretbarkeit ausgeschlossen wird
+
+    a)
+    :   für einen auf Geld gerichteten Anspruch des Vertragspartners gegen den Verwender oder
+
+    b)
+    :   für ein anderes Recht, das der Vertragspartner gegen den Verwender hat, wenn
+
+        aa)
+        :   beim Verwender ein schützenswertes Interesse an dem Abtretungsausschluss nicht besteht oder
+
+        bb)
+        :   berechtigte Belange des Vertragspartners an der Abtretbarkeit des Rechts das schützenswerte Interesse des Verwenders an dem Abtretungsausschluss überwiegen;
+
+    Buchstabe a gilt nicht für Ansprüche aus Zahlungsdiensterahmenverträgen und die Buchstaben a und b gelten nicht für Ansprüche auf Versorgungsleistungen im Sinne des Betriebsrentengesetzes.
 ```
 
 ## § 309 — Klauselverbote ohne Wertungsmöglichkeit
