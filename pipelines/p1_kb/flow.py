@@ -3,8 +3,8 @@
 import argparse
 from pathlib import Path
 
-from core.config import load_yaml
-from core.paths import CONFIGS, INTERIM, PROCESSED, RAW, REPORTS
+from core.config import config_hash, load_yaml
+from core.paths import CONFIGS, INTERIM, PROCESSED, RAW, REPORTS, STORES
 from core.settings import load_settings
 from prefect import flow, get_run_logger, task
 from prefect.artifacts import create_markdown_artifact, create_table_artifact
@@ -14,6 +14,8 @@ from pipelines.p1_kb.s2_select_norms import SelectResult
 from pipelines.p1_kb.s2_select_norms import select_norms as run_select
 from pipelines.p1_kb.s3_chunk_norms import ChunkResult
 from pipelines.p1_kb.s3_chunk_norms import chunk_norms as run_chunk
+from pipelines.p1_kb.s4_build_index import IndexResult
+from pipelines.p1_kb.s4_build_index import build_index as run_index
 
 FULL_CONFIG = "dump-20260520"
 SAMPLE_CONFIG = "dump-20260520-1k"
@@ -74,14 +76,17 @@ def chunk_norms(selected: SelectResult) -> ChunkResult:
 
 
 @task(retries=3, retry_delay_seconds=10)
-def build_index(chunks: ChunkResult) -> int:
+def build_index(chunks: ChunkResult, kb: dict, lineage: str) -> IndexResult:
     """1.4 Embed the chunks via the OpenAI API and upsert them into a versioned collection."""
-    get_run_logger().info("build_index: not implemented")
-    return 0
+    result = run_index(chunks.path, kb=kb, config_hash=lineage, manifest_dir=STORES)
+    get_run_logger().info(
+        "indexed %d points into %s, %d tokens", result.points, result.collection, result.tokens
+    )
+    return result
 
 
 @task
-def check_retrieval(indexed: int) -> dict[str, float]:
+def check_retrieval(indexed: IndexResult) -> dict[str, float]:
     """1.5 Score the gold queries. The gate that decides whether the alias moves."""
     get_run_logger().info("check_retrieval: not implemented")
     return {}
@@ -91,6 +96,9 @@ def check_retrieval(indexed: int) -> dict[str, float]:
 def kb_ingest(dataset_config: str = FULL_CONFIG, publish: bool = True) -> None:
     log = get_run_logger()
     kb = load_yaml(CONFIGS / "kb.yaml")
+    paragraphs = load_yaml(CONFIGS / "kb_paragraphs.yaml")
+    # Both configs decide what the index contains, so both belong in its lineage.
+    lineage = config_hash(kb, paragraphs)
     sampling = dataset_config != FULL_CONFIG
 
     log.info(
@@ -113,7 +121,7 @@ def kb_ingest(dataset_config: str = FULL_CONFIG, publish: bool = True) -> None:
 
     selected = select_norms(fetched.path, kb["source"], fetched.revision)
     chunks = chunk_norms(selected)
-    indexed = build_index(chunks)
+    indexed = build_index(chunks, kb, lineage)
     scores = check_retrieval(indexed)
 
     create_table_artifact(
@@ -126,10 +134,17 @@ def kb_ingest(dataset_config: str = FULL_CONFIG, publish: bool = True) -> None:
                 f"({selected.item_level} item, {selected.absatz_level} Absatz)",
             },
             {"step": "1.3 chunk", "result": f"{len(chunks.chunks)} chunks"},
-            {"step": "1.4 index", "result": str(indexed)},
+            {
+                "step": "1.4 index",
+                "result": f"{indexed.points} points in {indexed.collection} "
+                f"({indexed.tokens} tokens)",
+            },
             {"step": "1.5 retrieval", "result": str(scores)},
         ],
-        description=f"P1 knowledge base ingestion · {dataset_config} @ {fetched.revision[:12]}",
+        description=(
+            f"P1 knowledge base ingestion · {dataset_config} @ {fetched.revision[:12]} "
+            f"· config {lineage}"
+        ),
     )
 
     if not publish:
