@@ -14,4 +14,7 @@ class LabelLeakError(AssertionError):
 def assert_no_labels(columns: list[str], where: str) -> None:
     leaked = sorted(set(columns) & _LABEL_FIELDS)
     if leaked:
-        raise LabelLeakError(f"label field(s) {leaked} present in {where}; labels belong only in the Langfuse dataset")
+        raise LabelLeakError(
+            f"label field(s) {leaked} present in {where}; "
+            "labels belong only in the Langfuse dataset"
+        )

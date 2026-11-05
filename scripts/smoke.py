@@ -17,7 +17,9 @@ from core.paths import REPORTS
 from core.settings import load_settings
 
 log = get_logger("smoke")
-GERMAN_SENTENCE = "Unsere Haftung ist ausgeschlossen und auf das gesetzlich zulässige Maß beschränkt."
+GERMAN_SENTENCE = (
+    "Unsere Haftung ist ausgeschlossen und auf das gesetzlich zulässige Maß beschränkt."
+)
 
 
 def check_dataset() -> dict[str, Any]:
@@ -49,12 +51,19 @@ def check_vector_store() -> dict[str, Any]:
     client = QdrantClient(url=s.qdrant_url, api_key=s.qdrant_api_key)
     name = "smoke"
     if not client.collection_exists(name):
-        client.create_collection(name, vectors_config=VectorParams(size=4, distance=Distance.COSINE))
+        client.create_collection(
+            name, vectors_config=VectorParams(size=4, distance=Distance.COSINE)
+        )
     point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "bgb-309-7-a"))
     client.upsert(
         name,
-        points=[PointStruct(id=point_id, vector=[0.1, 0.2, 0.3, 0.4],
-                            payload={"chunk_id": "bgb-309-7-a", "text": GERMAN_SENTENCE})],
+        points=[
+            PointStruct(
+                id=point_id,
+                vector=[0.1, 0.2, 0.3, 0.4],
+                payload={"chunk_id": "bgb-309-7-a", "text": GERMAN_SENTENCE},
+            )
+        ],
     )
     got = client.retrieve(name, ids=[point_id], with_payload=True)
     client.delete_collection(name)
@@ -94,7 +103,10 @@ def check_llm_structured_output() -> dict[str, Any]:
         temperature=0,
         messages=[
             {"role": "system", "content": "Du bist ein deutscher Jurist. Antworte auf Deutsch."},
-            {"role": "user", "content": f"Welches Thema hat diese AGB-Klausel?\n\n{GERMAN_SENTENCE}"},
+            {
+                "role": "user",
+                "content": f"Welches Thema hat diese AGB-Klausel?\n\n{GERMAN_SENTENCE}",
+            },
         ],
         response_format={
             "type": "json_schema",
@@ -102,14 +114,20 @@ def check_llm_structured_output() -> dict[str, Any]:
         },
     )
     parsed = json.loads(response.choices[0].message.content)
-    return {"model": "gpt-4o-mini", "parsed": parsed, "schema_respected": parsed["topic"] in {"liability", "warranty", "other"}}
+    return {
+        "model": "gpt-4o-mini",
+        "parsed": parsed,
+        "schema_respected": parsed["topic"] in {"liability", "warranty", "other"},
+    }
 
 
 def check_langfuse() -> dict[str, Any]:
     from langfuse import Langfuse
 
     s = load_settings()
-    client = Langfuse(public_key=s.langfuse_public_key, secret_key=s.langfuse_secret_key, host=s.langfuse_host)
+    client = Langfuse(
+        public_key=s.langfuse_public_key, secret_key=s.langfuse_secret_key, host=s.langfuse_host
+    )
     trace = client.trace(name="p0-smoke", input={"clause": GERMAN_SENTENCE})
     trace.span(name="smoke-span", output={"ok": True}).end()
     client.flush()
@@ -132,7 +150,11 @@ def main() -> int:
         started = time.perf_counter()
         try:
             detail = fn()
-            results[name] = {"status": "pass", "seconds": round(time.perf_counter() - started, 2), **detail}
+            results[name] = {
+                "status": "pass",
+                "seconds": round(time.perf_counter() - started, 2),
+                **detail,
+            }
             log.info("%-22s pass", name)
         except Exception as exc:  # noqa: BLE001 - one failing check must not hide the others
             results[name] = {"status": "fail", "error": f"{type(exc).__name__}: {exc}"}
@@ -141,7 +163,9 @@ def main() -> int:
     failed = [n for n, r in results.items() if r["status"] == "fail"]
     report = {"ran_at": datetime.now(UTC).isoformat(), "failed": failed, "checks": results}
     REPORTS.mkdir(parents=True, exist_ok=True)
-    (REPORTS / "p0_smoke.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    (REPORTS / "p0_smoke.json").write_text(
+        json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
     log.info("report written to reports/p0_smoke.json")
     if failed:
