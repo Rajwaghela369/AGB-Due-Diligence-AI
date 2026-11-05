@@ -12,6 +12,7 @@ dependencies = [
 [project.optional-dependencies]
 pipelines = [
     "datasets>=3.0",
+    "huggingface-hub>=0.26",
     "pandas>=2.2",
     "pyarrow>=17.0",
     "requests>=2.32",
