@@ -10,6 +10,7 @@ due diligence area.
 - `docs/Data pipelines.md` - P1 knowledge base ingestion, P2 evaluation data preparation
 - `docs/Development Phases.md` - build order and the gate for each phase
 - `docs/Phase 1 Results.md` - knowledge base numbers, what the spikes settled, limitations
+- `docs/Phase 2 Results.md` - clause counts, the flag-not-drop decisions, answer-key caveats
 
 ## Layout
 
@@ -43,7 +44,12 @@ make smoke               # Phase 0 gate
 
 Phase 1 complete: `make kb` builds and validates the BGB knowledge base, primary@5 0.933
 against the 0.90 gate. See `docs/Phase 1 Results.md`, including the known limitations.
-`make eval-data` and the later targets are not implemented yet.
+
+Phase 2 steps 2.1-2.5 complete: `make eval-data` builds the 523-clause scope slice, splits
+it 419/104 and publishes the clause table plus the Langfuse answer key; `make eval-data-dry`
+asserts every gate and the label-leak invariant without writing to any store. The retrieval
+re-check against real clause text is still open - see `docs/Phase 2 Results.md`.
+`make baseline` and the later targets are not implemented yet.
 
 ## Stack
 

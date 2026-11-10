@@ -49,7 +49,7 @@ Stream the Open Legal Data dataset at a pinned revision, snapshot the BGB rows, 
 
 ### Phase 2 · P2 EVAL-PREP — clauses and answer key
 
-Fetch AGB-DE, normalize, filter to liability and warranty, reuse the authors' train/test split. Publish clauses to SQLite without labels; labels only into the Langfuse dataset.
+Fetch AGB-DE, normalize, filter to liability and warranty, reuse the authors' train/test split. Publish clauses to Neon Postgres without labels; labels only into the Langfuse dataset.
 
 Also regenerates the retrieval gold set from **train-split** clauses via a `subtopic -> chunk_id` mapping, and re-runs the Phase 1 retrieval check against real clause text. The test split stays untouched until Phase 3.
 
@@ -63,7 +63,7 @@ One-shot classifier, no retrieval, run as a Langfuse experiment. Scorers for pre
 
 ### Phase 4 · Agentic RAG core
 
-Headless LangGraph graph: topic router → retrieve BGB → judge → self-check → retry retrieval once or finish. Uncertain verdicts are marked and skipped for now. Prompts versioned in Langfuse, one trace per clause, verdicts persisted to SQLite.
+Headless LangGraph graph: topic router → retrieve BGB → judge → self-check → retry retrieval once or finish. Uncertain verdicts are marked and skipped for now. Prompts versioned in Langfuse, one trace per clause, verdicts persisted to Neon Postgres.
 
 **Gate:** void-class recall above 0.70, F1 above the Phase 3 baseline, grounding rate 100%. Expect 2–3 iterations on prompt, top-k and chunk granularity, compared as Langfuse experiments.
 

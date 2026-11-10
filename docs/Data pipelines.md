@@ -48,7 +48,7 @@ Turns AGB-DE into in-scope input clauses for the agent and a separate answer key
 | 2.2 Normalize | `p2_eval/s2_normalize.py` | raw CSV | `data/interim/agb_clauses.parquet` |
 | 2.3 Scope filter | `p2_eval/s3_filter_scope.py` | normalized clauses | `data/processed/agb_scope_v1.parquet` |
 | 2.4 Split | `p2_eval/s4_split.py` | scoped clauses + authors' split IDs | `data/processed/splits/train.parquet`, `test.parquet` |
-| 2.5 Publish | `p2_eval/s5_publish.py` | splits | table `clauses` in `stores/app.db`; Langfuse dataset `agb-de-lw-test-v1` |
+| 2.5 Publish | `p2_eval/s5_publish.py` | splits | table `clauses` in Neon Postgres; Langfuse dataset `agb-de-lw-test-v1` |
 
 **What each step does**
 
@@ -88,7 +88,7 @@ agb-check/
 │   ├── interim/                            # cleaned, not final
 │   ├── processed/                          # pipeline outputs
 │   └── gold/       kb_queries.jsonl        # hand-written retrieval checks
-├── stores/         chroma/, app.db
+├── stores/         index manifest; vectors in Qdrant Cloud, tables in Neon Postgres
 ├── reports/        p1_retrieval_check.json, p2_counts.json
 └── Makefile        # make kb, make eval-data
 ```
