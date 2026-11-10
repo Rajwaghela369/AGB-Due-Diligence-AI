@@ -116,7 +116,8 @@ def main() -> int:
             f"- clauses: **{len(scoped)}**",
             f"- void: **{int(scoped['void'].sum())}**",
             f"- fragments under {FRAGMENT_CHARS} chars: {int(fragments.sum())}",
-            f"- distinct contracts: {scoped['contract'].nunique() if 'contract' in scoped else 'n/a'}",
+            f"- distinct contracts: "
+            f"{scoped['contract'].nunique() if 'contract' in scoped else 'n/a'}",
             "",
         ]
         log.info("in scope: %d clauses, %d void", len(scoped), int(scoped["void"].sum()))

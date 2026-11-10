@@ -1,5 +1,5 @@
 # Single entry point: CI runs exactly these targets, so local and CI never diverge.
-.PHONY: help install smoke kb eval-data baseline eval lint format test check clean
+.PHONY: help install smoke kb eval-data eval-data-dry baseline eval lint format test check clean
 
 PY := uv run
 
@@ -16,7 +16,10 @@ kb:  ## P1 KB-INGEST: run the Prefect flow that builds and validates the index
 	$(PY) python -m pipelines.p1_kb.flow
 
 eval-data:  ## P2 EVAL-PREP: build the clause table and the Langfuse dataset
-	@echo "Phase 2 - not implemented yet"
+	$(PY) python -m pipelines.p2_eval.flow
+
+eval-data-dry:  ## P2 EVAL-PREP, asserting everything but writing to no store
+	$(PY) python -m pipelines.p2_eval.flow --dry-run
 
 baseline:  ## Phase 3: one-shot classifier baseline as a Langfuse experiment
 	@echo "Phase 3 - not implemented yet"
