@@ -40,3 +40,67 @@ text that neither the author of this file nor the model produced.
 `gq-05` was left as a genuine miss. Its clause excludes liability for anything but
 intent without using the words "grobe Fahrlässigkeit", so reaching § 309 Nr. 7 lit. b
 needs an inference the embedding does not make.
+
+
+---
+
+# Real-clause queries (Phase 2)
+
+`agb_queries.jsonl` is the Phase 2 re-check this file promised: 31 **real** AGB
+clauses, each one the authors of AGB-DE labelled void, paired with the BGB chunk
+that makes it void. Same schema and same scorer as `kb_queries.jsonl`, so the two
+numbers are directly comparable.
+
+It is **generated**, not hand-edited. `configs/gold_map.yaml` holds the
+hand-authored part (chunk ids, reasoning, confidence); `pipelines/p2_eval/s6_regen_gold.py`
+joins it onto `data/processed/splits/train.parquet` so the query text is always
+verbatim from the corpus. Rebuild with `make recheck`.
+
+## Provenance, and where it still falls short
+
+| Link | Source | Independent of us? |
+| --- | --- | --- |
+| The clause text | AGB-DE, verbatim | yes |
+| "this clause is void" | AGB-DE's annotators | yes |
+| "void under **this** §" | Claude, reviewed by the author | **no** |
+
+Phase 1's set was synthetic on all three links. This is independent on two. A
+fully independent key needs a lawyer for the third, and that is the ceiling of
+what this file can claim.
+
+## Scope, and why these 31
+
+Dev half only — the held-out 104 clauses stay sealed until Phase 3.
+
+The design doc proposed deriving the key from AGB-DE's `subtopics` column. That
+column is nearly empty in our slice: 16 of 523 clauses carry one, 14 of them in
+the dev half, across 5 distinct values, with `warranty:period` alone accounting
+for 8 and pointing at a single chunk. Roughly five effective queries, which
+cannot distinguish a working index from a lucky one. The `void` flag is the
+denser expert signal, so the key is built from the 31 void dev clauses instead
+and spans 11 distinct chunks.
+
+## Eight mappings are flagged `confidence: low`
+
+`agb-348`, `agb-354`, `agb-719`, `agb-901`, `agb-1360`, `agb-1464`, `agb-1607`,
+`agb-3490`. Read these first; `note` in the mapping says what the doubt is. Three
+are worth singling out:
+
+- **`agb-1464` / `agb-1607`** — set-off clauses that, read literally, permit
+  set-off with undisputed or finally adjudicated claims, which is exactly what
+  § 309 Nr. 3 protects. On their face they comply. The annotators marked them
+  void and the text alone does not explain why.
+- **`agb-1360`** — void because Art. 6(2) Rome I keeps German warranty law
+  applicable despite the Italian choice of law. Rome I is not in the index, so
+  no fully correct chunk exists. A legitimate miss.
+- **`agb-354`** — § 439 Abs. 2 if read as a Nacherfüllung return, § 357 if read
+  as a withdrawal return. § 357 is not in the index either.
+
+## What a drop against 0.933 means
+
+Expected, and informative rather than a failure — which is why the flow records
+this number and never gates on it. Phase 1's queries were short, clean and
+written against a known index; these have a median length of 372 characters and a
+maximum of 1938, carry `<<NAME>>` placeholders, and several bundle three legal
+problems into one paragraph. The gap between the two scores is the measure of how
+much of 0.933 came from the test being easy.

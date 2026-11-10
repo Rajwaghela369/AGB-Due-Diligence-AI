@@ -45,10 +45,17 @@ make smoke               # Phase 0 gate
 Phase 1 complete: `make kb` builds and validates the BGB knowledge base, primary@5 0.933
 against the 0.90 gate. See `docs/Phase 1 Results.md`, including the known limitations.
 
-Phase 2 steps 2.1-2.5 complete: `make eval-data` builds the 523-clause scope slice, splits
-it 419/104 and publishes the clause table plus the Langfuse answer key; `make eval-data-dry`
-asserts every gate and the label-leak invariant without writing to any store. The retrieval
-re-check against real clause text is still open - see `docs/Phase 2 Results.md`.
+Phase 2 complete: `make eval-data` builds the 523-clause scope slice, splits it 419/104
+and publishes the clause table plus the Langfuse answer key; `make eval-data-dry` asserts
+every gate and the label-leak invariant without writing to any store; `make recheck`
+re-scores retrieval on real clause text.
+
+That re-check is the headline Phase 2 finding: **primary@5 0.258** over 31 real void
+clauses, against Phase 1's synthetic 0.933. It is recorded, not gated. The gap decomposes
+into a reachability defect in the topic filter and a register mismatch between clauses and
+the prohibitions that void them - see `docs/Phase 2 Results.md`. Fixing it is the first
+Phase 4 experiment.
+
 `make baseline` and the later targets are not implemented yet.
 
 ## Stack

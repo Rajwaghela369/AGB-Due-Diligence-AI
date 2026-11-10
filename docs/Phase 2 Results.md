@@ -3,8 +3,9 @@
 P2 EVAL-PREP: AGB-DE turned into input clauses for the agent and a separate answer key.
 Numbers below are from the pinned corpus commit `9b847807`.
 
-**Status:** steps 2.1–2.5 implemented and gated. The retrieval re-check (2.6) is not yet
-built — see [Open: the retrieval answer key](#open-the-retrieval-answer-key).
+**Status:** complete. Steps 2.1–2.5 implemented and gated, 2.6 built and run — see
+[The retrieval re-check](#the-retrieval-re-check-26), whose result is the handoff to
+Phase 4.
 
 ## Counts
 
@@ -121,18 +122,98 @@ The clause table holds `clause_id, contract_id, split, title, text, topics` and 
 column by construction. `label_void` reaches only the Langfuse dataset, in
 `expected_output`.
 
-## Open: the retrieval answer key
+## The retrieval re-check (2.6)
 
-Phase 1's gate scored primary@5 0.933 against 30 synthetic queries written by Claude.
-`data/gold/README.md` commits to re-running that check on real clause text with labels
-from the dataset's authors, and names it the number to trust.
+Phase 1 scored **primary@5 0.933** against 30 synthetic queries written by Claude,
+and `data/gold/README.md` committed to re-running that check on real clause text,
+naming it the number to trust. The re-run scores **primary@5 0.258** over 31 real
+void clauses.
 
-The design doc's mechanism for this — a `subtopic -> chunk_id` mapping — cannot carry that
-weight. Only **16 of 523** in-scope clauses have a `subtopics` value, 14 of them in the dev
-half, across 5 distinct subtopics, and `warranty:period` alone accounts for 8 of the 14 and
-points at a single chunk. That yields roughly five effective queries.
+The 0.675 gap is the measure of how much of Phase 1's score came from the test
+being easy, and it is recorded rather than gated: failing a run on it would punish
+the honest number.
 
-The proposed alternative is to hand-map the **31 void dev-half clauses** to chunk ids: the
-`void` annotation is the authors' expert signal, the index holds only 105 chunks, and a
-void clause is void under a determinate norm. This keeps the held-out half sealed and
-produces a real-text answer key of roughly Phase 1's size. Not yet built or agreed.
+### How the key was built
+
+The design doc proposed a `subtopic -> chunk_id` mapping. That column is nearly
+empty in our slice - 16 of 523 clauses carry one, 14 in the dev half, across 5
+values, with `warranty:period` alone accounting for 8 and pointing at a single
+chunk. Roughly five effective queries, which cannot distinguish a working index
+from a lucky one.
+
+The key is built instead from the **31 void dev-half clauses**, spanning 11
+distinct chunks. The void annotation is the authors'; the paragraph that makes
+each clause void was written by Claude and is the one link in the chain that is
+not independent. Eight mappings are flagged `confidence: low` in
+`configs/gold_map.yaml`; three of those are noted as needing a lawyer.
+
+### The number decomposes into two causes
+
+```
+  k    all 31   reachable 24
+  1     0.000          0.000
+  3     0.129          0.167
+  5     0.258          0.333
+ 10     0.645          0.833
+ 20     0.710          0.917
+```
+
+**Cause 1 - the topic filter hides the answer (7 of 31, all unreachable).**
+`_topic_filter` in `p1_kb/s5_check_retrieval.py` admits chunks tagged with the
+query topic or `general`. Two consequences:
+
+- Chunks tagged `other` are invisible to **every** query. § 308 Nr. 4 and
+  § 309 Nr. 3 can never be retrieved by anything, which is a live defect in the
+  shipped retrieval path, not only in this test.
+- Cross-topic answers are cut: a liability clause whose basis is § 475 Abs. 2 or
+  § 439 Abs. 2, both tagged `warranty` only, is unreachable by construction.
+
+Affected: `agb-187`, `agb-344`, `agb-354`, `agb-901`, `agb-1464`, `agb-1607`,
+`agb-3490`. Excluding them, primary@5 is 0.333.
+
+**Cause 2 - register mismatch (14 reachable misses, every one at rank 6-13).**
+11 of those 14 retrieved a *substantive* norm at rank 1 where the answer was a
+§ 308/309 prohibition:
+
+> `agb-2802` "Haftung ist auf Vorsatz und grobe Fahrlässigkeit begrenzt"
+> retrieved § 276 Abs. 1 ("Der Schuldner hat Vorsatz und Fahrlässigkeit zu
+> vertreten"); expected § 309 Nr. 7 lit. a ("unwirksam ist eine Bestimmung,
+> durch die...").
+
+Semantic similarity finds the norm a clause is *about*, not the norm that makes
+it *void*. The two are written in different registers and share little
+vocabulary. The correct chunk is usually found - it simply ranks below the
+substantive norms.
+
+### A caveat about the key itself
+
+The answer key deliberately names the prohibition, because that is what a
+due-diligence reviewer must cite. A key built the other way - "the statutory rule
+the clause deviates from" - would score substantially higher against the same
+index. Part of the low number reflects genuine difficulty in the task, not only a
+weakness of the retriever. Both readings are defensible; ours follows the product.
+
+### Handoff to Phase 4
+
+Phase 1 fixed the order of remedies: topic tagging, chunk granularity,
+hybrid/BM25, embedding model. Topic tagging is first on that list and is exactly
+what cause 1 is. The three candidates, in cost order and all untested:
+
+1. Treat § 305-310 as always-included, as `general` already is, so `other` stops
+   hiding chunks. Addresses all 7 unreachable cases; a tagging change only.
+2. Raise the agent's `top_k` from 5 to 10. Reachable @10 is 0.833, and the judge
+   model can discriminate among 10 candidates better than the embedder can rank
+   them.
+3. Hybrid / BM25, which targets cause 2 directly: "unwirksam" and "ausgeschlossen"
+   are lexical signals a dense model dilutes.
+
+**Baseline to beat: primary@5 0.258 over all 31, 0.333 over the 24 reachable.**
+Rebuild with `make recheck` after any change to `configs/gold_map.yaml`, the
+chunker, or the topic tags.
+
+### A note on `reports/p2_counts.json`
+
+The committed counts file predates 2.6 and so carries no `retrieval_recheck`
+block; the re-check was run through `make recheck`, which writes
+`reports/p2_retrieval_recheck.json` only. The next full `make eval-data` will
+populate both.

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 from core.config import config_hash, load_yaml
-from core.paths import CONFIGS, INTERIM, PROCESSED, RAW, REPORTS
+from core.paths import CONFIGS, GOLD, INTERIM, PROCESSED, RAW, REPORTS
 from core.settings import load_settings
 from prefect import flow, get_run_logger, task
 from prefect.artifacts import create_markdown_artifact, create_table_artifact
@@ -16,6 +16,7 @@ from pipelines.p2_eval.s2_normalize import NormalizeResult, normalize
 from pipelines.p2_eval.s3_filter_scope import ScopeResult, filter_scope
 from pipelines.p2_eval.s4_split import SplitResult, split_clauses
 from pipelines.p2_eval.s5_publish import PublishResult, publish
+from pipelines.p2_eval.s6_regen_gold import GoldResult, regen_gold
 
 
 @task(retries=3, retry_delay_seconds=10)
@@ -103,6 +104,34 @@ def publish_clauses_and_key(
     return result
 
 
+@task
+def regenerate_gold(split: SplitResult, splits: dict, kb: dict) -> GoldResult:
+    """2.6 Rebuild the retrieval answer key from real clause text and re-score it.
+
+    Deliberately NOT a gate. A drop against Phase 1's synthetic 0.933 is the
+    information this step exists to produce - it measures how much of that
+    score came from the test being easy. Failing the run on it would punish
+    the honest number.
+    """
+    mapping = load_yaml(CONFIGS / "gold_map.yaml")["clauses"]
+    result = regen_gold(
+        mapping=mapping,
+        dev_path=split.paths[splits["dev"]],
+        chunks_path=PROCESSED / "bgb_chunks.jsonl",
+        kb=kb,
+        gold_dir=GOLD,
+        report_dir=REPORTS,
+    )
+    get_run_logger().info(
+        "real-text retrieval: primary@5 %.3f, MRR %.3f, %d misses (%d low-confidence mappings)",
+        result.retrieval.metrics["primary_at_5"],
+        result.retrieval.metrics["mrr"],
+        len(result.retrieval.misses),
+        len(result.low_confidence),
+    )
+    return result
+
+
 def check_gate(scoped: ScopeResult, split: SplitResult, splits: dict, gate: dict) -> list[dict]:
     """Every count the design doc fixed, compared against what the run produced."""
     dev, held_out = splits["dev"], splits["held_out"]
@@ -129,6 +158,7 @@ def write_counts(
     split: SplitResult,
     published: PublishResult,
     results: list[dict],
+    recheck: GoldResult | None = None,
 ) -> None:
     """reports/p2_counts.json - the Phase 2 gate artifact, committed for its history."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -161,6 +191,18 @@ def write_counts(
                     "dataset_items": published.dataset_items,
                     "dry_run": published.dry_run,
                 },
+                # Recorded, never gated: the comparison against Phase 1's
+                # synthetic 0.933 is the point of the number.
+                "retrieval_recheck": (
+                    None
+                    if recheck is None
+                    else {
+                        "queries": recheck.queries,
+                        "metrics": recheck.retrieval.metrics,
+                        "misses": [o.query_id for o in recheck.retrieval.misses],
+                        "low_confidence_mappings": recheck.low_confidence,
+                    }
+                ),
                 "gate": results,
                 "gate_passed": all(check["passed"] for check in results),
             },
@@ -172,15 +214,52 @@ def write_counts(
     )
 
 
+@flow(name="p2-retrieval-recheck")
+def retrieval_recheck() -> None:
+    """Step 2.6 alone, against the splits already on disk.
+
+    Separate entry point because this is the one P2 step worth re-running by
+    itself: the answer key in configs/gold_map.yaml gets revised, the clause
+    data does not.
+    """
+    log = get_run_logger()
+    splits = load_yaml(CONFIGS / "eval.yaml")["splits"]
+    kb = load_yaml(CONFIGS / "kb.yaml")
+
+    dev = splits["dev"]
+    split = SplitResult(
+        paths={dev: PROCESSED / "splits" / f"{dev}.parquet"},
+        counts={},
+        void={},
+    )
+    if not split.paths[dev].exists():
+        raise FileNotFoundError(f"{split.paths[dev]} is missing; run `make eval-data` first")
+
+    result = regenerate_gold(split, splits, kb)
+    log.info(
+        "primary@5 %.3f over %d real clauses (Phase 1 synthetic: 0.933)",
+        result.retrieval.metrics["primary_at_5"],
+        result.queries,
+    )
+
+
 @flow(name="p2-eval-prep")
-def eval_prep(dry_run: bool = False) -> None:
+def eval_prep(dry_run: bool = False, skip_recheck: bool = False) -> None:
     log = get_run_logger()
     config = load_yaml(CONFIGS / "eval.yaml")
+    # P1's config decides which collection and embedding the re-check reads.
+    kb = load_yaml(CONFIGS / "kb.yaml")
     lineage = config_hash(config)
     source, scope = config["source"], config["scope"]
     splits, gate, publish_cfg = config["splits"], config["gate"], config["publish"]
 
-    log.info("config %s, commit %s, dry_run=%s", lineage, source["commit"][:12], dry_run)
+    log.info(
+        "config %s, commit %s, dry_run=%s, skip_recheck=%s",
+        lineage,
+        source["commit"][:12],
+        dry_run,
+        skip_recheck,
+    )
 
     fetched = fetch_agb(source)
     if fetched.rows != source["expected_rows"]:
@@ -222,6 +301,7 @@ def eval_prep(dry_run: bool = False) -> None:
         raise ValueError(f"P2 count gate failed: {failures}")
 
     published = publish_clauses_and_key(split, splits, publish_cfg, dry_run)
+    recheck = None if skip_recheck else regenerate_gold(split, splits, kb)
     write_counts(
         REPORTS / "p2_counts.json",
         lineage,
@@ -231,6 +311,7 @@ def eval_prep(dry_run: bool = False) -> None:
         split,
         published,
         results,
+        recheck,
     )
 
     create_markdown_artifact(
@@ -249,6 +330,16 @@ def eval_prep(dry_run: bool = False) -> None:
                 f"- published: {published.table_rows} rows -> `{published.table}`, "
                 f"{published.dataset_items} items -> `{published.dataset}`"
                 f"{' (dry run)' if published.dry_run else ''}",
+                *(
+                    []
+                    if recheck is None
+                    else [
+                        f"- real-text retrieval: primary@5 "
+                        f"{recheck.retrieval.metrics['primary_at_5']:.3f} over "
+                        f"{recheck.queries} void dev clauses "
+                        f"(Phase 1 synthetic: 0.933) - recorded, not gated",
+                    ]
+                ),
             ]
         ),
         description="Phase 2 evaluation data preparation",
@@ -264,5 +355,19 @@ if __name__ == "__main__":
         action="store_true",
         help="build and assert everything, write nothing to Postgres or Langfuse",
     )
+    ap.add_argument(
+        "--skip-recheck",
+        action="store_true",
+        help="skip 2.6, which calls the embedding API and reads Qdrant",
+    )
+    ap.add_argument(
+        "--recheck-only",
+        action="store_true",
+        help="run only 2.6, against the splits already on disk",
+    )
     args = ap.parse_args()
-    eval_prep(dry_run=args.dry_run)
+
+    if args.recheck_only:
+        retrieval_recheck()
+    else:
+        eval_prep(dry_run=args.dry_run, skip_recheck=args.skip_recheck)

@@ -67,6 +67,15 @@ Headless LangGraph graph: topic router → retrieve BGB → judge → self-check
 
 **Gate:** void-class recall above 0.70, F1 above the Phase 3 baseline, grounding rate 100%. Expect 2–3 iterations on prompt, top-k and chunk granularity, compared as Langfuse experiments.
 
+**First experiment — fix topic tagging.** Phase 2's retrieval re-check on real clause text scored **primary@5 0.258** over 31 void clauses, against Phase 1's synthetic 0.933. Two causes, diagnosed in `docs/Phase 2 Results.md`:
+
+1. Seven of the 31 could never succeed — the topic filter admits only `{query topic, general}`, so chunks tagged `other` (§ 308 Nr. 4, § 309 Nr. 3) are unreachable by **any** query, and a liability clause whose basis is a warranty-tagged chunk is cut. This is a live defect in the shipped retrieval path.
+2. Fourteen reachable misses all landed at rank 6–13, 11 of them retrieving a substantive norm where a § 308/309 prohibition was the answer. Dense similarity finds the norm a clause is *about*, not the one that voids it.
+
+Candidates in cost order: treat § 305–310 as always-included so `other` stops hiding chunks; raise `top_k` from 5 to 10 (reachable @10 is 0.833); add hybrid/BM25 for the register mismatch.
+
+**Baseline to beat: 0.258 over all 31, 0.333 over the 24 reachable.** Re-measure with `make recheck`.
+
 ### Phase 5 · AG-UI streaming
 
 FastAPI exposing the graph over AG-UI; minimal React page with the step feed and a risk table that fills in live. Paste and `.txt` input.

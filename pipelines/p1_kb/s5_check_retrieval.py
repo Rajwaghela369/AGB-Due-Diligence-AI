@@ -71,7 +71,14 @@ def check_retrieval(
     gold_path: Path,
     kb: dict[str, Any],
     report_dir: Path,
+    report_name: str = "p1_retrieval_check.json",
 ) -> RetrievalResult:
+    """Score a gold file against the index.
+
+    `report_name` exists so P2 can re-run this unchanged against real clause
+    text and write its own report. Same code, same metrics, so the two numbers
+    are directly comparable.
+    """
     gold = [json.loads(line) for line in gold_path.read_text(encoding="utf-8").splitlines()]
     embedding = kb["embedding"]
 
@@ -112,7 +119,7 @@ def check_retrieval(
     metrics["query_tokens"] = float(embedded.tokens)
 
     report_dir.mkdir(parents=True, exist_ok=True)
-    report_path = report_dir / "p1_retrieval_check.json"
+    report_path = report_dir / report_name
     report_path.write_text(
         json.dumps(
             {
