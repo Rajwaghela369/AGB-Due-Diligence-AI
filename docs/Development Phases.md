@@ -65,7 +65,7 @@ One-shot classifier, no retrieval, run as a Langfuse experiment. Scorers for pre
 
 Headless LangGraph graph: topic router → retrieve BGB → judge → self-check → retry retrieval once or finish. Uncertain verdicts are marked and skipped for now. Prompts versioned in Langfuse, one trace per clause, verdicts persisted to Neon Postgres.
 
-**Gate:** void-class recall above 0.70, F1 above the Phase 3 baseline, grounding rate 100%. Expect 2–3 iterations on prompt, top-k and chunk granularity, compared as Langfuse experiments.
+**Gate:** void-class recall above 0.70, F1 above the Phase 3 baseline of **0.276 on dev** (held-out 0.304), grounding rate 100%. Expect 2–3 iterations on prompt, top-k and chunk granularity, compared as Langfuse experiments.
 
 **First experiment — fix topic tagging.** Phase 2's retrieval re-check on real clause text scored **primary@5 0.258** over 31 void clauses, against Phase 1's synthetic 0.933. Two causes, diagnosed in `docs/Phase 2 Results.md`:
 

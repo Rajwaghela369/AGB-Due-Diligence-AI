@@ -11,6 +11,7 @@ due diligence area.
 - `docs/Development Phases.md` - build order and the gate for each phase
 - `docs/Phase 1 Results.md` - knowledge base numbers, what the spikes settled, limitations
 - `docs/Phase 2 Results.md` - clause counts, the flag-not-drop decisions, answer-key caveats
+- `docs/Phase 3 Results.md` - the baseline to beat, and why recall is the unstable half
 
 ## Layout
 
@@ -56,7 +57,14 @@ into a reachability defect in the topic filter and a register mismatch between c
 the prohibitions that void them - see `docs/Phase 2 Results.md`. Fixing it is the first
 Phase 4 experiment.
 
-`make baseline` and the later targets are not implemented yet.
+Phase 3 complete: `make baseline` runs the one-shot classifier over the dev half and
+`make baseline-held-out` produces the gate number. The baseline scores **void F1 0.276
+on dev** (P 0.174 / R 0.677) and 0.304 on held-out - it over-calls void roughly five
+times for every correct call, so precision is what Phase 4 has to earn. The harness in
+`evals/` is permanent and agent-agnostic; Phase 4's graph plugs into it unchanged. See
+`docs/Phase 3 Results.md`.
+
+`make eval` and the later targets are not implemented yet.
 
 ## Stack
 

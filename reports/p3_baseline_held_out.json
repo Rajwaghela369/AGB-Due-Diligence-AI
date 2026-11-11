@@ -1,0 +1,1104 @@
+{
+  "run_name": "baseline-held_out-20261111-2017",
+  "split": "held_out",
+  "config": {
+    "approach": "one-shot, no retrieval",
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5-20251001",
+    "max_output_tokens": 400,
+    "prompt_sha": "d795e19d30ad",
+    "split": "held_out",
+    "items": 104
+  },
+  "metrics": {
+    "void_precision": 0.1842,
+    "void_recall": 0.875,
+    "void_f1": 0.3043,
+    "true_positive": 7.0,
+    "false_positive": 31.0,
+    "false_negative": 1.0,
+    "true_negative": 65.0,
+    "uncertain": 0.0,
+    "errors": 0.0,
+    "items": 104.0
+  },
+  "false_negatives": [
+    "agb-2632"
+  ],
+  "false_positives": [
+    "agb-3745",
+    "agb-3721",
+    "agb-3713",
+    "agb-3656",
+    "agb-3620",
+    "agb-3483",
+    "agb-3376",
+    "agb-3370",
+    "agb-3203",
+    "agb-3202",
+    "agb-3198",
+    "agb-3197",
+    "agb-3117",
+    "agb-3116",
+    "agb-3115",
+    "agb-3050",
+    "agb-2950",
+    "agb-2942",
+    "agb-2852",
+    "agb-2477",
+    "agb-2254",
+    "agb-2183",
+    "agb-1955",
+    "agb-1272",
+    "agb-1205",
+    "agb-974",
+    "agb-849",
+    "agb-820",
+    "agb-608",
+    "agb-188",
+    "agb-186"
+  ],
+  "failures": [],
+  "items": [
+    {
+      "clause_id": "agb-3745",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel verstößt gegen § 307 Abs. 1 BGB, da sie unangemessen benachteiligend ist. Sie schließt die Herstellerangaben aus den vereinbarten Beschaffenheitsmerkmalen aus und widerspricht damit dem Leitbild des Kaufrechts (§ 434 Abs. 1 BGB), wonach die Sache dem Kaufvertrag entsprechen muss. Werbliche Zusicherungen des Herstellers können Beschaffenheitsgarantien begründen und dürfen nicht pauschal ausgeschlossen werden.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3721",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel beschränkt die Haftung für fahrlässige Verletzung wesentlicher Vertragspflichten auf vertragstypische Schäden. Dies verstößt gegen § 309 Nr. 7 BGB, wonach eine Haftungsbeschränkung für Fahrlässigkeit unwirksam ist, sofern sie nicht mindestens die Haftung für Personenschäden und Schäden aus grober Fahrlässigkeit gewährleistet. Die Definition der wesentlichen Vertragspflichten ist zudem unpräzise und kann zu Auslegungsunsicherheiten führen.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3713",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel verstößt gegen §§ 305-310 BGB. Die einjährige Verjährungsfrist für neue Waren bei B2B-Geschäften ist zulässig (§ 475 Abs. 2 BGB), jedoch ist der weitgehende Ausschluss von Mängelansprüchen bei gebrauchten Waren unwirksam (§ 309 Nr. 8a BGB regelt Einschränkungen der Gewährleistung). Die Regelung zur Wahl der Nacherfüllung zulasten des Unternehmers und die Hemmungsregelung bei Ersatzlieferung erfordern einzelfallbezogene Prüfung auf Angemessenheit.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3658",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel erweitert die Haftungsbeschränkungen auf Erfüllungsgehilfen und gesetzliche Vertreter, was nach § 278 BGB zulässig ist. Sie ist transparente Risikoallokation ohne unangemessene Benachteiligung nach § 307 Abs. 1 BGB und verstößt nicht gegen zwingende Schutzvorschriften wie §§ 309, 310 BGB.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3656",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel beschränkt die Haftung für Fahrlässigkeit auf vertragstypische, vorhersehbare Schäden, was gegen § 309 Nr. 7 BGB verstößt. Dieser untersagt Haftungsbeschränkungen für Schäden aus Fahrlässigkeit bei wesentlichen Vertragspflichten ohne Unterscheidung nach Schadensart, sofern der Schaden für den Geschäftsbetrieb typisch ist.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3620",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel verweist auf eine separate Gewährleistungsregelung in Teil I der AGB, ohne deren Inhalt zu offenbaren. Dies verstößt gegen die Transparenzanforderungen des § 307 BGB, da der Verbraucher die konkreten Mängelhaftungsrechte nicht unmittelbar erfassen kann. Zudem ist die Garantie des Händlerbundes für Rechtskonformität irrelevant für die AGB-Wirksamkeit und keine zulässige Einschränkung von Gewährleistungsrechten.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3602",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel fordert lediglich eine Überprüfung und Mitteilung von Mängeln auf, was eine sachliche Empfehlung darstellt. Entscheidend ist, dass ausdrücklich klargestellt wird, dass Unterlassen dieser Handlung keine Auswirkung auf gesetzliche Gewährleistungsansprüche hat – dies entspricht den gesetzlichen Vorgaben des BGB und ist verbraucherfreundlich.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3600",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel bestätigt lediglich die Geltung der gesetzlichen Gewährleistungsrechte nach §§ 434-479 BGB und enthält keine Einschränkung oder Ausschluss dieser Rechte. Sie ist daher wirksam und unproblematisch.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3568",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel ist verbraucherschutzfreundlich formuliert und betont ausdrücklich, dass die Versäumung der Reklamation keine Auswirkungen auf gesetzliche Gewährleistungsrechte hat. Sie informiert nur über die praktische Empfehlung zur Schadensminderung, ohne Rechtsfolgen an die Benachrichtigung zu knüpfen.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3524",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel gewährt dem Käufer explizit die gesetzlichen Mängelansprüche nach §§ 434-437 BGB und verstößt daher nicht gegen das AGB-Recht. Sie stellt eine transparente und für den Verbraucher vorteilhafte Regelung dar, die die zwingenden Rechte des Käufers nicht einschränkt.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3483",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel enthält mehrere problematische Aspekte: Die pauschale Kostenbefreiung nur beim Store-/Touchpoint-Abgabeverzicht, während Abholung nach Wunsch Versandkosten kostet, könnte als unangemessene Benachteiligung wirken. Kritischer ist die Eigentumsübergangsregelung ohne konkrete Gegenleistung oder transparenten Verwertungsnutzen für den Kunden sowie der Ausschluss von Nachweisen über die Entsorgung, was die Kontrollmöglichkeiten des Verbrauchers unangemessen einschränkt. Die freie Aufbereitung zu karitativen Zwecken ohne Informationspflicht könnte ebenfalls problematisch sein.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3376",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel versucht, die Haftung für arglistiges Verschweigen und Garantien auszunehmen, was eine unzulässige Ausnahme von zwingenden Gewährleistungsrechten gemäß §§ 306 Abs. 2, 309 Nr. 7 BGB darstellt. Diese Rechte können nicht durch AGB eingeschränkt oder ausgeschlossen werden, da dies der Verbraucherschützung zuwiderläuft.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3371",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel informiert sachlich über mögliche Herstellergarantien und verweist korrekt auf deren Bedingungen. Sie enthält keine unangemessene Haftungsfreistellung, sondern eine zulässige Klarstellung, dass der Verkäufer nicht für Garantien Dritter haftet.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3370",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel schränkt die gesetzlichen Gewährleistungsrechte von Verbrauchern rechtswidrig ein. Nach § 475 Abs. 1 BGB haben Verbraucher Anspruch auf Nacherfüllung, Rücktritt und Schadensersatz bei Mängeln; die pauschale Beschränkung auf \"nicht unerhebliche Mängel\" für den Rücktritt und die Verweisung auf eigene Haftungsbegrenzungen für Schadensersatz verstoßen gegen zwingende verbraucherschützende Normen.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3272",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel genügt den Anforderungen des AGB-Rechts. Sie differenziert angemessen zwischen leicht fahrlässigen Pflichtverletzungen (mit Haftungsbegrenzung auf vorhersehbaren Durchschnittsschaden) und nicht vertragswesentlichen Pflichten (ohne Haftung), schließt jedoch Garantie-, Produkthaftungs- und Schadensersatzansprüche für Personenschäden aus, wodurch die gesetzlichen Schutzvorschriften (insb. §§ 307 Abs. 2 Nr. 1 BGB, 309 Nr. 7 BGB) gewahrt bleiben.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3271",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel gewährt dem Kunden ein freiwilliges, zusätzliches Rückgaberecht von 100 Tagen, das über gesetzliche Widerrufsrechte hinausgeht. Sie enthält keine unangemessene Benachteiligung und orientiert sich an der Regelung des § 357 Abs. 6 BGB zur Ausnahmeregelung für Prüfungen. Die Klausel ist transparent und für den Kunden vorteilhaft.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3269",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel regelt zulässig unterschiedliche Gewährleistungsfristen für Verbraucher und Unternehmer. Die zweijährige Frist für Verbraucher entspricht dem Regelfall des § 438 Abs. 1 Nr. 3 BGB, die einjährige Frist für Unternehmer ist zulässig gemäß § 438 Abs. 1 Nr. 3 BGB. Eine Verkürzung unter die Regelfrist ist nur bei Unternehmern zulässig und nicht überraschend.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3219",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel gewährt gesetzliche Mängelhaftungsrechte vollständig und enthält nur eine unverbindliche Mitteilungsaufforderung für offensichtliche Mängel. Entscheidend ist die Klarstellung, dass die Unterlassung dieser Rüge keine Konsequenzen für gesetzliche Ansprüche hat, was eine Benachteiligung des Verbrauchers ausschließt.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3210",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel ist wirksam, da sie gesetzliche Verbraucherrechte ausdrücklich erhält und nicht einschränkt oder ausschließt. Sie verstößt nicht gegen §§ 305-310 BGB und entspricht dem Transparenzgebot sowie dem Gebot der Inhaltskontrolle.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3209",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel entspricht den gesetzlichen Vorgaben des § 357 BGB zum Widerrufsrecht und stellt eine zulässige Regelung der Rückzahlungsfrist und -bedingungen dar. Die 14-Tage-Frist, die Bedingung der Warenrücksendung und die Nachweisregelung sind mit den Verbraucherschutzvorschriften vereinbar.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3203",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel widerspricht dem gesetzlichen Regelwerk: Das Widerrufsrecht (§ 355 BGB) und ein vertragliches Rückgaberecht sind eigenständige Rechte mit unterschiedlichen Fristen. Eine Verknüpfung, wonach die Rückgabefrist erst nach Ablauf der Widerrufsfrist beginnt, kann als unangemessene Benachteiligung des Verbrauchers gemäß § 307 BGB angesehen werden, da sie de facto das Rückgaberecht praktisch entwertet oder unverhältnismäßig einschränkt.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3202",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel setzt eine Rückgabefrist von 16 Tagen fest, die unterhalb der gesetzlichen Mindestfrist von 14 Tagen liegt. Nach § 312g Abs. 1 BGB beträgt die Widerrufsfirist im Fernabsatzhandel mindestens 14 Tage; eine Verkürzung ist nicht zulässig und stellt einen Verstoß gegen zwingendes Verbraucherschutzrecht dar.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3200",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel ist eine zulässige Haftungsbeschränkung für fremde Inhalte Dritter. Sie entspricht der Rechtsprechung und dem TMG: Der Verkäufer erklärt, keine Verantwortung für externe Inhalte zu übernehmen, und verpflichtet sich sogar zur unverzüglichen Sperrung bei Kenntnis rechtswidriger Inhalte. Dies ist eine angemessene und nicht unangemessen benachteiligende Regelung.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3198",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel versucht, die Haftung für leichte Fahrlässigkeit pauschal zu beschränken, was gegen § 307 Abs. 1 BGB verstößt, da sie den Kunden unangemessen benachteiligt. Insbesondere die Unterscheidung zwischen wesentlichen und unwesentlichen Pflichten ist vage und könnte als überraschend im Sinne von § 305c BGB ausgelegt werden.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3197",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel beschränkt Schadensersatzansprüche pauschal durch Verweis auf § 9, ohne deren Inhalt offenzulegen. Dies verstößt gegen § 307 BGB (Überraschungsklausel und unangemessene Benachteiligung), da Verbraucher nicht erkennen können, welche Haftung tatsächlich ausgeschlossen oder begrenzt wird. Zudem können Beschränkungen der Gewährleistungshaftung bei Mängeln rechtswidrig sein.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3195",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Diese Klausel regelt die Gefahrübergangsvoraussetzungen und entspricht im Wesentlichen § 447 BGB, wonach die Gefahr auf den Käufer übergeht, wenn dieser in Annahme verzichtet. Die Klausel schließt sich an gesetzliche Regelungen an und enthält keine unangemessene Benachteiligung des Verbrauchers.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3117",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die pauschale Ausschließung aller Schadensersatzansprüche des Käufers ist nach §§ 307, 309 BGB unwirksam. Sie benachteiligt den Käufer unangemessen und verstößt gegen das Transparenzgebot, insbesondere da eine Haftungsbeschränkung für Vorsatz und grobe Fahrlässigkeit nicht zulässig ist. Auch der Ausschluss von Gewährleistungsansprüchen bei Mängeln ist nach § 307 Abs. 3 BGB unangemessen.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3116",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel schränkt die Haftung des Verkäufers rechtswidrig ein. Insbesondere die Haftungsbegrenzung auf den Auftragswert bei Schäden durch grobe Fahrlässigkeit und der pauschale Ausschluss von Mangelfolgeschäden (entgangener Gewinn) verstoßen gegen §§ 307 Abs. 2 Nr. 1 BGB (unangemessene Benachteiligung) und können gegen zwingende Gewährleistungsrechte nach §§ 439-441 BGB verstoßen.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3115",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel versucht, Gewährleistungsansprüche für Mängel auszuschließen, die der Verkäufer nicht zu vertreten hat. Nach § 307 Abs. 1 BGB ist eine Klausel unwirksam, die die Rechte und Pflichten aus dem Kaufvertrag unangemessen benachteiligt. Eine pauschale Ausschlussfrist für alle durch „natürliche Abnutzung",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3113",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel regelt ordnungsgemäß die Rückgabepflicht mangelhafte Ware im Falle einer Ersatzlieferung und verweist auf die gesetzlichen Vorschriften. Sie enthält keine unangemessene Benachteiligung des Käufers und entspricht den kaufrechtlichen Grundsätzen des BGB.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3050",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel verstößt gegen § 309 Nr. 7 BGB, da sie die Haftung für Verletzung unwesentlicher Vertragspflichten bei einfacher Fahrlässigkeit gegenüber Verbrauchern unangemessen benachteiligt. Die Beschränkung auf 'vertragstypischen, unmittelbaren Durchschnittschaden' ist zu vage und entspricht nicht dem gesetzlich zulässigen Standard.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-3003",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel enthält eine zulässige Inspektions- und Rügepflicht für Verbraucher, die transparent auf ihre Freiwilligkeit hinweist und ausdrücklich klarstellt, dass eine Nichtbeachtung keine Auswirkung auf gesetzliche Gewährleistungsansprüche hat. Dies entspricht § 377 HGB und verstößt nicht gegen § 307 BGB.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2984",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel fordert den Kunden lediglich auf, Transportschäden beim Zusteller zu reklamieren und den Verkäufer zu informieren, macht aber explizit deutlich, dass Unterlassung keine nachteiligen Auswirkungen auf gesetzliche oder vertragliche Mängelansprüche hat. Dies ist eine kundenfreundliche Regelung, die keine Haftungsprivilegierung des Verkäufers bewirkt und daher nicht gegen §§ 307-309 BGB verstößt.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2983",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel verweist lediglich auf die zwingenden Vorschriften der gesetzlichen Mängelhaftung (§§ 434-437 BGB) und enthält keine Einschränkung oder Abweichung davon. Ein solcher Verweis ist zulässig und nicht missbräuchlich.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2950",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Haftungsausschlussbedingung für einfache Fahrlässigkeit verstößt gegen § 309 Nr. 7 BGB, der Haftungsausschlüsse für Fahrlässigkeitsschäden bei Sach- und Vermögensschäden unzulässig macht. Eine wirksame Beschränkung ist nur bei Personenschäden zulässig, nicht aber pauschal für 'sonstige Fälle'.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2942",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel verstößt gegen § 439 Abs. 1 BGB, wonach der Käufer das Recht auf Nachbesserung oder Ersatzlieferung hat. Eine einseitige Bestimmung des Unternehmers, die dem Käufer diese Wahlfreiheit entzieht, ist als Haftungsausschluss bzw. -begrenzung gemäß §§ 307, 309 BGB unangemessen benachteiligend und unwirksam.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2858",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel regelt lediglich die Rückzahlungsmodalität und entspricht der gesetzlichen Verpflichtung des Verkäufers nach § 346 Abs. 1 BGB, Rückzahlungen auf demselben Weg vorzunehmen, auf dem die Zahlung erfolgt ist. Sie enthält keine unangemessene Benachteiligung des Kunden.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2853",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel ist wirksam. Sie regelt lediglich, dass eine freiwillige Verkäufergarantie den gesetzlichen Gewährleistungsansprüchen nicht schadet, sondern diese unberührt lässt. Dies entspricht § 443 BGB und ist eine zulässige Klarstellung, die den Verbraucher begünstigt und keine unzulässige Beschränkung von Rechten darstellt.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2852",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel enthält einen unangemessenen Haftungsausschluss, der den Gewährleistungsanspruch des Käufers ohne sachliche Rechtfertigung zu umfassend einschränkt. Insbesondere die Verknüpfung des Gewährleistungsverzichts mit dem Erfordernis des Nachweises durch den Kunden stellt eine Umkehr der Beweislast dar und widerspricht §§ 307, 308 BGB sowie der kaufrechtlichen Regelung des § 437 BGB, wonach Mängelhaftungsrechte nicht pauschal ausgeschlossen werden dürfen.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2851",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel regelt die Untersuchungs- und Rügepflichten von Unternehmerkunden nach §§ 377 ff HGB und ist sachlich angemessen. Die Bestimmung, dass Mängel schriftlich zu rügen sind und die Nichtbeachtung zur Anerkennung führt, entspricht handelsrechtlichen Standards und stellt keine unangemessene Benachteiligung dar, da sie eine objektive Grenze für erkennbare Fehler vorsieht.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2739",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel gewährt Verbrauchern ein freiwilliges, über die gesetzliche Widerrufsfrist hinausgehendes Rückgaberecht und enthält keine unwirksamen AGB-Klauseln. Sie ist transparent, kundenfreundlich, klar geregelt und verstößt nicht gegen §§ 305-310 BGB; die Haftungsregelung für Transportrisiken ist angemessen und nicht unangemessen benachteiligend.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2714",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel unterscheidet angemessen zwischen Kardinalpflichten (mit beschränkter Haftung auf vorhersehbaren, typischen Schaden) und sonstigen Pflichten (mit Haftungsausschluss). Dies entspricht der ständigen Rechtsprechung und ist eine zulässige Differenzierung, die nicht pauschal unangemessen benachteiligt, solange Kardinalpflichten hinreichend bestimmt sind.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2632",
+      "label_void": true,
+      "verdict": "valid",
+      "false_negative": true,
+      "false_positive": false,
+      "reason_de": "Die Klausel differenziert angemessen zwischen Vorsatz/grober Fahrlässigkeit (unbegrenzte Haftung), Kardinalpflichten (Haftung für vorhersehbaren Schaden) und einfacher Fahrlässigkeit (kein Haftungsausschluss). Sie enthält die erforderlichen Ausnahmen für Körperschäden und das ProdHaftG und verstößt nicht gegen die Generalklausel des § 307 BGB.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2631",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel differenziert angemessen zwischen Vorsatz/grober Fahrlässigkeit (vollständige Haftung), Fahrlässigkeit bei Kardinalpflichten (Haftung für vorhersehbaren Schaden) und leichter Fahrlässigkeit bei anderen Pflichten (Haftungsausschluss). Sie wahrt die zwingenden Schutzbestimmungen für Personenschäden (§ 307 Abs. 2 Nr. 2 BGB) und das Produkthaftungsgesetz. Die Formulierung entspricht der höchstrichterlichen Rechtsprechung zu zulässigen Haftungsbegrenzungen.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2478",
+      "label_void": true,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel verstößt gegen § 377 HGB und § 434 BGB, da sie dem Käufer eine unzumutbare Beweislastumkehr auferlegt und die Geltendmachung von Mängelansprüchen an formale Anforderungen knüpft, ohne dass der Verkäufer entsprechend verpflichtet wird. Zudem enthält die Klausel einen grammatikalischen Fehler ('Geneure Informationen'), der auf mangelnde Textqualität hindeutet.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2477",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel benachteiligt den Unternehmer-Kunden unangemessen durch die Verkürzung der Gewährleistungsfrist auf ein Jahr (statt zwei Jahre nach § 476 BGB) und die Rügefrist von 14 Tagen, die extrem kurz ist und zu Beweislastumlagerungen führt. Die Regelung der \"Genehmigung\" bei verspäteter Anzeige ist eine unangemessene Benachteiligung, die gegen § 307 BGB verstößt.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2459",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel regelt die Anwendung von Haftungsbeschränkungen auf Aufwendungsersatzansprüche sachlich nachvollziehbar und verstößt nicht gegen Transparenzanforderungen oder zwingende gesetzliche Bestimmungen des BGB. Eine entsprechende Anwendung von Haftungsbeschränkungen auf verschiedene Schadensersatzarten ist grundsätzlich zulässig.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2364",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel fordert eine Überprüfung und Meldung von Mängeln auf, klärt aber ausdrücklich auf, dass deren Nichtbeachtung keine Auswirkung auf gesetzliche Gewährleistungsansprüche hat. Dies entspricht § 377 HGB und ist transparent sowie verbraucherfreundlich gestaltet.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2363",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel beschränkt sich darauf, die Existenz gesetzlicher Mängelhaftungsrechte zu bestätigen und verstößt nicht gegen AGB-Kontrollbestimmungen. Sie ist transparent und widerspricht weder §§ 305-310 BGB noch dem Kaufrecht.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2345",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel regelt lediglich das Verfahren zur Mängelrüge und verweist auf die Kontaktadresse des Anbieters. Sie enthält keine Einschränkung von Mängelhaftungsrechten nach §§ 437-478 BGB und verstößt nicht gegen § 307 BGB, da sie keine unangemessene Benachteiligung darstellt.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2295",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel entspricht den gesetzlichen Verjährungsfristen des BGB (§ 438 BGB für Verbraucher). Eine Verkürzung unter diese Fristen ist unzulässig, eine Feststellung auf diesem Niveau ist jedoch wirksam.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2254",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel verkürzt die Gewährleistungsfrist für Gebrauchtgeräte auf ein Jahr, was nach § 309 Nr. 9 BGB unangemessen benachteiligend ist. Zudem ist die Regelung zur Anzeige offensichtlicher Mängel innerhalb von zwei Wochen unklar formuliert und könnte als unzulässige Verkürzung der Gewährleistungsrechte ausgelegt werden.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2193",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel regelt lediglich die Ausdehnung von bereits definierten Haftungsgrenzen auf Erfüllungsgehilfen und gesetzliche Vertreter. Dies ist nach § 278 BGB eine natürliche Rechtsfolge und keine unangemessene Benachteiligung. Die Klausel wird als zulässig bewertet, sofern die vorstehenden Haftungsregelungen selbst wirksam sind.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2183",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel enthält mehrere problematische Elemente: (1) Die 14-Tage-Rügefrist für offensichtliche Mängel unterschreitet erheblich die gesetzliche Verjährungsfrist und stellt eine unangemessene Benachteiligung dar; (2) die Ausschließung aller Mängelansprüche bei Nichteinhaltung ist zu streng und sittenwidrig; (3) die einseitige Wahl des Verkäufers zwischen Nacherfüllung und Ersatzlieferung sowie die spätere Einführung einer \"Zeitwertgutschrift\" (anstelle von Schadensersatz oder Minderung) sind unangemessene Abweichungen vom gesetzlichen Gewährleistungsrecht.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2181",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel verweist korrekt auf die gesetzlichen Pflichten des Kaufmanns gemäß § 377 HGB (Untersuchungs- und Rügepflicht). Sie stellt eine zulässige Klarstellung dar, dass bei Nichtbeachtung dieser gesetzlichen Pflichten die Ware als genehmigt gilt, was dem Gesetz entspricht. Eine Benachteiligung liegt nicht vor, da nur gesetzlich vorgesehene Konsequenzen wiederholt werden.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2116",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel entspricht den Anforderungen des § 309 Nr. 12 BGB und § 476 BGB. Sie schließt Verjährungsfristen zu Recht aus für Vorsatz, arglistiges Verschweigen, Garantien, Personenschäden, Produkthaftung, grobe Fahrlässigkeit und Verletzung wesentlicher Vertragspflichten. Die Definition wesentlicher Vertragspflichten ist angemessen und transparent.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2072",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel ist wirksam. Eine Beschränkung der Abtretung von Mängelansprüchen für Nichtverbraucher (B2B) ist zulässig und stellt keine unangemessene Benachteiligung dar. Die Ausnahme für Verbraucher entspricht zudem dem Schutzzweck des BGB.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2066",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel erweitert den Haftungsausschluss aus Absatz 1 auf Vertreter und Erfüllungsgehilfen und ist nach § 278 BGB sowie der Rechtsprechung zur Privilegierungserstreckung zulässig. Sie ist nicht intransparent, unangemessen benachteiligend oder sittenwidrig.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-2028",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel regelt die Gewährleistung bei gebrauchten Waren mit einer Jahresfrist für die Geltendmachung von Mängeln und erhält die gesetzliche Verjährung von zwei Jahren. Wesentlich ist, dass die Einschränkungen nicht für Schäden bei Personenschäden, vorsätzlicher/grober Fahrlässigkeit, Kardinalpflichten und Produkthaftung gelten – diese Ausnahmen sind nach §§ 307-309 BGB erforderlich und schützen den Verbraucher angemessen.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1987",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel sichert ausdrücklich die gesetzlichen Mängelansprüche des Kunden nach §§ 434 ff. BGB zu und schränkt diese nicht ein. Sie ist transparent und mit § 307 BGB vereinbar, da sie den Kunden begünstigt.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1955",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel verstößt gegen § 307 Abs. 1 BGB durch unangemessene Benachteiligung: Die Beschränkung der Haftung bei leichter Fahrlässigkeit auf \"vertragswesentliche Pflichten\" mit nachgelagerter Schadensersatzbegrenzung ist zu pauschal und intransparent formuliert; zudem ist die Haftungsbefreiung für Datenverluste, die durch \"angemessene\" Sicherungsmaßnahmen nicht vermeidbar wären, eine faktische Umkehrung der Beweislast zu Lasten des Verbrauchers.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1923",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel regelt zulässig Garantiebedingungen, Ausschlussbestimmungen und Fristen. Die Ausschlüsse (Nichtbefolgen von Gebrauchsanweisungen, unsachgemäße Handhabung) sind sachlich gerechtfertigt und nicht unangemessen benachteiligend. Der Hinweis auf Gewährleistungsansprüche zeigt Transparenz. Keine AGB-rechtliche Unwirksamkeit erkennbar.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1876",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel ist wirksam. Sie bittet den Kunden um Reklamation bei offensichtlichen Transportschäden beim Zusteller, stellt aber ausdrücklich klar, dass Nichtbeachtung dieser Bitte keine Auswirkungen auf gesetzliche oder vertragliche Mängelansprüche hat. Dies entspricht §§ 434, 437 BGB und stellt keine unwirksame Haftungsbeschränkung dar.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1768",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel entspricht den Anforderungen des § 307 Abs. 2 Nr. 2 BGB und dem gesetzlichen Rahmen des § 276 BGB. Sie haftet unbeschränkt für Vorsatz und grobe Fahrlässigkeit, was nicht dispositiv ausgeschlossen werden kann, sowie für Personenschäden bei leichter Fahrlässigkeit gemäß § 276 Abs. 2 BGB. Die Klausel verstößt nicht gegen Transparenzanforderungen.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1680",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel ist wirksam. Sie unterscheidet zwischen Verbrauchern und Unternehmern und gewährt Verbrauchern das Abtretungsrecht, während sie es für andere ausschließt. Dies entspricht der gesetzlichen Systematik des BGB und stellt eine zulässige Differenzierung dar, die nicht unangemessen benachteiligt.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1679",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel gewährt dem Kunden ausdrücklich, dass seine gesetzlichen Mängelansprüche durch eine Garantie nicht ausgeschlossen oder beschränkt werden. Dies entspricht § 307 Abs. 1 BGB und dem Verbot der Haftungsausschlüsse für Gewährleistungsmängel gem. § 309 Nr. 8 BGB. Die Klausel ist somit rechtmäßig und sogar kundenfreundlich.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1627",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel verweist auf die gesetzlichen Gewährleistungsregelungen des BGB (§§ 433-479 BGB), was eine transparente und für den Verbraucher vorteilhafte Regelung darstellt. Ein solcher Verweis auf gesetzliche Bestimmungen ist nicht zu beanstanden und stellt keine Einschränkung der Verbraucherrechte dar.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1563",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel verweist vollständig auf die zwingenden gesetzlichen Mängelhaftungsvorschriften des BGB (§§ 434-479 BGB) und nimmt keine Beschränkungen, Ausschlüsse oder nachteiligen Modifikationen vor. Dies entspricht den Anforderungen des § 307 Abs. 1 BGB und ist nicht überraschend oder unangemessen benachteiligend.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1526",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel erklärt lediglich, dass die zwingenden Haftungsvorschriften des Produkthaftungsgesetzes (ProdHaftG) unberührt bleiben. Dies ist eine zulässige Klarstellung, die keine Partei benachteiligt und sogar der gesetzlichen Realität entspricht, da diese Vorschriften ohnehin nicht durch AGB abbedungen werden können.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1465",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel schränkt das Zurückbehaltungsrecht des Kunden auf Ansprüche aus demselben Vertragsverhältnis ein. Dies ist eine zulässige Einschränkung, die nicht gegen § 307 BGB verstößt, da sie eine gesetzlich vorgesehene Ausnahme vom Zurückbehaltungsrecht (§ 273 Abs. 2 BGB) konkretisiert und nicht unangemessen benachteiligt.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1423",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel regelt die Gewährleistung transparent und differenziert zwischen Verbrauchern und Unternehmern. Sie hält sich an die gesetzlichen Vorgaben, verkürzt Fristen nur zulässig für Unternehmer und bewahrt vollständig Ansprüche bei Personenschäden, Vorsatz, grober Fahrlässigkeit und Produkthaftung. Die Ausnahmen sind rechtlich zulässig.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1363",
+      "label_void": true,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel verletzt das Gewährleistungsrecht nach deutschem Kaufrecht. Insbesondere die Frist von zwei Monaten zur Mängelanzeige ist unwirksam, da § 377 HGB für Kaufleute und die Gewährleistungsfristen des BGB nicht durch AGB abgeändert werden dürfen. Zudem ist die automatische Verwirkung der Gewährleistungsrechte bei Nicht-Einhaltung der Anzeigefrist unangemessen benachteiligend (§ 307 BGB).",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1272",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel verstößt gegen § 447 BGB (Gefahrübergang beim Versandkauf). Nach deutschem Recht geht das Risiko bei Versendung durch den Verkäufer erst über, wenn der Käufer die Ware erhält, nicht bereits beim Übergang an einen Dritten. Die Regelung benachteiligt den Käufer unangemessen, da dieser bereits Eigentümer ist, aber nicht unmittelbar Besitz hat.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1215",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel regelt das Reklamationsverfahren durch Angabe eines E-Mail-Kontakts und Verweis auf ein ordnungsgemäß veröffentlichtes Verfahren. Sie enthält keine unangemessenen Benachteiligungen des Verbrauchers und verletzt nicht die Gewährleistungsrechte nach deutschem Kaufrecht (§§ 437 ff. BGB). Die Formulierung ist zulässig.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1205",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel versucht, typische Gewährleistungspflichten für digitale Dienstleistungen unangemessen auszuschließen. Sie könnte gegen § 307 BGB verstoßen, da sie Unterbrechungen pauschal als nicht entschädigungspflichtig erklärt, ohne Grenzen (z.B. Dauer, Häufigkeit) zu setzen. Zudem widerspricht sie möglicherweise kaufrechtlichen Mindeststandards, wenn dadurch wesentliche Leistungen betroffen sind.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1129",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel beschränkt die Haftung für Vermögensschäden (entgangener Gewinn, Datenverluste etc.) auf B2B-Verträge mit Unternehmern nach § 14 BGB. Dies ist zulässig, da § 309 Nr. 7 BGB solche Beschränkungen für Unternehmer erlaubt und eine Unangemessenheitsbetrachtung hier nicht greift.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1127",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel beschränkt die Haftung für fahrlässige Verletzung von Kardinalpflichten auf vorhersehbare, typische Schäden und ist damit mit § 307 BGB vereinbar. Sie schließt nicht pauschal aus, sondern differenziert angemessen zwischen verschiedenen Schadensarten und orientiert sich an der Vorhersehbarkeit, was eine bewährte Praxis im AGB-Recht darstellt.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1126",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel entspricht den gesetzlichen Anforderungen des § 309 Nr. 7 BGB. Sie schließt die Haftung für Personenschäden und grobe Fahrlässigkeit nicht aus, sondern nimmt diese ausdrücklich aus. Eine solche Ausnahmeregelung ist zulässig und wirksam.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1045",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel stellt einen zulässigen Haftungsausschluss für fremde Inhalte dar, der sich auf die fehlende Kontrolle und Eigenverantwortung des Betreibers bezieht. Sie ist weder unangemessen benachteiligend noch verstößt sie gegen kaufrechtliche Vorschriften, da sie keine Gewährleistungsrechte unangemessen beschränkt.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-1043",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Eine Vereinbarung einer 24-Monatigen Verjährungsfrist für Mängel bei beweglichen Sachen ist zulässig und entspricht der gesetzlichen Regelverjährung nach § 438 Abs. 1 Nr. 3 BGB. Die Klausel verstößt nicht gegen § 307 BGB und ist wirksam.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-975",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel regelt die Haftung von Erfüllungsgehilfen und Verrichtungsgehilfen nach §§ 278, 831 BGB und ist daher eine zulässige Spezifizierung des Haftungsumfangs. Sie enthält keine unangemessene Benachteiligung und entspricht der ständigen Rechtsprechung zur AGB-Kontrolle von Haftungsausschlüssen.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-974",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die pauschale Ausschließung jeglicher Schadensersatzhaftung verstößt gegen § 309 Nr. 7 BGB. Eine solche Haftungsausschließung ist für Schäden aus der Verletzung des Lebens, des Körpers oder der Gesundheit sowie für Schäden aus grober Fahrlässigkeit und Vorsatz unwirksam. Die Klausel bedarf einer Einschränkung auf zulässige Fälle.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-968",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel ist eine bloße Verweisbestimmung, die auf eine andere Regelung hinweist und keine inhaltliche Beschränkung von Gewährleistungsrechten vornimmt. Sie verstößt nicht gegen §§ 305-310 BGB und ist als sachlich gerechtfertigt zulässig.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-962",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel beschreibt berechtigte Ausnahmefälle von der Gewährleistung für Schäden durch äußere Einflüsse, die nicht vom Verkäufer zu verantworten sind. Dies entspricht dem Gedanken des Kaufrechts (§ 434 BGB) und stellt eine angemessene Risikoverteilung dar, die nicht unangemessen benachteiligt.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-885",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel informiert über die Grenzen der Datenschutzregelung bei Drittseiten-Links und verzichtet auf Haftung für externe Inhalte und Betrieb. Dies ist eine zulässige Klarstellung, da der Shop nicht für fremde Websites verantwortlich ist und keine unangemessene Haftungsfreizeichnung darstellt.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-862",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel entspricht den Anforderungen des deutschen AGB-Rechts, da sie Verbraucherrechte nicht beschränkt, sondern ausdrücklich bestätigt und sogar eine Salvatoriumsklausel enthält, wonach abweichende Regelungen zugunsten des Verbrauchers unwirksam sind. Dies ist mit §§ 307, 308 BGB vereinbar.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-849",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel versucht, die Gewährleistungsrechte des Käufers unangemessen zu beschränken. Nach §§ 434-445 BGB bleiben Mängelgewährleistungsrechte auch nach Übergang der Gefahr bestehen; Schäden durch Transport oder Lagerung fallen typischerweise unter die Gewährleistung und können nicht vollständig ausgeschlossen werden. Die pauschale Haftungsfreistellung für Verlust oder Beschädigung nach Annahme widerspricht den zwingenden Vorschriften des Kaufrechts.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-820",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel versucht, die Haftung für Schäden durch Internetnutzung pauschal auszuschließen und beschränkt die Haftung nur auf Fälle fehlender Sorgfalt des Betreibers. Dies verstößt gegen § 307 Abs. 1 BGB, da sie den Auftraggeber unangemessen benachteiligt, indem sie auch Haftung für grobe Fahrlässigkeit und Vorsatz ausschließt. Eine wirksame Haftungsausschlussnorm muss differenzieren und zumindest Haftung für Vorsatz und grobe Fahrlässigkeit bewahren.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-811",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel stellt eine wortgetreue Wiedergabe der gesetzlichen Gewährleistungsbestimmungen gemäß §§ 434 BGB dar und informiert den Käufer über seine Rechte. Sie enthält keine unangemessenen Benachteiligungen und ist daher wirksam.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-810",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel ist eine bloße informative Hinweisklausel, die den Verbraucher auf sein gesetzliches Gewährleistungsrecht nach deutschem Recht (§§ 434 ff. BGB) aufklärt. Sie stellt keine belastende Allgemeine Geschäftsbedingung dar, die zur Unwirksamkeitsprüfung nach §§ 305-310 BGB führt, sondern erfüllt eine Informationspflicht und ist somit wirksam und zulässig.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-797",
+      "label_void": true,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel ist unwirksam, da sie eine unangemessene Benachteiligung des Verbrauchers darstellt. Die pauschale Androhung von \"Diebstahlsklagen\" bei Nichtzahlung ist rechtsmissbräuchlich und irreführend, da Nichtbezahlung kaufrechtlich kein Diebstahl ist. Dies verstößt gegen § 307 Abs. 1 BGB (Überraschungsklausel und unangemessene Benachteiligung) sowie gegen das Transparenzgebot.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-653",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel ist wirksam, da sie die zwingenden Haftungsregeln des deutschen Rechts beachtet. Nach § 307 Abs. 2 Nr. 1 BGB und § 309 Nr. 7 BGB darf die Haftung für Vorsatz und grobe Fahrlässigkeit nicht ausgeschlossen werden. Die Klausel gewährt sogar unbeschränkte Haftung für diese Fälle, was über die gesetzlichen Mindestvorgaben hinausgeht und daher zulässig ist.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-608",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel verzichtet unangemessen auf die Gewährleistung der Ersatzteilversorgung und verstößt gegen deutsches Recht, da sie sich unzulässig auf französisches Recht beruft. Sie ist außerdem zu unbestimmt (\"sein Bestes tun\") und widerspricht der Dauerhaftigkeit von Waren gemäß § 434 BGB sowie AGB-Richtlinien für Gewährleistungsrechte.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-522",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel entspricht den Anforderungen des § 307 BGB und ist zulässig. Sie schließt Haftung für leichte Fahrlässigkeit aus, bewahrt aber ausdrücklich Garantien, vertragswesentliche Pflichten, Schadensersatz für Personenschäden und Produkthaftungsansprüche. Dies entspricht der ständigen Rechtsprechung und ist nicht unangemessen benachteiligend.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-482",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel ist wirksam, da sie die gesetzlichen Gewährleistungsrechte nach §§ 434-443 BGB vollständig erhält und nicht beschränkt. Die Aufforderung zur sofortigen Reklamation mit ausdrücklicher Klarstellung, dass deren Versäumnis keine Konsequenzen für gesetzliche Ansprüche hat, verstößt nicht gegen § 307 BGB. Die Garantieansprüche werden ausdrücklich als unbeschadet der gesetzlichen Rechte bezeichnet.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-416",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel entspricht § 307 BGB und schränkt die Haftung zulässig ein. Sie wahrt die zwingende Haftung für Personenschäden (§ 309 Nr. 7a BGB) und Produkthaftung, differenziert angemessen zwischen Vorsatz/grober Fahrlässigkeit und vertragswesentlichen Pflichten und orientiert sich an der Rechtsprechung zur vertragstypischen Vorhersehbarkeit.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-353",
+      "label_void": true,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel verstößt gegen § 357 Abs. 3 BGB, da sie dem Verbraucher unzulässig nur Gutschrift statt Rückzahlung in echtem Geld anbietet. Das Gesetz sieht vor, dass der Online-Shop die Gegenleistung in gleicher Weise wie die ursprüngliche Zahlung zurückerstatten muss, nicht durch einseitige Gutschriftgewährung.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-328",
+      "label_void": true,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel enthält eine unzulässige Verkürzung der Gewährleistungsfrist. Nach § 438 Abs. 1 Nr. 3 BGB beträgt die Gewährleistungsfrist für Verbrauchsgüterkauf zwei Jahre; eine Verkürzung auf zwei Wochen nach Feststellung eines Mangels verstößt gegen § 309 Nr. 9 BGB und ist unwirksam. Die Rückausnahmeklausel ('sonstige Rechte bleiben unberührt') kann diese Unwirksamkeit nicht heilen.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-197",
+      "label_void": true,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die pauschale Haftungsausschließung für Personenschäden verstößt gegen § 309 Nr. 7 BGB, da sie den Haftungsausschluss für Schäden aus Verletzung des Lebens, des Körpers oder der Gesundheit nicht zulässt. Die Beschränkung auf grobe Fahrlässigkeit/Vorsatz bei sonstigen Schäden kann zulässig sein, bedarf aber der Einzelfallbewertung.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-188",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel schließt die Haftung für Schäden aus, die der Verkäufer selbst zu vertreten hat (fehlerhafte Eingabeverarbeitung). Dies verstößt gegen § 309 Nr. 7 BGB, da eine Haftung für grobe Fahrlässigkeit und Vorsatz nicht ausgeschlossen werden darf. Zudem kann eine einseitige Verantwortlichkeit des Kunden für Eingabefehler unangemessen benachteiligend wirken.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-186",
+      "label_void": false,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": true,
+      "reason_de": "Die Klausel versucht, die Haftung für Fehler von Zulieferern und Fremd-Ticketsystemen pauschal auszuschließen. Dies verstößt gegen § 307 Abs. 1 BGB, da der Anbieter sich seiner Verantwortung für seine Leistungserbringung und die Auswahl von Subunternehmern entzieht. Eine Haftung für Unterbringung und Anreise Dritter kann zwar ausgeschlossen werden, doch bedarf die Gesamtklausel einer Konkretisierung zur Wirksamkeit.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-152",
+      "label_void": true,
+      "verdict": "potentially_void",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel ist unangemessen vage und verstößt gegen § 307 Abs. 1 BGB. Sie nennt keine konkreten Haftungsausschlüsse oder -beschränkungen und verstößt damit gegen das Transparenzgebot. Eine wirksame Klausel müsste differenzieren zwischen verschiedenen Schadensarten (z.B. Personenschäden, Sachschäden, Vermögensschäden) und konkret regeln, welche Haftung ausgeschlossen ist.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-118",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel entspricht den zwingenden Vorgaben des § 307 Abs. 2 Nr. 8 BGB und § 309 Nr. 7 BGB. Sie gewährleistet, dass die Haftung für Personenschäden (Leben, Körper, Gesundheit) bei fahrlässiger Pflichtverletzung und für grobe Fahrlässigkeit sowie Vorsatz umfassend erhalten bleibt, was mit der gesetzlichen Unwirksamkeit von Haftungsbeschränkungen in diesen Fällen konform ist.",
+      "error": null,
+      "in_dataset": true
+    },
+    {
+      "clause_id": "agb-110",
+      "label_void": false,
+      "verdict": "valid",
+      "false_negative": false,
+      "false_positive": false,
+      "reason_de": "Die Klausel regelt zulässige Nutzungspflichten und Verbote für die Website-Nutzung. Sie untersagt Passwortmissbrauch, schädliche Inhalte und unbefugte Modifizierungen - dies sind angemessene Schutzmaßnahmen für die Betriebssicherheit und entsprechen dem Schutzzweck des Systems, ohne die Nutzer unangemessen zu benachteiligen.",
+      "error": null,
+      "in_dataset": true
+    }
+  ]
+}
