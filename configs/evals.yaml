@@ -1,0 +1,29 @@
+# Evaluation harness configuration, Phase 3 onwards.
+# Not part of any store's lineage; it configures measurement, not data.
+
+baseline:
+  # Deliberately cheap and deliberately simple. The baseline exists to be
+  # beaten - a strong one-shot classifier would make Phase 4's improvement
+  # harder to read, not more impressive.
+  provider: anthropic
+  model: claude-haiku-4-5-20251001
+  max_output_tokens: 400
+
+run:
+  # Comparisons happen on dev: 419 clauses, 31 void. The held-out half has 8
+  # void clauses, where one clause either way moves recall by 0.125 - that is
+  # noise, so it gets a single confirmation run per phase, not iteration.
+  default_split: dev
+  max_concurrency: 8
+  # Langfuse experiment name. Runs within it are compared to each other, so
+  # the baseline and the Phase 4 agent share it.
+  experiment: agb-void-classification
+
+scoring:
+  # An "uncertain" verdict is not a void call, so by default it costs recall.
+  # Phase 6 routes these to a human; until then abstaining is not free.
+  uncertain_counts_as_void: false
+
+dataset:
+  # Published by P2 step 2.5. Held-out only; dev labels stay on disk.
+  held_out: agb-de-lw-test-v1

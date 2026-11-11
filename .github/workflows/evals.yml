@@ -1,0 +1,81 @@
+name: evals
+
+# The Phase 3 gate asks for a CI job that reruns the suite whenever a prompt or
+# the agent changes. Path-filtered rather than run on every push, because each
+# run costs money and most commits cannot affect a verdict.
+on:
+  push:
+    paths:
+      - "evals/**"
+      - "app/**"
+      - "configs/evals.yaml"
+      - ".github/workflows/evals.yml"
+  pull_request:
+    paths:
+      - "evals/**"
+      - "app/**"
+      - "configs/evals.yaml"
+      - ".github/workflows/evals.yml"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+
+      # Scorers and parsing are pure, so they are checked with no keys and no
+      # spend. This part must pass on a fork PR too.
+      - name: Harness unit tests
+        run: uv run pytest -q tests/test_scorers.py tests/test_baseline.py
+
+      # A fork PR has no secrets. Skipping loudly beats failing on something
+      # the contributor cannot fix.
+      - name: Check for credentials
+        id: creds
+        run: |
+          if [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ] && [ -n "${{ secrets.LANGFUSE_SECRET_KEY }}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No eval credentials in this context; the live smoke run was skipped."
+          fi
+
+      # 40 dev clauses, not the full 419: enough to catch a broken prompt, a
+      # changed response format or a harness regression. The gate number comes
+      # from `make baseline-held-out`, run deliberately, not from CI.
+      - name: Live smoke run
+        if: steps.creds.outputs.available == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
+        run: uv run python -m evals.run_baseline --split dev --limit 40
+
+      - name: Fail on widespread task failures
+        if: steps.creds.outputs.available == 'true'
+        run: |
+          uv run python - <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          report = json.loads(Path("reports/p3_baseline_dev.json").read_text())
+          failures, items = len(report["failures"]), report["metrics"]["items"]
+          rate = failures / items if items else 1.0
+          print(f"{failures}/{int(items)} items failed to produce a verdict ({rate:.1%})")
+          # Not a quality gate - a prompt or schema change that stops the model
+          # answering at all is what this catches.
+          if rate > 0.1:
+              sys.exit(f"task failure rate {rate:.1%} exceeds 10%")
+          PY
+
+      - name: Upload the run report
+        if: steps.creds.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: baseline-dev-report
+          path: reports/p3_baseline_dev.json

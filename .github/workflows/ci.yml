@@ -15,5 +15,6 @@ jobs:
       - run: uv sync --all-extras
       - run: make check
 
-# Evals are deliberately NOT in CI yet: they need API keys and cost money per run.
-# They join this workflow in Phase 3, once there is a baseline to regress against.
+# Live evals run in .github/workflows/evals.yml, path-filtered to changes that can
+# actually affect a verdict. `make check` here covers the harness's pure logic -
+# scorers, prompt rendering and answer parsing - on every push, with no spend.
