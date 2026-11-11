@@ -18,20 +18,19 @@ pipelines = [
     "pyarrow>=17.0",
     "requests>=2.32",
     "lxml>=5.3",
-    "openai>=1.54",
     "qdrant-client>=1.12",
     "prefect>=3.1",
     "psycopg[binary]>=3.2",
     "langfuse>=2.53",
 ]
 local-embeddings = [
-    # Only needed to A/B bge-m3 against the OpenAI model in Phase 1.
+    # Only needed to A/B bge-m3 against the hosted embedding model in Phase 1.
     "sentence-transformers>=3.3",
 ]
 app = [
     "langgraph>=0.2",
-    "langchain-openai>=0.2",
-    "openai>=1.54",
+    "langchain-anthropic>=0.3",
+    "anthropic>=0.40",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "langfuse>=2.53",
@@ -39,6 +38,7 @@ app = [
     "psycopg[binary]>=3.2",
 ]
 evals = [
+    "anthropic>=0.40",
     "langfuse>=2.53",
     "scikit-learn>=1.5",
 ]

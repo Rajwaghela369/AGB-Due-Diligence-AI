@@ -35,7 +35,7 @@ siblings and may not import each other, pipelines write the stores, the app read
 ## Getting started
 
 ```bash
-cp .env.example .env     # fill in OPENAI_API_KEY and the Langfuse keys
+cp .env.example .env     # fill in ANTHROPIC_API_KEY and the Langfuse keys
 make install
 make smoke               # Phase 0 gate
 ```
@@ -62,5 +62,5 @@ Phase 4 experiment.
 
 Python 3.12, uv, LangGraph, FastAPI, Qdrant Cloud for vectors, Neon Postgres for
 tables, Prefect Cloud for pipeline orchestration and run observability, Jina for
-embeddings, OpenAI for the router and judge models, and Langfuse (Cloud EU) for traces,
+embeddings, Anthropic (Claude) for the router, judge and baseline models, and Langfuse (Cloud EU) for traces,
 prompts, datasets and scores.

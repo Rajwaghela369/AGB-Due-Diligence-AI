@@ -3,14 +3,12 @@
 models:
   # Two slots on purpose: routing is cheap classification, judging needs reasoning.
   router:
-    provider: openai
-    name: gpt-4o-mini
-    temperature: 0
-  judge:
-    provider: openai
-    name: gpt-4o
-    temperature: 0
-
+    provider: anthropic
+    name: claude-haiku-4-5-20251001
+    judge:
+    provider: anthropic
+    name: claude-sonnet-5
+  
 agent:
   max_retrieval_retries: 1
   confidence_uncertain_below: 0.6
