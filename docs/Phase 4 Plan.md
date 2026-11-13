@@ -89,14 +89,32 @@ somewhere permanent.
 - `load_clauses(split=None) -> list[Clause]` reads Neon `clauses` via `core.db` and calls
   `assert_no_labels(columns, "clauses table at read")` — the third assertion of the
   invariant that `docs/Phase 2 Results.md` promises. Now actually true.
-- `verdicts` table keyed `(run_id, clause_id)`, columns matching
-  `core.schemas.VerdictRecord`: `verdict`, `legal_basis text[]`, `reason_de`,
-  `confidence`, `lawyer_decision` (null until Phase 6), `langfuse_trace_id`. Upsert, so a
-  rerun converges.
+- `clauses` gains a `content_hash` column: `sha256` of the clause text after whitespace
+  collapse and Unicode NFC, and nothing more. The 523 AGB-DE rows keep `agb-NNN` as their
+  stable external id; the hash is the dedup key the storage design below builds on. Writing
+  it also tells us how many exact-duplicate clauses the corpus holds (Phase 2 found 11
+  across the split; `agb-2808` and `agb-3123` are one example).
+- `verdicts` table keyed **`(clause_id, agent_version)`**, with `run_id` as a plain column.
+  Other columns match `core.schemas.VerdictRecord`: `verdict`, `legal_basis text[]`,
+  `reason_de`, `confidence`, `lawyer_decision` (null until Phase 6), `langfuse_trace_id`.
+  Upsert on the key, so the same agent version judging the same clause converges, and a
+  new version writes beside the old rather than over it — verdicts are superseded, never
+  overwritten.
+- `agent_version` is `core.config.config_hash` over everything that can change a verdict:
+  both prompt versions, both model ids, the retrieval policy block, and the index's own
+  `config_hash`. Same pattern the index already uses, one level up.
 - Tests with the fake-connection pattern from `tests/test_publish.py`.
 
 **Done when:** the loader returns 523 `Clause` objects with no label field reachable; a
-`VerdictRecord` round-trips.
+`VerdictRecord` round-trips; two writes with the same `(clause_id, agent_version)` leave
+one row.
+
+**Why this key, and what it buys later.** Keying verdicts on content and agent version
+makes the table a cache: a clause this version of the agent has already judged is served
+from Postgres with no LLM call. The 523 eval clauses are the first beneficiaries — rerunning
+an unchanged agent costs nothing — but the real payoff is the upload path in Phase 5, where
+the same template keeps coming back with small edits. The storage design that completes
+this is recorded below so it is decided once.
 
 ### 4.4 · Prompts in Langfuse, grounding enforced by schema
 
@@ -198,6 +216,52 @@ it is not.
 through, and whether they are the same three the baseline missed and Phase 2 had already
 doubted (`agb-1464`, `agb-1607`, `agb-3490`).
 
+## Storage design for the upload path (decided here, built in Phase 5)
+
+The question that prompted this: if someone uploads the same contract again and again, the
+naive design stores it again and again, and judges it again and again. The answer is
+**content-addressed storage** — identify documents and clauses by a hash of their text,
+not by when they arrived. It is how git stores files, and it fits this problem exactly.
+
+```
+uploads            who uploaded what, when            one row per upload EVENT
+   │ many → one
+documents          document_id = sha256(normalised full text)
+   │ one → many
+document_clauses   (document_id, position, clause_id)  the order within a document
+   │ many → one
+clauses            clause_id = sha256(normalised clause text)   ← content_hash from 4.3
+   │ one → many
+verdicts           (clause_id, agent_version) → verdict, legal_basis, reason, …
+```
+
+Four things fall out of hashing, none of which needs extra code:
+
+1. **Re-uploading an identical contract stores nothing new.** Same text, same
+   `document_id`, document already present. A new `uploads` row keeps the audit trail
+   (who, when); zero new clause rows; zero LLM calls.
+2. **Identical clauses across shops are stored once.** `agb-2808` and `agb-3123` are
+   word-for-word the same clause in two contracts; they become one `clauses` row with two
+   `document_clauses` references.
+3. **Verdicts are a cache.** A clause this `agent_version` has already judged is answered
+   from the table — instant and free. A re-uploaded contract gets its whole risk table back
+   in milliseconds.
+4. **An edited contract re-judges only what changed.** Fifty unchanged clauses hash to
+   existing ids and reuse their verdicts; the three reworded ones are judged. In due
+   diligence, where the same template returns with small edits, this is the real saving.
+
+**Normalisation — the one place to be careful.** Hash after collapsing whitespace and
+applying Unicode NFC, and nothing else. Over-normalise and clauses that differ in a word
+that matters merge — "nur bei Vorsatz" and "nur bei Vorsatz und grober Fahrlässigkeit" are
+different clauses with different verdicts. Under-normalise and a stray double space defeats
+the dedup.
+
+**Sequencing.** 4.3 adds `content_hash` to `clauses` and keys `verdicts` on
+`(clause_id, agent_version)`, so the two tables that exist today are already in the right
+shape. `uploads`, `documents` and `document_clauses` wait for Phase 5, when something can
+actually write to them — building tables with no writer is how schemas drift. Phase 7's PDF
+splitter writes into the same tables; nothing here changes for it.
+
 ## Open decisions — to settle before 4.1
 
 1. **The router must not read `input.topics`.** The eval items carry `topics` from
@@ -222,8 +286,8 @@ packages/core/retrieval.py         new   4.1
 configs/app.yaml                   edit  4.1, 4.2  (retrieval policy block)
 configs/kb.yaml                    edit  4.1       (retrieval block removed)
 pipelines/p1_kb/s5_check_retrieval.py  edit  4.1  (calls core.retrieval)
-app/agent/clauses.py               new   4.3
-app/agent/verdicts.py              new   4.3
+app/agent/clauses.py               new   4.3       (+ content_hash on the clauses table)
+app/agent/verdicts.py              new   4.3       (keyed clause_id + agent_version)
 app/agent/prompts.py               new   4.4
 app/agent/prompts/*.md             new   4.4       (offline fallbacks)
 scripts/seed_prompts.py            new   4.4
