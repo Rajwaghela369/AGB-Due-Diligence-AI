@@ -13,6 +13,7 @@ due diligence area.
 - `docs/Phase 1 Results.md` - knowledge base numbers, what the spikes settled, limitations
 - `docs/Phase 2 Results.md` - clause counts, the flag-not-drop decisions, answer-key caveats
 - `docs/Phase 3 Results.md` - the baseline to beat, and why recall is the unstable half
+- `docs/Phase 4 Plan.md` - the agent, step by step, and the three decisions it waits on
 
 ## Layout
 
