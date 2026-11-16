@@ -57,8 +57,9 @@ class FeedbackService:
                 )
             )
 
-        previous = self.store.feedback.for_review(request.review_id).get(request.position)
-        if previous is not None and previous.feedback_id == feedback_id:
+        # By id, not "latest for the clause": a newer decision-derived row has its own id.
+        previous = self.store.feedback.get(feedback_id)
+        if previous is not None:
             for step in previous.observations.keys() - set(steps):
                 self._delete_score(feedback_id, step)
 
