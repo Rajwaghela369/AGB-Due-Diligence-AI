@@ -1,21 +1,55 @@
 # Runtime configuration for the agent. Not part of the index lineage.
 
 models:
-  # Two slots on purpose: routing is cheap classification, judging needs reasoning.
   router:
-    provider: anthropic
-    name: claude-haiku-4-5-20251001
-    judge:
-    provider: anthropic
-    name: claude-sonnet-5
-  
+    provider: jina
+    name: jina-embeddings-v3
+  # The judge runs on the Decisions API: typed questions, calibrated
+  # probabilities, zero output tokens. Model id verified from
+  # aistudio.google.com/docs/decisions-api.
+  judge:
+    provider: gemini
+    name: gemini-decision-1
+  # The Decisions API cannot generate text, so the German reasoning needs one
+  # short generating call - and only on potentially_void verdicts, which is
+  # ~30% of clauses. Without it there is no error analysis.
+  explain:
+    provider: gemini
+    # Confirmed available by the Gemini API on this project's key.
+    name: gemini-3.8-flash
+    max_output_tokens: 300
+
+prompts:
+  # Evaluation runs use a labelled Langfuse version. Promote a version to
+  # `production` once an evaluation run shows it is worth keeping.
+  label: evaluation
+
+retrieval:
+  # No-router retrieval measured primary@5 0.258, below the current 0.355.
+  # Keep the cheap Jina router (models.router) and force AGB-control
+  # paragraphs into every set.
+  top_k: 10
+  always_include_topics: [general]
+  always_include_paragraphs: [305, 305a, 305b, 305c, 306, 306a, 307, 308, 309, 310]
+  # How many hits to read before cutting to top_k; deep enough to see where a
+  # miss actually ranked.
+  search_depth: 20
+
 agent:
-  max_retrieval_retries: 1
+  # A noul answer is the calibrated probability that the statement holds, and
+  # the API clamps it to 0.01-0.99 - so no threshold at or above 0.99 can ever
+  # fire.
+  void_threshold: 0.5
+  basis_threshold: 0.5
+  # Confidence comes from the API rather than a model self-reporting a number,
+  # which is what makes this threshold meaningful.
   confidence_uncertain_below: 0.6
+  max_retrieval_retries: 1
+  explain_enabled: true
 
 store:
   # The app reads the ALIAS, never a versioned collection directly.
-  # The manifest behind it is asserted at startup.
+  # The manifest behind it is asserted on first use.
   backend: qdrant
   alias: bgb_agb
 
