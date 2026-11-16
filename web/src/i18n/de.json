@@ -52,5 +52,87 @@
       "valid": "{{count}} wirksam",
       "out": "{{count}} außerhalb des Umfangs"
     }
+  },
+  "findings": {
+    "title": "Fundstellen",
+    "filter": "Filter",
+    "filters": {
+      "void": "Unwirksam",
+      "review": "Prüfen",
+      "all": "Alle"
+    },
+    "confidence": {
+      "high": "Hohe Sicherheit",
+      "medium": "Mittlere Sicherheit",
+      "low": "Geringe Sicherheit"
+    },
+    "empty": "Keine Fundstellen in dieser Ansicht.",
+    "waiting": "Die ersten Ergebnisse erscheinen gleich.",
+    "failedHint": "Konnte nicht geprüft werden — Wiederholen unter „Technische Details“.",
+    "activity": "Aktivität",
+    "activityEmpty": "Noch keine Änderungen seit dem Öffnen.",
+    "step": {
+      "queued": "wartet",
+      "checking": "wird geprüft",
+      "done": "geprüft",
+      "failed": "fehlgeschlagen",
+      "out_of_scope": "außerhalb des Prüfumfangs"
+    }
+  },
+  "drawer": {
+    "close": "Schließen",
+    "description": "Details zur ausgewählten Klausel mit Rechtsgrundlage, Begründung und Rückmeldung.",
+    "clause": "Klausel",
+    "confidence": "Sicherheit",
+    "legalBasis": "Rechtsgrundlage",
+    "noBasis": "Keine Rechtsgrundlage angegeben.",
+    "statuteLoading": "Gesetzestext wird geladen …",
+    "statuteError": "Der Gesetzestext konnte nicht geladen werden.",
+    "statuteSource": "Quelle öffnen",
+    "reasoning": "Begründung",
+    "reasonUnavailable": "Begründung nicht verfügbar",
+    "noVerdict": "Für diese Klausel liegt noch kein Urteil vor.",
+    "technical": "Technische Details",
+    "confidenceNumeric": "Sicherheit (Zahlenwert)",
+    "candidates": "Kandidaten und Scores",
+    "noCandidates": "Keine Kandidaten.",
+    "retry": "Erneut prüfen",
+    "retryError": "Die Wiederholung konnte nicht gestartet werden.",
+    "trace": "Trace in Langfuse"
+  },
+  "feedback": {
+    "prompt": "War diese Einschätzung hilfreich?",
+    "up": "Hilfreich",
+    "down": "Nicht hilfreich",
+    "sentUp": "Hilfreich",
+    "sentDown": "Nicht hilfreich",
+    "error": "Rückmeldung konnte nicht gespeichert werden.",
+    "reasons": "Was war falsch?",
+    "reason": {
+      "verdict_wrong": "Urteil falsch",
+      "basis_wrong": "§ falsch/fehlt",
+      "reasoning_unclear": "Begründung unklar",
+      "clause_cut": "Klausel falsch geschnitten"
+    },
+    "correctVerdict": "Richtiges Urteil",
+    "chooseVerdict": "Bitte wählen",
+    "verdict": {
+      "valid": "Wirksam",
+      "potentially_void": "Potenziell unwirksam",
+      "uncertain": "Zu prüfen"
+    },
+    "correctBasis": "Richtiger oder fehlender §",
+    "basisPlaceholder": "z. B. § 309 Nr. 7 BGB",
+    "comment": "Kommentar (optional)",
+    "send": "Senden",
+    "cancel": "Abbrechen",
+    "steps": "Bewertung einzelner Schritte",
+    "step": {
+      "clause_span": "Klauselschnitt",
+      "retrieval": "Rechtsgrundlagen-Suche",
+      "judge": "Urteil",
+      "explanation": "Begründung"
+    },
+    "stepDown": "Schritt „{{step}}“ negativ bewerten"
   }
 }
