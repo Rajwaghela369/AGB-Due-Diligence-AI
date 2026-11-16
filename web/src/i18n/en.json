@@ -202,5 +202,43 @@
       "medium": "Medium",
       "low": "Low"
     }
+  },
+  "viewer": {
+    "toolbar": "Document tools",
+    "loading": "Loading document …",
+    "loadError": "The document could not be loaded.",
+    "page": "Page {{page}} of {{total}}",
+    "clause": "Clause {{name}}: {{state}}",
+    "retry": "Retry",
+    "retrying": "Retrying …",
+    "retryClause": "Check clause {{name}} again",
+    "search": {
+      "label": "Search the document",
+      "placeholder": "Search …",
+      "none": "No matches",
+      "position": "{{current}} / {{count}}",
+      "next": "Next match",
+      "previous": "Previous match"
+    },
+    "nav": {
+      "label": "Findings",
+      "position": "{{current}} / {{total}}",
+      "next": "Next finding",
+      "previous": "Previous finding"
+    },
+    "zoom": {
+      "label": "Zoom",
+      "in": "Zoom in",
+      "out": "Zoom out",
+      "reset": "Zoom {{percent}} % – reset to 100 %"
+    },
+    "steps": {
+      "label": "Review progress",
+      "upload": "Upload",
+      "read": "Read",
+      "split": "Split",
+      "done": "done",
+      "check": "Checking {{done}}/{{total}}"
+    }
   }
 }
