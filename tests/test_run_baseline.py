@@ -18,9 +18,11 @@ from evals.run_baseline import (
     run_config,
 )
 
+# v1 runs the baseline on Gemini so both sides of the comparison share a
+# provider. `name` rather than `model`, because that is the key core.llm reads.
 MODEL = {
-    "provider": "anthropic",
-    "model": "claude-haiku-4-5-20251001",
+    "provider": "gemini",
+    "name": "gemini-3.8-flash",
     "max_output_tokens": 400,
 }
 
@@ -35,7 +37,7 @@ def test_the_real_configs_satisfy_every_key_this_module_reads():
 def test_load_config_accepts_the_committed_configs():
     config, eval_config = load_config()
 
-    assert config["baseline"]["model"]
+    assert config["baseline"]["name"]
     assert eval_config["splits"]["dev"] == "train"
 
 
@@ -72,8 +74,8 @@ def test_run_config_spreads_the_model_block():
     # the YAML and this dict still asked for it.
     config = run_config(MODEL, "abc123def456", "dev", 419)
 
-    assert config["model"] == "claude-haiku-4-5-20251001"
-    assert config["provider"] == "anthropic"
+    assert config["name"] == "gemini-3.8-flash"
+    assert config["provider"] == "gemini"
     assert config["max_output_tokens"] == 400
     assert config["prompt_sha"] == "abc123def456"
     assert config["split"] == "dev"
@@ -94,4 +96,4 @@ def test_run_config_does_not_reference_a_removed_setting():
 
 def test_the_configured_model_matches_what_the_tests_assume():
     # Catches a model rename in YAML that the baseline tests would miss.
-    assert load_yaml(CONFIGS / "evals.yaml")["baseline"]["model"] == MODEL["model"]
+    assert load_yaml(CONFIGS / "evals.yaml")["baseline"]["name"] == MODEL["name"]

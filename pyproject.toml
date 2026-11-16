@@ -31,6 +31,7 @@ app = [
     "langgraph>=0.2",
     "langchain-anthropic>=0.3",
     "anthropic>=0.40",
+    "google-genai>=3.2",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "langfuse>=2.53",
@@ -39,6 +40,7 @@ app = [
 ]
 evals = [
     "anthropic>=0.40",
+    "google-genai>=3.2",
     "langfuse>=2.53",
     "scikit-learn>=1.5",
 ]

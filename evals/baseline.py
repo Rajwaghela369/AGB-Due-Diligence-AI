@@ -12,7 +12,8 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from anthropic import Anthropic
+from core.budget import RequestBudget
+from core.llm import complete
 from core.logging import get_logger
 from core.schemas import Verdict
 from pydantic import BaseModel, ValidationError
@@ -59,7 +60,7 @@ def answer_schema() -> dict[str, Any]:
     cannot drift apart.
     """
     schema = BaselineAnswer.model_json_schema()
-    # Anthropic wants a closed object with every property required.
+    # Both providers want a closed object with every property required.
     schema["additionalProperties"] = False
     schema["required"] = sorted(schema["properties"])
     return schema
@@ -72,6 +73,8 @@ class BaselineOutput:
     confidence: float
     raw: str
     error: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 def render_user_prompt(clause: dict[str, Any]) -> str:
@@ -107,39 +110,58 @@ def parse_answer(content: str) -> BaselineOutput:
     return BaselineOutput(answer.verdict, answer.reason_de, answer.confidence, content)
 
 
-def classify(clause: dict[str, Any], client: Anthropic, model: dict[str, Any]) -> BaselineOutput:
-    try:
-        response = client.messages.create(
-            model=model["model"],
-            max_tokens=model["max_output_tokens"],
-            # Anthropic takes the system prompt as its own parameter rather
-            # than as a message.
-            system=SYSTEM_PROMPT,
-            # The API rejects a reply that does not match the schema, so a
-            # malformed verdict is impossible rather than merely detected.
-            # `temperature` is not a parameter of this API version.
-            output_config={"format": {"type": "json_schema", "schema": answer_schema()}},
-            messages=[{"role": "user", "content": render_user_prompt(clause)}],
-        )
-    except Exception as exc:  # noqa: BLE001 - a failed call is data, not a crash
-        log.warning("classification failed for %s: %s", clause.get("clause_id"), exc)
-        return BaselineOutput(None, "", 0.0, "", f"{type(exc).__name__}: {exc}")
+def classify(
+    clause: dict[str, Any],
+    model: dict[str, Any],
+    budget: RequestBudget | None = None,
+    client: Any = None,
+) -> BaselineOutput:
+    """One call through the provider layer, so the baseline runs on any provider.
 
-    text = "".join(block.text for block in response.content if block.type == "text")
-    return parse_answer(text)
+    The v1 comparison needs both sides on the same provider; routing through
+    `core.llm.complete` is what lets configs/evals.yaml decide which.
+    """
+    answer = complete(
+        system=SYSTEM_PROMPT,
+        user=render_user_prompt(clause),
+        schema=answer_schema(),
+        model=model,
+        budget=budget,
+        client=client,
+    )
+    if answer.error:
+        log.warning("classification failed for %s: %s", clause.get("clause_id"), answer.error)
+        return BaselineOutput(None, "", 0.0, answer.text, answer.error)
+
+    parsed = parse_answer(answer.text)
+    return BaselineOutput(
+        parsed.verdict,
+        parsed.reason_de,
+        parsed.confidence,
+        parsed.raw,
+        parsed.error,
+        answer.input_tokens,
+        answer.output_tokens,
+    )
 
 
-def task(client: Anthropic, model: dict[str, Any]):
+def task(model: dict[str, Any], budget: RequestBudget | None = None, client: Any = None):
     """Build the task function langfuse.run_experiment calls per item."""
 
     def run(*, item: Any, **_: Any) -> dict[str, Any]:
         clause = item["input"] if isinstance(item, dict) else item.input
-        output = classify(dict(clause), client, model)
+        output = classify(dict(clause), model, budget, client)
         return {
             "verdict": output.verdict,
+            # The baseline has no retrieval, so it cites nothing and grounding
+            # does not apply to it. Empty lists keep the contract uniform.
+            "legal_basis": [],
+            "candidates": [],
             "reason_de": output.reason_de,
             "confidence": output.confidence,
             "error": output.error,
+            "input_tokens": output.input_tokens,
+            "output_tokens": output.output_tokens,
         }
 
     return run

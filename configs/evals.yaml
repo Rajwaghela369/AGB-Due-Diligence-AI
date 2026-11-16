@@ -5,18 +5,35 @@ baseline:
   # Deliberately cheap and deliberately simple. The baseline exists to be
   # beaten - a strong one-shot classifier would make Phase 4's improvement
   # harder to read, not more impressive.
-  provider: anthropic
-  model: claude-haiku-4-5-20251001
+  #
+  # Kept runnable as Phase 3 history. The Phase 3 number (F1 0.276) was
+  # measured on Haiku 4.5 over all 419 clauses; Phase 4 no longer gates on a
+  # baseline comparison, so the agent's runs are tracked on their own.
+  provider: gemini
+  # Confirmed available by the Gemini API on this project's key.
+  name: gemini-3.8-flash
   max_output_tokens: 400
 
 run:
-  # Comparisons happen on dev: 419 clauses, 31 void. The held-out half has 8
-  # void clauses, where one clause either way moves recall by 0.125 - that is
-  # noise, so it gets a single confirmation run per phase, not iteration.
+  # `make eval` measures a stratified 70-clause slice: all 31 void dev clauses plus 39
+  # of the 388 non-void. Recall is base-rate independent, so taking every void
+  # clause buys the sharpest recall per request; precision is not, so each
+  # non-void clause carries a weight (388/39 = 9.9487) that corrects precision
+  # back to the true 7.4% base rate. See evals/datasets.py:stratified.
+  slice: stratified
+  non_void: 39
+  seed: 0
   default_split: dev
-  max_concurrency: 8
-  # Langfuse experiment name. Runs within it are compared to each other, so
-  # the baseline and the Phase 4 agent share it.
+  # Gemini free tier is 200 RPM / 50,000 TPM / 10,000 RPD per project (from
+  # aistudio.google.com/docs/rate-limits). RPD is the real ceiling for a run;
+  # pace just under the RPM so a burst cannot trip it.
+  request_budget: 10000
+  rpm: 180
+  # Down from 8: the free tier's RPM, not our code, sets the wall clock, and
+  # over-subscribing only converts throughput into 429s.
+  max_concurrency: 4
+  # Langfuse experiment name. Agent runs within it are compared to each other
+  # as continuous evaluation; the Phase 3 baseline runs sit there as history.
   experiment: agb-void-classification
 
 scoring:

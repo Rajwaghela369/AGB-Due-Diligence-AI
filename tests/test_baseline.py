@@ -20,37 +20,36 @@ CLAUSE = {
 }
 
 
-class _TextBlock:
-    """One content block of an Anthropic response."""
+class _GenUsage:
+    def __init__(self, prompt=11, candidates=5):
+        self.prompt_token_count, self.candidates_token_count = prompt, candidates
 
-    type = "text"
 
+class _GenResponse:
     def __init__(self, text):
-        self.text = text
+        self.text, self.usage_metadata = text, _GenUsage()
 
 
-class _FakeResponse:
-    def __init__(self, text):
-        self.content = [_TextBlock(text)]
-
-
-class _FakeMessages:
+class _FakeModels:
     def __init__(self, text=None, raises=None):
         self.text, self.raises, self.calls = text, raises, []
 
-    def create(self, **kwargs):
+    def generate_content(self, **kwargs):
         self.calls.append(kwargs)
         if self.raises:
             raise self.raises
-        return _FakeResponse(self.text)
+        return _GenResponse(self.text)
 
 
 class _FakeClient:
+    """Gemini-shaped: the baseline now runs on whatever provider config names."""
+
     def __init__(self, text=None, raises=None):
-        self.messages = _FakeMessages(text, raises)
+        self.models = _FakeModels(text, raises)
 
 
-MODEL = {"model": "claude-haiku-4-5-20251001", "max_output_tokens": 400}
+# `name` rather than `model`, because that is the key core.llm reads.
+MODEL = {"provider": "gemini", "name": "gemini-3.8-flash", "max_output_tokens": 400}
 
 
 def test_prompt_mentions_the_anonymisation_placeholders():
@@ -99,7 +98,7 @@ def test_parse_answer_rejects_an_invented_verdict():
 def test_classify_turns_an_api_failure_into_data():
     client = _FakeClient(raises=RuntimeError("rate limited"))
 
-    output = classify(CLAUSE, client, MODEL)
+    output = classify(CLAUSE, MODEL, client=client)
 
     assert isinstance(output, BaselineOutput)
     assert output.verdict is None
@@ -109,18 +108,22 @@ def test_classify_turns_an_api_failure_into_data():
 def test_classify_passes_the_model_the_system_prompt_and_the_schema():
     client = _FakeClient(text='{"verdict": "valid", "reason_de": "ok", "confidence": 0.8}')
 
-    output = classify(CLAUSE, client, MODEL)
+    output = classify(CLAUSE, MODEL, client=client)
 
-    call = client.messages.calls[0]
-    assert call["model"] == "claude-haiku-4-5-20251001"
-    # The system prompt is its own parameter, not a message.
-    assert call["system"] == SYSTEM_PROMPT
-    assert call["messages"] == [{"role": "user", "content": render_user_prompt(CLAUSE)}]
-    # Structured output is enforced by the API, not asked for in the prompt.
-    assert call["output_config"]["format"]["type"] == "json_schema"
-    # temperature is not a parameter of this API version; passing it 500s.
-    assert "temperature" not in call
+    call = client.models.calls[0]
+    assert call["model"] == "gemini-3.8-flash"
+    assert render_user_prompt(CLAUSE) in call["contents"]
+    # The system prompt and the schema both travel in the config, and the
+    # schema is enforced by the API rather than asked for in the prompt.
+    config = call["config"]
+    assert config["system_instruction"] == SYSTEM_PROMPT
+    assert config["response_json_schema"] == answer_schema()
+    # Sending both schema parameters is rejected, so only the JSON-Schema one
+    # may be present.
+    assert "response_schema" not in config
     assert output.verdict == "valid"
+    # Token counts come back so a run can be costed.
+    assert (output.input_tokens, output.output_tokens) == (11, 5)
 
 
 def test_answer_schema_is_closed_and_fully_required():
@@ -136,15 +139,15 @@ def test_answer_schema_is_closed_and_fully_required():
     }
 
 
-def test_classify_reassembles_multiple_text_blocks():
+def test_classify_reads_the_providers_text():
     client = _FakeClient(text='{"verdict": "potentially_void"}')
 
-    assert classify(CLAUSE, client, MODEL).verdict == "potentially_void"
+    assert classify(CLAUSE, MODEL, client=client).verdict == "potentially_void"
 
 
 def test_task_accepts_both_item_shapes():
     client = _FakeClient(text='{"verdict": "potentially_void", "reason_de": "r"}')
-    run = task(client, MODEL)
+    run = task(MODEL, client=client)
 
     as_dict = run(item={"input": CLAUSE})
     as_object = run(item=type("Item", (), {"input": CLAUSE})())

@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
+    # Required by the agent: the judge and the explanation run on Gemini.
+    gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     jina_api_key: str = Field(default="", alias="JINA_API_KEY")
 
     qdrant_url: str = Field(default="", alias="QDRANT_URL")

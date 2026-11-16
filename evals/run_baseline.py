@@ -1,34 +1,49 @@
-"""Phase 3 entry point: run the one-shot baseline and record its number.
+"""The one-shot baseline: the number the agent has to beat.
 
-uv run python -m evals.run_baseline              # dev half, 419 clauses
-uv run python -m evals.run_baseline --split held_out   # the gate number
+    uv run python -m evals.run_baseline                    # the v1 stratified slice
+    uv run python -m evals.run_baseline --slice all        # the full 419
+    uv run python -m evals.run_baseline --slice first:5    # a cheap smoke run
 
-Every value this module needs from YAML is declared in REQUIRED_KEYS and checked
-up front. A config rename then fails `make check` with the missing path named,
+v1 re-runs this on Gemini over the stratified 70-clause slice, because Phase 3's
+F1 0.276 was measured on Haiku 4.5 across all 419 and is therefore not a valid
+target for a different provider on a different slice. Both sides of a comparison
+have to be measured the same way.
+
+The slice helpers here are shared with `run_agent`, so the two runs cannot drift
+apart. Every value read from YAML is declared in REQUIRED_KEYS and checked up
+front: a config rename then fails `make check` with the missing path named,
 instead of failing a live run partway through - which is how both of the first
 two bugs here were found.
 """
 
 import argparse
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
-from anthropic import Anthropic
+from core.budget import RequestBudget
 from core.config import load_yaml
 from core.paths import CONFIGS, PROCESSED, REPORTS
-from core.settings import load_settings
 
 from evals import baseline
-from evals.datasets import load
+from evals.datasets import EvalItem, load, select, slice_label
 from evals.harness import RunResult, run
 
-# Dotted paths into configs/evals.yaml that this module reads.
+# Dotted paths into configs/evals.yaml that this module reads. Declared because
+# a stale key broke two live runs: a rename now fails `make check` with the
+# path named instead of failing partway through a paid run.
 REQUIRED_KEYS = (
-    "baseline.model",
+    "baseline.provider",
+    "baseline.name",
     "baseline.max_output_tokens",
     "run.experiment",
     "run.max_concurrency",
     "run.default_split",
+    "run.slice",
+    "run.non_void",
+    "run.seed",
+    "run.request_budget",
+    "run.rpm",
     "scoring.uncertain_counts_as_void",
     "dataset.held_out",
 )
@@ -84,39 +99,96 @@ def run_config(model: dict[str, Any], fingerprint: str, split: str, items: int) 
     }
 
 
-def run_baseline(split: str, limit: int | None = None) -> RunResult:
-    config, eval_config = load_config()
-    model = config["baseline"]
+def slice_config(config: dict[str, Any], spec: str | None = None) -> dict[str, Any]:
+    """Slice settings both runners share, so the two sides stay comparable."""
+    return {
+        "slice": spec or config["run"]["slice"],
+        "non_void": int(config["run"]["non_void"]),
+        "seed": int(config["run"]["seed"]),
+    }
 
-    settings = load_settings()
-    if not settings.anthropic_api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY is not set; copy .env.example to .env")
 
+def build_budget(config: dict[str, Any]) -> RequestBudget:
+    """Stop deliberately at the quota rather than degrading mid-run."""
+    return RequestBudget(
+        max_requests=int(config["run"]["request_budget"]),
+        rpm=int(config["run"]["rpm"]),
+    )
+
+
+def choose_items(
+    split: str, config: dict[str, Any], eval_config: dict[str, Any], spec: str
+) -> tuple[list[EvalItem], str]:
+    """Load a split and apply the slice spec, returning the items and a label."""
     items = load(
         split,
         dev_path=PROCESSED / "splits" / f"{eval_config['splits']['dev']}.parquet",
         dataset_name=config["dataset"]["held_out"],
     )
-    if limit:
-        items = items[:limit]
+    chosen = select(
+        items,
+        spec=spec,
+        non_void=int(config["run"]["non_void"]),
+        seed=int(config["run"]["seed"]),
+    )
+    return chosen, slice_label(spec, len(chosen))
 
-    client = Anthropic(api_key=settings.anthropic_api_key)
+
+def report_path_for(prefix: str, split: str, label: str) -> Path:
+    """`p3_baseline_dev70.json` - the slice is in the name so slices never mix."""
+    return REPORTS / f"{prefix}_{label if split == 'dev' else split}.json"
+
+
+def run_baseline(split: str, slice_spec: str | None = None) -> RunResult:
+    config, eval_config = load_config()
+    model = config["baseline"]
+    spec = slice_spec or config["run"]["slice"]
+
+    items, label = choose_items(split, config, eval_config, spec)
+    budget = build_budget(config)
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")
 
     return run(
         name=config["run"]["experiment"],
-        run_name=f"baseline-{split}-{stamp}",
+        run_name=f"baseline-{label if split == 'dev' else split}-{stamp}",
         items=items,
-        task=baseline.task(client, model),
+        task=baseline.task(model, budget=budget),
         split=split,
-        config=run_config(model, baseline.prompt_fingerprint(), split, len(items)),
-        report_path=REPORTS / f"p3_baseline_{split}.json",
-        # A limited run must not attach to the published dataset, or the
+        config={
+            **run_config(model, baseline.prompt_fingerprint(), split, len(items)),
+            **slice_config(config, spec),
+        },
+        report_path=report_path_for("p3_baseline", split, label),
+        # A sliced run must not attach to the published dataset, or the
         # experiment would look like a full run with items missing.
-        dataset_name=(config["dataset"]["held_out"] if split == "held_out" and not limit else None),
+        dataset_name=(
+            config["dataset"]["held_out"] if split == "held_out" and spec == "all" else None
+        ),
         max_concurrency=config["run"]["max_concurrency"],
         uncertain_counts_as_void=config["scoring"]["uncertain_counts_as_void"],
+        budget=budget,
     )
+
+
+def print_summary(result: RunResult) -> None:
+    """Raw and weighted side by side, so neither can be mistaken for the other."""
+    m = result.metrics
+    print(
+        f"\n{result.run_name}: {result.items} {result.split} clauses, "
+        f"{result.requests_spent} requests"
+    )
+    print(
+        f"  raw      P {m['void_precision']:.3f}  R {m['void_recall']:.3f}  F1 {m['void_f1']:.3f}"
+    )
+    print(
+        f"  weighted P {m['void_precision_weighted']:.3f}  R {m['void_recall']:.3f}  "
+        f"F1 {m['void_f1_weighted']:.3f}   <- corrected to the 7.4% base rate"
+    )
+    print(
+        f"  grounding {m['grounding_rate']:.3f} over {int(m['void_calls'])} void calls, "
+        f"errors {int(m['errors'])}, uncertain {int(m['uncertain'])}"
+    )
+    print(f"  report: {result.report_path}")
 
 
 def main() -> None:
@@ -129,19 +201,14 @@ def main() -> None:
         help="dev for iteration, held_out for the gate number",
     )
     ap.add_argument(
-        "--limit",
-        type=int,
-        help="first N clauses only, for a cheap smoke run",
+        "--slice",
+        dest="slice_spec",
+        default=None,
+        help='"stratified" (v1 default), "all", or "first:N" for a cheap smoke run',
     )
     args = ap.parse_args()
 
-    result = run_baseline(args.split, args.limit)
-    print(
-        f"\n{result.run_name}: void F1 {result.metrics['void_f1']:.3f} "
-        f"(P {result.metrics['void_precision']:.3f} / R {result.metrics['void_recall']:.3f}) "
-        f"over {result.items} {result.split} clauses"
-    )
-    print(f"report: {result.report_path}")
+    print_summary(run_baseline(args.split, args.slice_spec))
 
 
 if __name__ == "__main__":

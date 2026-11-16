@@ -1,6 +1,6 @@
 import pytest
 
-from evals.scorers import confusion, score
+from evals.scorers import confusion, score, weighted_metrics
 
 VOID = "potentially_void"
 VALID = "valid"
@@ -88,3 +88,67 @@ def test_empty_run_does_not_divide_by_zero():
 
     assert metrics["void_f1"] == 0.0
     assert metrics["items"] == 0.0
+
+
+# --- weighted precision: correcting a void-dense slice back to the base rate ---
+
+
+def test_weighted_equals_raw_when_every_weight_is_one():
+    predictions = [VOID, VALID, VOID, VALID]
+    labels = [True, False, True, False]
+    weights = [1.0] * 4
+
+    raw = score(predictions, labels)
+    weighted = weighted_metrics(predictions, labels, weights)
+
+    assert weighted["void_precision_weighted"] == raw["void_precision"]
+    assert weighted["void_f1_weighted"] == raw["void_f1"]
+
+
+def test_weighting_deflates_precision_toward_the_population_rate():
+    # 1 TP and 1 FP: raw precision 0.5. The FP came from a stratum sampled at
+    # 1-in-10, so it stands for 10 clauses: 1/(1+10) = 0.0909.
+    predictions = [VOID, VOID]
+    labels = [True, False]
+    weights = [1.0, 10.0]
+
+    metrics = weighted_metrics(predictions, labels, weights)
+
+    assert metrics["void_precision"] == 0.5
+    assert metrics["void_precision_weighted"] == pytest.approx(0.0909, abs=1e-4)
+    assert metrics["false_positive_weighted"] == 10.0
+
+
+def test_weighting_leaves_recall_untouched():
+    # Every void clause is present, so recall needs no correction - which is
+    # why only precision and F1 gain a weighted form.
+    predictions = [VOID, VALID, VOID]
+    labels = [True, True, False]
+    weights = [1.0, 1.0, 9.9487]
+
+    metrics = weighted_metrics(predictions, labels, weights)
+
+    assert metrics["void_recall"] == 0.5
+    assert metrics["void_precision"] == 0.5
+    assert metrics["void_precision_weighted"] < metrics["void_precision"]
+
+
+def test_weighted_metrics_passes_the_raw_numbers_through():
+    metrics = weighted_metrics([VOID], [True], [1.0])
+
+    # A report must carry both, so neither can be mistaken for the other.
+    assert metrics["void_precision"] == 1.0
+    assert metrics["void_precision_weighted"] == 1.0
+    assert metrics["true_positive"] == 1.0
+
+
+def test_weighted_metrics_rejects_a_length_mismatch():
+    with pytest.raises(ValueError, match="2 predictions, 2 labels, 1 weights"):
+        weighted_metrics([VOID, VALID], [True, False], [1.0])
+
+
+def test_weighted_metrics_on_an_empty_run_does_not_divide_by_zero():
+    metrics = weighted_metrics([], [], [])
+
+    assert metrics["void_precision_weighted"] == 0.0
+    assert metrics["void_f1_weighted"] == 0.0
