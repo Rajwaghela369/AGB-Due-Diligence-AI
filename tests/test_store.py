@@ -247,6 +247,20 @@ def test_a_new_agent_version_is_a_new_row(store):
     assert store.verdicts.get(h, "v3") is None
 
 
+def test_verdict_get_many_is_set_based_and_versioned(store):
+    first, second, missing = (content_hash(uid()) for _ in range(3))
+    store.verdicts.save(make_verdict(first, "v1"))
+    store.verdicts.save(make_verdict(second, "v1", verdict="uncertain"))
+    store.verdicts.save(make_verdict(first, "v2", verdict="potentially_void"))
+
+    found = store.verdicts.get_many([second, missing, first, first], "v1")
+
+    assert set(found) == {first, second}
+    assert found[first].verdict == "valid"
+    assert found[second].verdict == "uncertain"
+    assert store.verdicts.get_many([], "v1") == {}
+
+
 def test_embedding_insert_or_reuse(store):
     h, model = content_hash(uid()), "jina-v3"
 

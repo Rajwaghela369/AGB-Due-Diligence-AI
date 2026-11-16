@@ -130,6 +130,8 @@ class RunContext:
     prices: dict[str, float] = field(default_factory=dict)  # USD per million tokens
     poll_seconds: float = 0.5  # how often a run looks at the limiter's waiting_reason
     flights: KeyedLocks = field(default_factory=KeyedLocks)  # single-flight judge calls
+    verdict_cache: dict[tuple[str, str], ClauseVerdict] = field(default_factory=dict)
+    verdict_cache_lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 # --- state ------------------------------------------------------------------
@@ -156,15 +158,19 @@ def load_entries(
 ) -> dict[int, tuple[ClauseStatus, str | None, ClauseVerdict | None]]:
     """Each clause's status, error and verdict as the store has them right now."""
     statuses = store.reviews.clause_statuses(review.review_id)
+    done_hashes = [
+        clause.content_hash
+        for clause in clauses
+        if statuses.get(clause.position, ("queued", None))[0] == "done"
+    ]
+    verdicts = store.verdicts.get_many(done_hashes, review.agent_version)
     entries: dict[int, tuple[ClauseStatus, str | None, ClauseVerdict | None]] = {}
     for clause in clauses:
         if not in_scope(clause, review):
             entries[clause.position] = ("out_of_scope", None, None)
             continue
         status, error = statuses.get(clause.position, ("queued", None))
-        verdict = None
-        if status == "done":
-            verdict = store.verdicts.get(clause.content_hash, review.agent_version)
+        verdict = verdicts.get(clause.content_hash) if status == "done" else None
         entries[clause.position] = (status, error, verdict)
     return entries
 
@@ -232,6 +238,7 @@ class ReviewRun:
 
         self._cond = threading.Condition()
         self._entries: dict[int, tuple[ClauseStatus, str | None, ClauseVerdict | None]] = {}
+        self._cached_verdicts: dict[str, ClauseVerdict] = {}
         self._pending: deque[int] = deque()
         self._inflight = 0
         self._cache_hits = review.counts.cache_hits
@@ -255,6 +262,21 @@ class ReviewRun:
             todo = [p for p, (s, _, _) in sorted(entries.items()) if s in ("queued", "checking")]
         else:
             todo = sorted(self._requested)
+        try:
+            self._cached_verdicts = store.verdicts.get_many(
+                [self._clauses[position].content_hash for position in todo],
+                self.review.agent_version,
+            )
+            with self.ctx.verdict_cache_lock:
+                self.ctx.verdict_cache.update(
+                    {
+                        (content_hash, self.review.agent_version): verdict
+                        for content_hash, verdict in self._cached_verdicts.items()
+                    }
+                )
+        except Exception:  # noqa: BLE001 - a cache read failing only costs judge calls
+            log.warning("bulk verdict cache read failed for %s", self.review_id, exc_info=True)
+            self._cached_verdicts = {}
         with self._cond:
             self._entries = entries
             for pos, (status, _, _) in sorted(entries.items()):
@@ -481,6 +503,9 @@ class ReviewRun:
                 outcome: tuple = ("failed", error)
             else:
                 outcome = ("done", stored)
+                self._cached_verdicts[clause.content_hash] = stored
+                with self.ctx.verdict_cache_lock:
+                    self.ctx.verdict_cache[key] = stored
 
             with self._cond:
                 if outcome[0] == "done":
@@ -494,11 +519,14 @@ class ReviewRun:
 
     def _record_cache_hit(self, position: int) -> bool:
         clause = self._clauses[position]
-        try:
-            cached = self.ctx.store.verdicts.get(clause.content_hash, self.review.agent_version)
-        except Exception:  # noqa: BLE001 - a cache read failing only costs a judge call
-            log.warning("verdict cache read failed for %s", clause.content_hash, exc_info=True)
-            return False
+        cached = self._cached_verdicts.get(clause.content_hash)
+        if cached is None:
+            with self.ctx.verdict_cache_lock:
+                cached = self.ctx.verdict_cache.get(
+                    (clause.content_hash, self.review.agent_version)
+                )
+            if cached is not None:
+                self._cached_verdicts[clause.content_hash] = cached
         if cached is None:
             return False
         with self._cond:

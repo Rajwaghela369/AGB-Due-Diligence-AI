@@ -58,6 +58,10 @@ class DocumentRepo(Protocol):
 class VerdictRepo(Protocol):
     def get(self, content_hash: str, agent_version: str) -> ClauseVerdict | None: ...
 
+    def get_many(self, content_hashes: list[str], agent_version: str) -> dict[str, ClauseVerdict]:
+        """Return the stored verdicts among `content_hashes`, keyed by content hash."""
+        ...
+
     def save(self, verdict: ClauseVerdict) -> ClauseVerdict:
         """Insert or reuse on (content_hash, agent_version); returns the stored row."""
         ...
