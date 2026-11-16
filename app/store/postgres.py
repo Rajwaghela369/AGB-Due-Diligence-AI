@@ -298,7 +298,7 @@ class PostgresReviewRepo(_Repo):
                 "insert into reviews (review_id, document_id, agent_version, scope, status,"
                 " counts, cost_usd, trace_id, error, created_at, started_at, finished_at)"
                 " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, coalesce(%s, clock_timestamp()),"
-                " %s, %s) on conflict (review_id) do nothing",
+                " %s, %s) on conflict do nothing",
                 (
                     review.review_id,
                     review.document_id,
@@ -319,6 +319,15 @@ class PostgresReviewRepo(_Repo):
                 f"select {_REVIEW_COLUMNS} from reviews where review_id = %s",
                 (review.review_id,),
             )
+            if row is None:
+                # Lost to reviews_one_active_idx: another active review of this
+                # document and version exists, and it is the one to use.
+                row = _row(
+                    conn,
+                    f"select {_REVIEW_COLUMNS} from reviews where document_id = %s"
+                    " and agent_version = %s and status in ('queued', 'running')",
+                    (review.document_id, review.agent_version),
+                )
         return _review(row)
 
     def _one(self, where: str, params: tuple) -> Review | None:

@@ -191,6 +191,11 @@ class MemoryReviewRepo:
             existing = self._reviews.get(review.review_id)
             if existing is not None:
                 return existing.model_copy(deep=True)
+            if review.status in ("queued", "running"):
+                # Postgres: reviews_one_active_idx; the active review wins.
+                active = self._active(review.document_id, review.agent_version)
+                if active is not None:
+                    return active.model_copy(deep=True)
             stored = review.model_copy(deep=True)
             stored.created_at = stored.created_at or _now()
             self._reviews[review.review_id] = stored
@@ -234,9 +239,24 @@ class MemoryReviewRepo:
             rows = [r for r in self._reviews.values() if r.status == "running"]
             return [r.model_copy(deep=True) for r in sorted(rows, key=lambda r: r.created_at)]
 
+    def _active(self, document_id: str, agent_version: str) -> Review | None:
+        for r in self._reviews.values():
+            if (
+                r.document_id == document_id
+                and r.agent_version == agent_version
+                and r.status in ("queued", "running")
+            ):
+                return r
+        return None
+
     def set_status(self, review_id: str, status: ReviewStatus, error: str | None = None) -> None:
         with self._lock:
             review = self._reviews[review_id]
+            if status in ("queued", "running"):
+                active = self._active(review.document_id, review.agent_version)
+                if active is not None and active.review_id != review_id:
+                    # Postgres: unique violation on reviews_one_active_idx.
+                    raise ValueError(f"review {active.review_id} is already active")
             review.status = status
             review.error = error
             if status == "running" and review.started_at is None:
