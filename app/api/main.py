@@ -15,14 +15,17 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.deps import setting
 from app.api.errors import install_error_handlers
-from app.api.middleware import RequestLogMiddleware
+from app.api.middleware import BodyLimitMiddleware, RequestLogMiddleware
 from app.api.rate_limit import IpRateLimiter
-from app.api.readiness import Probe
+from app.api.readiness import Probe, Readiness
 from app.api.routes import decisions, documents, health, reviews
 from app.api.routes import feedback as feedback_routes
 from app.api.routes import statutes as statute_routes
 from app.review.interfaces import ReviewService
 from app.store.interfaces import Store
+
+# Multipart boundaries and part headers add a little to the file itself.
+BODY_SLACK_BYTES = 256 * 1024
 
 
 def create_app(
@@ -54,7 +57,7 @@ def create_app(
     per_minute = int(setting(settings, "api.rate_limit_per_minute", 60))
     capacity = int(setting(settings, "api.rate_limit_burst", per_minute))
     application.state.rate_limiter = IpRateLimiter(capacity=capacity, per_minute=per_minute)
-    application.state.readiness = dict(readiness or {})
+    application.state.readiness = Readiness(readiness or {})
 
     # Only the frontend's origin may call the API from a browser; an empty list refuses all.
     application.add_middleware(
@@ -65,6 +68,9 @@ def create_app(
         expose_headers=["X-Request-Id"],
         max_age=600,
     )
+    # Body size is checked before any parser runs; the slack covers multipart framing.
+    upload_bytes = int(setting(settings, "ingest.max_upload_mb", 20)) * 1024 * 1024
+    application.add_middleware(BodyLimitMiddleware, max_bytes=upload_bytes + BODY_SLACK_BYTES)
     # Added last, so it is the outermost layer and logs every request, including preflights.
     application.add_middleware(RequestLogMiddleware)
 
