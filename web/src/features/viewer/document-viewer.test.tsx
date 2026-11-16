@@ -252,9 +252,10 @@ describe("toolbar", () => {
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "haftung" } });
     await waitFor(() => expect(document.querySelectorAll("[data-hit-index]")).toHaveLength(2));
     expect(textItems).toHaveBeenCalled();
-    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+    // The count reaches the toolbar one render after the hits are drawn.
+    expect(await screen.findByText("1 / 2")).toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Enter" });
-    expect(screen.getByText("2 / 2")).toBeInTheDocument();
+    expect(await screen.findByText("2 / 2")).toBeInTheDocument();
     expect(document.querySelector('[data-hit-index="1"]')?.hasAttribute("data-active")).toBe(true);
   });
 });
