@@ -1,0 +1,34 @@
+{
+  "app": {
+    "name": "AGB-Check",
+    "disclaimer": "Keine Rechtsberatung — die Entscheidung trifft der Anwalt.",
+    "theme": "Darstellung wechseln"
+  },
+  "nav": {
+    "home": "Startseite",
+    "upload": "Dokument hochladen"
+  },
+  "health": {
+    "label": "API-Status",
+    "reachable": "API erreichbar",
+    "unreachable": "API nicht erreichbar",
+    "checking": "API wird geprüft"
+  },
+  "pages": {
+    "home": {
+      "title": "Verträge ruhig und nachvollziehbar prüfen",
+      "description": "Hier erscheinen künftig Ihre letzten Prüfungen."
+    },
+    "upload": {
+      "title": "Vertrag hinzufügen",
+      "description": "PDF, DOCX und eingefügter Text werden im nächsten Schritt unterstützt."
+    },
+    "review": {
+      "title": "Prüfung",
+      "description": "Die Dokumentansicht und Fundstellen werden hier zusammengeführt."
+    },
+    "notFound": {
+      "title": "Seite nicht gefunden"
+    }
+  }
+}

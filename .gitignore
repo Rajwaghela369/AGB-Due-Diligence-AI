@@ -31,3 +31,8 @@ models/
 .DS_Store
 .idea/
 .vscode/
+
+# Frontend package and build artifacts
+.pnpm-store/
+web/node_modules/
+web/dist/
