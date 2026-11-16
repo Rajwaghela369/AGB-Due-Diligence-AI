@@ -63,8 +63,8 @@ review:
   # One limiter for the whole server (core.budget.SharedLimiter). Unset means no
   # limit; a clause that hits either waits, it does not fail. Set both to the
   # project's Gemini quota before the live gate.
-  rpm: null
-  daily_budget: null
+  rpm: 180  # same pacing as configs/evals.yaml run.rpm
+  daily_budget: 10000  # same as configs/evals.yaml run.request_budget
   # For `cost_usd`; 0 until the Gemini prices are confirmed for this project.
   price_usd_per_million_tokens:
     input: 0
