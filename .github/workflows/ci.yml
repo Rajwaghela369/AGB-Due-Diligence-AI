@@ -1,8 +1,11 @@
 name: ci
 
+# Disabled for now: manual runs only, from the Actions tab. To re-enable,
+# restore the push and pull_request triggers below.
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
+  # push:
+  # pull_request:
 
 jobs:
   check:
