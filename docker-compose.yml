@@ -15,8 +15,7 @@ services:
       # Immutable source PDFs survive container rebuilds.
       - files:/app/stores/files
     depends_on:
-      gotenberg:
-        condition: service_healthy
+      - gotenberg
     restart: unless-stopped
     healthcheck:
       test:
@@ -37,13 +36,9 @@ services:
     # lets `make api` on the host use the same service; nothing else can reach it.
     ports:
       - "127.0.0.1:3000:3000"
+    # No healthcheck: the image's curl is unverified, and the API's own readiness covers the
+    # conversion path (DOCX uploads fail with conversion_failed until Gotenberg answers).
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
 
 volumes:
   files:

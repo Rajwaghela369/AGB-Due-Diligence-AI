@@ -24,8 +24,9 @@ COPY evals ./evals
 RUN uv sync --extra app --frozen
 
 COPY configs ./configs
-# The statute chunks the API validates at start-up. They are rebuildable, so they are
-# copied from the build context, which must contain data/processed/bgb_chunks.jsonl.
+# The statute chunks the API loads at start-up. data/ is gitignored, so this file exists
+# only where `make kb` has been run: build the image from a checkout that has it. The build
+# fails here if it is missing, rather than starting an API that cannot answer.
 COPY data/processed/bgb_chunks.jsonl ./data/processed/bgb_chunks.jsonl
 
 # Immutable source PDFs live here; compose mounts a volume over it.

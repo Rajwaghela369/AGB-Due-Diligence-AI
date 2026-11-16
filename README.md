@@ -86,6 +86,10 @@ The API runs with **one worker** (`--workers 1`). Review runs and their SSE even
 are held in process memory until they move to Postgres LISTEN/NOTIFY; a second worker
 would split a review's events from the clients watching it.
 
+The image copies `data/processed/bgb_chunks.jsonl` into the build. That file is gitignored
+and is written by `make kb`, so run it (or copy the file in) before `make api-up`, or the
+build fails at that step. `.dockerignore` does not exclude it.
+
 Limits live in `configs/app.yaml`: `ingest.max_upload_mb`, `api.cors_origins` (the only
 browser origin allowed), `api.rate_limit_per_minute` and `api.rate_limit_burst` (uploads
 and reviews per client IP), and `files.root` for the stored PDFs.
