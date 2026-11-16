@@ -73,6 +73,20 @@ class EventBus:
         self._ring(review_id)
         return stored
 
+    def emit_many(self, review_id: str, events: list[BaseEvent]) -> list[StoredEvent]:
+        """Append events in order as one store write, ringing the doorbell once."""
+        if not events:
+            return []
+        payloads = [serialise(event) for event in events]
+        with self._lock:
+            append_lock = self._append_locks.setdefault(review_id, threading.Lock())
+        with append_lock:
+            stored = self._store.events.append_many(
+                review_id, [(payload["type"], payload) for payload in payloads]
+            )
+        self._ring(review_id)
+        return stored
+
     def _ring(self, review_id: str) -> None:
         with self._lock:
             channel = self._channels.get(review_id)

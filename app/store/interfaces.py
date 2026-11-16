@@ -106,12 +106,24 @@ class ReviewRepo(Protocol):
         """Per-review clause state (`review_clauses`); the verdict itself lives in VerdictRepo."""
         ...
 
+    def set_clause_statuses(
+        self, review_id: str, statuses: dict[int, tuple[ClauseStatus, str | None]]
+    ) -> None:
+        """`set_clause_status` for many positions in one transaction (a cost that does not
+        grow per clause on a remote database). An empty mapping is a no-op."""
+        ...
+
     def clause_statuses(self, review_id: str) -> dict[int, tuple[ClauseStatus, str | None]]: ...
 
 
 class EventRepo(Protocol):
     def append(self, review_id: str, type: str, payload: dict) -> StoredEvent:
         """Assign the next `seq` for this review atomically and store the event."""
+        ...
+
+    def append_many(self, review_id: str, events: list[tuple[str, dict]]) -> list[StoredEvent]:
+        """Append `(type, payload)` pairs in order as one transaction: consecutive seqs,
+        nobody else's event in between. An empty list is a no-op."""
         ...
 
     def since(self, review_id: str, after_seq: int = 0) -> Iterator[StoredEvent]: ...

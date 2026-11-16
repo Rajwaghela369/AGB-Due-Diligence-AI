@@ -514,6 +514,27 @@ class PostgresReviewRepo(_Repo):
                 (review_id, position, status, error),
             )
 
+    def set_clause_statuses(
+        self, review_id: str, statuses: dict[int, tuple[ClauseStatus, str | None]]
+    ) -> None:
+        if not statuses:
+            return
+        positions = list(statuses)
+        with self._connect() as conn:
+            conn.execute(
+                "insert into review_clauses (review_id, position, status, error)"
+                " select %s::text, p, s, e from unnest(%s::int[], %s::text[], %s::text[])"
+                " as t(p, s, e)"
+                " on conflict (review_id, position) do update set"
+                " status = excluded.status, error = excluded.error",
+                (
+                    review_id,
+                    positions,
+                    [statuses[p][0] for p in positions],
+                    [statuses[p][1] for p in positions],
+                ),
+            )
+
     def clause_statuses(self, review_id: str) -> dict[int, tuple[ClauseStatus, str | None]]:
         with self._connect() as conn:
             rows = _rows(
@@ -541,6 +562,26 @@ class PostgresEventRepo(_Repo):
                 (review_id, type, Jsonb(payload), review_id),
             )
         return StoredEvent(**row)
+
+    def append_many(self, review_id: str, events: list[tuple[str, dict]]) -> list[StoredEvent]:
+        if not events:
+            return []
+        items = [{"type": type, "payload": payload} for type, payload in events]
+        with self._connect() as conn:
+            # Same per-review lock as `append`, held to commit: the batch gets consecutive
+            # seqs and no concurrent append lands inside it.
+            conn.execute("select pg_advisory_xact_lock(hashtextextended(%s, 1))", (review_id,))
+            rows = _rows(
+                conn,
+                "insert into run_events (review_id, seq, type, payload)"
+                " select %s::text, base.top + t.ord, t.el ->> 'type', t.el -> 'payload'"
+                " from (select coalesce(max(seq), 0) as top from run_events"
+                " where review_id = %s) as base,"
+                " jsonb_array_elements(%s) with ordinality as t(el, ord)"
+                " returning review_id, seq, type, payload, created_at",
+                (review_id, review_id, Jsonb(items)),
+            )
+        return sorted((StoredEvent(**r) for r in rows), key=lambda e: e.seq)
 
     def since(self, review_id: str, after_seq: int = 0) -> Iterator[StoredEvent]:
         with self._connect() as conn:

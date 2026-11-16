@@ -180,3 +180,69 @@ def test_connection_pool_reuses_a_checked_in_connection(monkeypatch):
     assert first.commits == 2
     pool.close()
     assert first.closed
+
+
+class CountingStore:
+    """Wraps a store and counts every call that writes, to show the cost per clause."""
+
+    WRITES = {
+        ("reviews", "set_clause_status"),
+        ("reviews", "set_clause_statuses"),
+        ("reviews", "update_counts"),
+        ("events", "append"),
+        ("events", "append_many"),
+    }
+
+    def __init__(self, inner) -> None:
+        self._inner = inner
+        self.writes: list[tuple[str, str]] = []
+
+    def __getattr__(self, name):
+        repo = getattr(self._inner, name)
+        if name not in ("reviews", "events"):
+            return repo
+        outer = self
+
+        class Counted:
+            def __getattr__(self, method):
+                target = getattr(repo, method)
+                if (name, method) not in outer.WRITES:
+                    return target
+
+                def call(*args, **kwargs):
+                    outer.writes.append((name, method))
+                    return target(*args, **kwargs)
+
+                return call
+
+        return Counted()
+
+
+def _cached_review_writes(clause_count: int) -> tuple[int, list]:
+    inner = memory_store()
+    texts = [f"clause {i}" for i in range(clause_count)]
+    for text in texts:
+        inner.verdicts.save(_verdict(text))
+    store = CountingStore(inner)
+    judge = FakeJudge()
+    service = build_service(store, judge, StubLimiter(), max_concurrency=2, poll_seconds=0.01)
+    review = service.start(_document(inner, texts), ["liability"])
+    finished = _finish(service, review.review_id)
+    assert finished.status == "finished"
+    assert finished.counts.cache_hits == clause_count and judge.calls == []
+    events = list(inner.events.since(review.review_id))
+    return len(store.writes), events
+
+
+def test_fully_cached_review_makes_constant_store_writes():
+    small, _ = _cached_review_writes(3)
+    large, events = _cached_review_writes(36)
+
+    assert large == small  # O(1) in the number of clauses
+    assert large <= 8
+    deltas = [e for e in events if e.type == "STATE_DELTA"]
+    assert len(deltas) == 1
+    assert [op["path"] for op in deltas[0].payload["delta"]][-1] == "/review/counts"
+    assert len(deltas[0].payload["delta"]) == 37
+    assert [e.type for e in events].count("CUSTOM") == 1
+    assert [e.seq for e in events] == list(range(1, len(events) + 1))

@@ -290,6 +290,16 @@ class MemoryReviewRepo:
                 raise KeyError(review_id)  # Postgres: foreign key violation
             self._clauses.setdefault(review_id, {})[position] = (status, error)
 
+    def set_clause_statuses(
+        self, review_id: str, statuses: dict[int, tuple[ClauseStatus, str | None]]
+    ) -> None:
+        if not statuses:
+            return
+        with self._lock:
+            if review_id not in self._reviews:
+                raise KeyError(review_id)  # Postgres: foreign key violation
+            self._clauses.setdefault(review_id, {}).update(statuses)
+
     def clause_statuses(self, review_id: str) -> dict[int, tuple[ClauseStatus, str | None]]:
         with self._lock:
             return dict(sorted(self._clauses.get(review_id, {}).items()))
@@ -312,6 +322,10 @@ class MemoryEventRepo:
             )
             log.append(event)
             return event.model_copy(deep=True)
+
+    def append_many(self, review_id: str, events: list[tuple[str, dict]]) -> list[StoredEvent]:
+        with self._lock:
+            return [self.append(review_id, type, payload) for type, payload in events]
 
     def since(self, review_id: str, after_seq: int = 0) -> Iterator[StoredEvent]:
         with self._lock:

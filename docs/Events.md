@@ -52,7 +52,10 @@ field names inside them are Python's snake_case. Only the AG-UI envelope is came
 | `RUN_ERROR` | the review itself cannot continue (not a clause failure) | `message`, `code`: `review_failed` or `agent_version_changed` |
 | `RUN_FINISHED` | every in-scope clause is done or failed | `result` = `{counts, cost_usd}` |
 
-Cache hits emit `STATE_DELTA` (→done) and count in `counts.cache_hits`, without a
+Cache hits found when the run opens are settled together: one `STATE_DELTA` with a
+`replace /clauses/<position>` per clause plus the counts, then one `CUSTOM` `progress` (so a
+fully cached review costs a constant number of store writes). A hit found later (a verdict
+saved meanwhile by another review) emits its own `STATE_DELTA`. Either way a hit is →done and counts in `counts.cache_hits`, without a
 `STEP_STARTED`/`STEP_FINISHED` pair. A retried clause (`POST …/clauses/{pos}/retry`) on a
 finished review emits `RUN_STARTED` and `STATE_SNAPSHOT`, then its own clause events and
 `RUN_FINISHED` again, all under the same review_id with increasing `seq`.
