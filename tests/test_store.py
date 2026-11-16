@@ -378,6 +378,22 @@ def test_clause_statuses_upsert_per_review(store):
     assert store.reviews.clause_statuses(uid()) == {}
 
 
+def test_set_clause_statuses_upserts_many_in_one_call(store):
+    review = store.reviews.create(make_review())
+    store.reviews.set_clause_status(review.review_id, 0, "queued")
+
+    store.reviews.set_clause_statuses(
+        review.review_id, {0: ("done", None), 1: ("failed", "timeout"), 2: ("queued", None)}
+    )
+    store.reviews.set_clause_statuses(review.review_id, {})
+
+    assert store.reviews.clause_statuses(review.review_id) == {
+        0: ("done", None),
+        1: ("failed", "timeout"),
+        2: ("queued", None),
+    }
+
+
 # --- events -------------------------------------------------------------------
 
 
@@ -420,6 +436,58 @@ def test_concurrent_appends_get_gap_free_unique_seqs(store):
     total = workers * per_worker
     assert sorted(seen) == list(range(1, total + 1))
     assert [e.seq for e in store.events.since(review_id)] == list(range(1, total + 1))
+
+
+def test_append_many_assigns_consecutive_seqs_in_order(store):
+    review_id = uid()
+    store.events.append(review_id, "RUN_STARTED", {"n": 0})
+
+    stored = store.events.append_many(
+        review_id, [("STATE_DELTA", {"n": 1}), ("CUSTOM", {"n": 2}), ("CUSTOM", {"n": 3})]
+    )
+
+    assert store.events.append_many(review_id, []) == []
+    assert [(e.seq, e.type, e.payload["n"]) for e in stored] == [
+        (2, "STATE_DELTA", 1),
+        (3, "CUSTOM", 2),
+        (4, "CUSTOM", 3),
+    ]
+    assert [e.seq for e in store.events.since(review_id)] == [1, 2, 3, 4]
+    assert store.events.append(review_id, "CUSTOM", {}).seq == 5
+
+
+def test_concurrent_append_and_append_many_stay_gap_free_and_contiguous(store):
+    review_id, workers, rounds, batch = uid(), 6, 4, 5
+    errors: list[BaseException] = []
+
+    def work(index: int):
+        try:
+            for r in range(rounds):
+                if index % 2:
+                    store.events.append(review_id, "CUSTOM", {"w": index, "r": r})
+                else:
+                    store.events.append_many(
+                        review_id, [("CUSTOM", {"w": index, "r": r, "i": i}) for i in range(batch)]
+                    )
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=work, args=(i,)) for i in range(workers)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors
+    events = list(store.events.since(review_id))
+    singles, batches = workers // 2, workers - workers // 2
+    total = singles * rounds + batches * rounds * batch
+    assert [e.seq for e in events] == list(range(1, total + 1))
+    # A batch is never split by another writer: its items are adjacent and in order.
+    runs = [(e.payload["w"], e.payload["r"], e.payload.get("i")) for e in events]
+    for pos, (w, r, i) in enumerate(runs):
+        if i is not None and i < batch - 1:
+            assert runs[pos + 1] == (w, r, i + 1)
 
 
 # --- decisions and feedback ------------------------------------------------------

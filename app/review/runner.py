@@ -240,6 +240,7 @@ class ReviewRun:
         self._entries: dict[int, tuple[ClauseStatus, str | None, ClauseVerdict | None]] = {}
         self._cached_verdicts: dict[str, ClauseVerdict] = {}
         self._pending: deque[int] = deque()
+        self._cached_batch: list[int] = []  # known cache hits, settled before any judging
         self._inflight = 0
         self._cache_hits = review.counts.cache_hits
         self._cost = review.cost_usd
@@ -279,13 +280,19 @@ class ReviewRun:
             self._cached_verdicts = {}
         with self._cond:
             self._entries = entries
-            for pos, (status, _, _) in sorted(entries.items()):
-                if status == "out_of_scope":
-                    store.reviews.set_clause_status(self.review_id, pos, "out_of_scope")
+            statuses: dict[int, tuple[ClauseStatus, str | None]] = {
+                pos: ("out_of_scope", None)
+                for pos, (status, _, _) in entries.items()
+                if status == "out_of_scope"
+            }
             for pos in todo:
                 self._entries[pos] = ("queued", None, None)
-                store.reviews.set_clause_status(self.review_id, pos, "queued")
-                self._pending.append(pos)
+                statuses[pos] = ("queued", None)
+                if self._clauses[pos].content_hash in self._cached_verdicts:
+                    self._cached_batch.append(pos)  # resolved in one go by `_resolve_cached`
+                else:
+                    self._pending.append(pos)
+            store.reviews.set_clause_statuses(self.review_id, statuses)
             self._save_counts()
 
     def start(self) -> None:
@@ -334,6 +341,7 @@ class ReviewRun:
             pool = ThreadPoolExecutor(
                 max_workers=self.ctx.max_concurrency, thread_name_prefix=self._thread.name
             )
+            self._resolve_cached()
             finished = self._work(pool)
             if finished:
                 return
@@ -377,6 +385,51 @@ class ReviewRun:
                 self.review_id, StateSnapshotEvent(snapshot=build_state(self.review, self._entries))
             )
             self._announced = True
+
+    def _resolve_cached(self) -> None:
+        """Settle every clause whose verdict was already cached when the run opened.
+
+        One store write for their statuses, one for the counts and one append for
+        their events, however many there are: a review served entirely from the
+        cache costs a handful of round trips, not several per clause. The events
+        are one STATE_DELTA (a `replace` per clause plus the counts) and one
+        `progress`, appended together so nothing interleaves.
+        """
+        with self._cond:
+            batch, self._cached_batch = self._cached_batch, []
+            if not batch:
+                return
+            if self._stopping:
+                return  # stays queued for the resume
+            hits = {p: self._cached_verdicts[self._clauses[p].content_hash] for p in batch}
+            try:
+                self.ctx.store.reviews.set_clause_statuses(
+                    self.review_id, {p: ("done", None) for p in hits}
+                )
+            except Exception:  # noqa: BLE001 - fall back to the clause-by-clause path
+                log.warning("bulk cache-hit write failed for %s", self.review_id, exc_info=True)
+                self._pending.extendleft(reversed(batch))
+                return
+            for position, verdict in hits.items():
+                self._entries[position] = ("done", None, verdict)
+            self._cache_hits += len(hits)
+            counts = self._save_counts()
+            if not self._announced:
+                return  # the snapshot will carry it
+            delta = [
+                {
+                    "op": "replace",
+                    "path": f"/clauses/{position}",
+                    "value": clause_entry("done", None, verdict),
+                }
+                for position, verdict in hits.items()
+            ]
+            delta.append(
+                {"op": "replace", "path": "/review/counts", "value": counts.model_dump(mode="json")}
+            )
+            self.ctx.bus.emit_many(
+                self.review_id, [StateDeltaEvent(delta=delta), self._progress_event()]
+            )
 
     def _work(self, pool: ThreadPoolExecutor) -> bool:
         """Feed the pool until the queue is empty. True if finished, False if stopped."""
@@ -569,18 +622,18 @@ class ReviewRun:
         return counts
 
     def _progress(self) -> None:
+        self.ctx.bus.emit(self.review_id, self._progress_event())
+
+    def _progress_event(self) -> CustomEvent:
         self._waiting_reason = self._limiter_reason()
-        self.ctx.bus.emit(
-            self.review_id,
-            CustomEvent(
-                name=CUSTOM_PROGRESS,
-                value={
-                    "counts": self.review.counts.model_dump(mode="json"),
-                    "cost_usd": self._cost,
-                    "budget_left": self._budget_left(),
-                    "waiting_reason": self._waiting_reason,
-                },
-            ),
+        return CustomEvent(
+            name=CUSTOM_PROGRESS,
+            value={
+                "counts": self.review.counts.model_dump(mode="json"),
+                "cost_usd": self._cost,
+                "budget_left": self._budget_left(),
+                "waiting_reason": self._waiting_reason,
+            },
         )
 
     def _watch_limiter(self) -> None:
