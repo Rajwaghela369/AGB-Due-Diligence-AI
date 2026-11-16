@@ -250,7 +250,10 @@ def test_probes_run_in_parallel():
     assert elapsed < 0.9  # four 0.3 s probes take about 0.3 s together, 1.2 s in sequence
 
 
-def test_production_probes_name_the_four_dependencies_without_calling_them():
+def test_production_probes_name_the_four_dependencies_without_calling_them(monkeypatch):
+    # Blank the keys explicitly: a developer's .env must never turn this into a live call.
+    for name in ("GEMINI_API_KEY", "JINA_API_KEY"):
+        monkeypatch.setenv(name, "")
     probes = production_probes(
         alias="bgb_agb", router_model="jina-embeddings-v3", explain_model="gemini-3.8-flash"
     )
