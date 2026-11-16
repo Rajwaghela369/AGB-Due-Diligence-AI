@@ -3,7 +3,7 @@
 // `ReviewData`, and all of them share selection through `useReviewUi`.
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 
 import { FindingDrawer } from "../findings/finding-drawer";
 import { FindingsPanel } from "../findings/findings-panel";
@@ -15,6 +15,10 @@ import { useReview } from "./use-review";
 export function ReviewWorkspace() {
   const { t } = useTranslation();
   const { id } = useParams();
+  // Set by the upload page when the same file was reviewed before: no new review ran.
+  const alreadyReviewed = Boolean(
+    (useLocation().state as { alreadyReviewed?: boolean } | null)?.alreadyReviewed,
+  );
   const review = useReview(id);
   const view = useReviewUi((s) => s.view);
   const setView = useReviewUi((s) => s.setView);
@@ -33,6 +37,11 @@ export function ReviewWorkspace() {
   return (
     <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
       <section className="flex min-h-0 flex-col" aria-label={t("workspace.document")}>
+        {alreadyReviewed && (
+          <p role="status" className="mb-2 text-sm text-muted-foreground">
+            {t("workspace.alreadyReviewed")}
+          </p>
+        )}
         <div className="mb-2 flex items-center gap-4 text-sm" data-testid="risk-summary">
           <span>{t("workspace.counts.void", { count: counts?.potentially_void ?? 0 })}</span>
           <span>{t("workspace.counts.review", { count: counts?.uncertain ?? 0 })}</span>
