@@ -1,0 +1,465 @@
+"""One run of one review: cache first, judge the rest concurrently, emit every change.
+
+A run is a start, a resume after a restart, or a retry of failed clauses; all
+three are the same loop over a different set of positions. The run owns a
+small thread pool and never has more than `max_concurrency` clauses in it, so
+a stop request (shutdown) takes effect at the next free slot and the pool's
+queue is always empty.
+
+Ordering. Every change to a clause is made, persisted and emitted while the
+run's lock is held, so the event log is a faithful, ordered replay of the
+state: deltas apply in `seq` order, and each `progress` carries counts at
+least as new as the delta before it. The store is written before the event, so
+a snapshot built from the store is never behind an event a client has seen.
+
+A clause failure is the clause's (Phase 5 principle 3): any exception from the
+judge or the verdict write marks that clause `failed` and the run carries on.
+Only an error outside a clause (the store failing at the start, say) ends the
+run with RUN_ERROR.
+
+Scope. A clause is out of scope when ingest marked it so, or when it carries a
+topic that is not in the review's scope. Ingest does not assign topics yet, so
+today every clause ingest keeps is judged.
+"""
+
+import threading
+from collections import deque
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from typing import Any
+
+from ag_ui.core import (
+    CustomEvent,
+    RunErrorEvent,
+    RunFinishedEvent,
+    RunStartedEvent,
+    StateDeltaEvent,
+    StateSnapshotEvent,
+    StepFinishedEvent,
+    StepStartedEvent,
+)
+from core.logging import get_logger
+
+from app.agent.run import ClauseFailed
+from app.domain import (
+    CUSTOM_PROGRESS,
+    ClauseSpan,
+    ClauseStatus,
+    ClauseVerdict,
+    Review,
+    ReviewCounts,
+)
+from app.review.events import EventBus
+from app.review.tracing import ReviewTrace, start_review_trace
+from app.store.interfaces import Store
+
+log = get_logger("review.runner")
+
+
+@dataclass
+class RunContext:
+    """What every run shares: the service's dependencies and settings."""
+
+    store: Store
+    judge: Any  # app.agent.run.Judge
+    limiter: Any  # core.budget.SharedLimiter
+    bus: EventBus
+    tracer: Any = None
+    max_concurrency: int = 4
+    prices: dict[str, float] = field(default_factory=dict)  # USD per million tokens
+    poll_seconds: float = 0.5  # how often a run looks at the limiter's waiting_reason
+
+
+# --- state ------------------------------------------------------------------
+
+
+def in_scope(clause: ClauseSpan, review: Review) -> bool:
+    if not clause.in_scope:
+        return False
+    return clause.topic is None or clause.topic in review.scope
+
+
+def clause_entry(
+    status: ClauseStatus, error: str | None = None, verdict: ClauseVerdict | None = None
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "error": error,
+        "verdict": verdict.model_dump(mode="json") if verdict is not None else None,
+    }
+
+
+def load_entries(
+    store: Store, review: Review, clauses: list[ClauseSpan]
+) -> dict[int, tuple[ClauseStatus, str | None, ClauseVerdict | None]]:
+    """Each clause's status, error and verdict as the store has them right now."""
+    statuses = store.reviews.clause_statuses(review.review_id)
+    entries: dict[int, tuple[ClauseStatus, str | None, ClauseVerdict | None]] = {}
+    for clause in clauses:
+        if not in_scope(clause, review):
+            entries[clause.position] = ("out_of_scope", None, None)
+            continue
+        status, error = statuses.get(clause.position, ("queued", None))
+        verdict = None
+        if status == "done":
+            verdict = store.verdicts.get(clause.content_hash, review.agent_version)
+        entries[clause.position] = (status, error, verdict)
+    return entries
+
+
+def build_state(review: Review, entries: dict[int, tuple]) -> dict[str, Any]:
+    """The state document of docs/Events.md."""
+    return {
+        "review": review.model_dump(mode="json"),
+        "clauses": {
+            str(pos): clause_entry(status, error, verdict)
+            for pos, (status, error, verdict) in sorted(entries.items())
+        },
+    }
+
+
+def count(entries: dict[int, tuple], cache_hits: int) -> ReviewCounts:
+    counts = ReviewCounts(cache_hits=cache_hits)
+    for status, _error, verdict in entries.values():
+        if status == "out_of_scope":
+            counts.out_of_scope += 1
+            continue
+        counts.total += 1
+        if status == "failed":
+            counts.failed += 1
+        elif status == "done":
+            counts.done += 1
+            if verdict is not None:
+                setattr(counts, verdict.verdict, getattr(counts, verdict.verdict) + 1)
+    return counts
+
+
+# --- the run ------------------------------------------------------------------
+
+
+class ReviewRun:
+    """Judges `positions` of one review on a background thread.
+
+    Lifecycle: `open()` (synchronous, under the service's lock) loads and
+    persists the starting state; `start()` launches the thread; the thread
+    announces the run, works the queue, and finishes by calling `finish_gate`
+    (the service's lock) so that "nothing left to do" and "deregistered" are
+    one step as far as a concurrent `retry_clause` can tell.
+    """
+
+    def __init__(
+        self,
+        ctx: RunContext,
+        review: Review,
+        clauses: list[ClauseSpan],
+        *,
+        positions: list[int] | None,
+        reason: str,
+        finish_gate: threading.RLock,
+        on_closed: Callable[["ReviewRun"], None],
+    ) -> None:
+        self.ctx = ctx
+        self.review = review.model_copy(deep=True)
+        self.review_id = review.review_id
+        self.reason = reason
+        self._clauses = {c.position: c for c in clauses}
+        self._requested = positions
+        self._finish_gate = finish_gate
+        self._on_closed = on_closed
+
+        self._cond = threading.Condition()
+        self._entries: dict[int, tuple[ClauseStatus, str | None, ClauseVerdict | None]] = {}
+        self._pending: deque[int] = deque()
+        self._inflight = 0
+        self._cache_hits = review.counts.cache_hits
+        self._cost = review.cost_usd
+        self._announced = False  # RUN_STARTED and STATE_SNAPSHOT are in the log
+        self._closed = False  # finished or stopped; accepts no more work
+        self._stopping = False
+        self._waiting_reason: str | None = None
+        self._trace = ReviewTrace()
+        self._thread = threading.Thread(
+            target=self._run, name=f"review-{self.review_id[:8]}", daemon=True
+        )
+
+    # --- called by the service --------------------------------------------
+
+    def open(self) -> None:
+        """Load the review's clause state and queue the positions this run judges."""
+        store = self.ctx.store
+        entries = load_entries(store, self.review, list(self._clauses.values()))
+        if self._requested is None:  # start or resume: everything not yet judged
+            todo = [p for p, (s, _, _) in sorted(entries.items()) if s in ("queued", "checking")]
+        else:
+            todo = sorted(self._requested)
+        with self._cond:
+            self._entries = entries
+            for pos, (status, _, _) in sorted(entries.items()):
+                if status == "out_of_scope":
+                    store.reviews.set_clause_status(self.review_id, pos, "out_of_scope")
+            for pos in todo:
+                self._entries[pos] = ("queued", None, None)
+                store.reviews.set_clause_status(self.review_id, pos, "queued")
+                self._pending.append(pos)
+            self._save_counts()
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def add(self, position: int) -> None:
+        """Queue a failed clause again (retry while the run is still going)."""
+        with self._cond:
+            if self._closed or self._stopping:
+                raise RuntimeError("the run is stopping")
+            status = self._entries.get(position, (None,))[0]
+            if status != "failed":
+                raise ValueError(f"clause {position} is {status or 'unknown'}, not failed")
+            self._pending.append(position)
+            self._set(position, "queued")
+            self._cond.notify_all()
+
+    def stop(self) -> None:
+        """Stop taking clauses; in-flight ones finish. The review stays `running` for resume."""
+        with self._cond:
+            self._stopping = True
+            self._cond.notify_all()
+
+    def join(self, timeout: float | None = None) -> bool:
+        if self._thread.ident is None:
+            return True
+        self._thread.join(timeout)
+        return not self._thread.is_alive()
+
+    # --- the run thread -------------------------------------------------------
+
+    def _run(self) -> None:
+        try:
+            self._announce()
+            with ThreadPoolExecutor(
+                max_workers=self.ctx.max_concurrency, thread_name_prefix=self._thread.name
+            ) as pool:
+                finished = self._work(pool)
+            if finished:
+                return
+            self._trace.end({"stopped": True})
+            with self._finish_gate:
+                self._on_closed(self)
+        except Exception as exc:  # noqa: BLE001 - the review, not the process, fails
+            log.exception("review %s failed", self.review_id)
+            self._fail_run(exc)
+
+    def _announce(self) -> None:
+        store = self.ctx.store
+        self._trace = start_review_trace(self.ctx.tracer, self.review, reason=self.reason)
+        if self._trace.trace_id and self._trace.trace_id != self.review.trace_id:
+            try:
+                store.reviews.set_trace(self.review_id, self._trace.trace_id)
+                self.review.trace_id = self._trace.trace_id
+            except Exception:  # noqa: BLE001 - tracing never fails a review
+                log.warning("could not store the trace id of %s", self.review_id, exc_info=True)
+        with self._cond:
+            stored = store.reviews.get(self.review_id)
+            if stored is not None:  # timings and trace id as persisted; counts are ours
+                stored.counts, stored.cost_usd = self.review.counts, self._cost
+                self.review = stored
+            self.review.status = "running"
+            emit = self.ctx.bus.emit
+            emit(
+                self.review_id,
+                RunStartedEvent(thread_id=self.review.document_id, run_id=self.review_id),
+            )
+            emit(
+                self.review_id, StateSnapshotEvent(snapshot=build_state(self.review, self._entries))
+            )
+            self._announced = True
+
+    def _work(self, pool: ThreadPoolExecutor) -> bool:
+        """Feed the pool until the queue is empty. True if finished, False if stopped."""
+        while True:
+            with self._cond:
+                if self._stopping:
+                    if self._inflight == 0:
+                        self._closed = True
+                        return False
+                else:
+                    while self._pending and self._inflight < self.ctx.max_concurrency:
+                        position = self._pending.popleft()
+                        self._inflight += 1
+                        pool.submit(self._judge_clause, position)
+                idle = not self._pending and self._inflight == 0
+                if not idle:
+                    self._cond.wait(self.ctx.poll_seconds)
+            if idle and not self._stopping:
+                if self._try_finish():
+                    return True
+                continue
+            self._watch_limiter()
+
+    def _try_finish(self) -> bool:
+        with self._finish_gate:
+            with self._cond:
+                if self._pending or self._inflight or self._stopping:
+                    return False
+                self._closed = True
+                counts = count(self._entries, self._cache_hits)
+                result = {"counts": counts.model_dump(mode="json"), "cost_usd": self._cost}
+                # Status first: a client that sees RUN_FINISHED and reloads must see it.
+                self.ctx.store.reviews.set_status(self.review_id, "finished")
+                self.ctx.bus.emit(
+                    self.review_id,
+                    RunFinishedEvent(
+                        thread_id=self.review.document_id, run_id=self.review_id, result=result
+                    ),
+                )
+            self._trace.end(result)
+            self._on_closed(self)
+        return True
+
+    def _fail_run(self, exc: Exception) -> None:
+        message = f"{type(exc).__name__}: {exc}"
+        with self._finish_gate:
+            with self._cond:
+                self._closed = True
+            try:
+                self.ctx.store.reviews.set_status(self.review_id, "failed", message)
+                self.ctx.bus.emit(
+                    self.review_id, RunErrorEvent(message=message, code="review_failed")
+                )
+            except Exception:  # noqa: BLE001 - nothing left to tell
+                log.exception("could not record the failure of review %s", self.review_id)
+            self._trace.end(error=message)
+            self._on_closed(self)
+
+    # --- one clause (worker threads) --------------------------------------------
+
+    def _judge_clause(self, position: int) -> None:
+        try:
+            self._judge_clause_unguarded(position)
+        except Exception as exc:  # noqa: BLE001 - the store, not the judge, failed
+            log.exception("review %s: clause %s could not be recorded", self.review_id, position)
+            try:
+                with self._cond:
+                    self._set(position, "failed", error=f"{type(exc).__name__}: {exc}")
+            except Exception:  # noqa: BLE001 - left non-final; a resume picks it up
+                log.warning("clause %s of %s left unrecorded", position, self.review_id)
+        finally:
+            with self._cond:
+                self._inflight -= 1
+                self._cond.notify_all()
+
+    def _judge_clause_unguarded(self, position: int) -> None:
+        store, judge = self.ctx.store, self.ctx.judge
+        clause = self._clauses[position]
+        step = f"clause:{position}"
+
+        cached = None
+        try:
+            cached = store.verdicts.get(clause.content_hash, self.review.agent_version)
+        except Exception:  # noqa: BLE001 - a cache read failing only costs a judge call
+            log.warning("verdict cache read failed for %s", clause.content_hash, exc_info=True)
+        if cached is not None:
+            with self._cond:
+                self._cache_hits += 1
+                self._set(position, "done", verdict=cached)
+                self._progress()
+            return
+
+        with self._cond:
+            self.ctx.bus.emit(self.review_id, StepStartedEvent(step_name=step))
+            self._set(position, "checking")
+
+        try:
+            verdict = judge(clause, parent=self._trace.span)
+            verdict = store.verdicts.save(verdict)
+        except ClauseFailed as exc:
+            outcome: tuple = ("failed", str(exc) or "Die Klausel konnte nicht geprüft werden.")
+        except Exception as exc:  # noqa: BLE001 - principle 3: the clause fails, not the run
+            outcome = ("failed", f"{type(exc).__name__}: {exc}")
+        else:
+            outcome = ("done", verdict)
+
+        with self._cond:
+            if outcome[0] == "done":
+                verdict = outcome[1]
+                self._cost += self._price(verdict)
+                self._set(position, "done", verdict=verdict)
+            else:
+                self._set(position, "failed", error=outcome[1])
+            self.ctx.bus.emit(self.review_id, StepFinishedEvent(step_name=step))
+            self._progress()
+
+    # --- helpers; callers hold self._cond -------------------------------------
+
+    def _set(
+        self,
+        position: int,
+        status: ClauseStatus,
+        *,
+        error: str | None = None,
+        verdict: ClauseVerdict | None = None,
+    ) -> None:
+        """Change one clause: persist it, then (once announced) emit the delta."""
+        self._entries[position] = (status, error, verdict)
+        self.ctx.store.reviews.set_clause_status(self.review_id, position, status, error)
+        counts = self._save_counts()
+        if not self._announced:
+            return  # the snapshot will carry it
+        delta = [
+            {
+                "op": "replace",
+                "path": f"/clauses/{position}",
+                "value": clause_entry(status, error, verdict),
+            },
+            {"op": "replace", "path": "/review/counts", "value": counts.model_dump(mode="json")},
+        ]
+        self.ctx.bus.emit(self.review_id, StateDeltaEvent(delta=delta))
+
+    def _save_counts(self) -> ReviewCounts:
+        counts = count(self._entries, self._cache_hits)
+        self.review.counts = counts
+        self.review.cost_usd = self._cost
+        self.ctx.store.reviews.update_counts(self.review_id, counts, self._cost)
+        return counts
+
+    def _progress(self) -> None:
+        self._waiting_reason = self._limiter_reason()
+        self.ctx.bus.emit(
+            self.review_id,
+            CustomEvent(
+                name=CUSTOM_PROGRESS,
+                value={
+                    "counts": self.review.counts.model_dump(mode="json"),
+                    "cost_usd": self._cost,
+                    "budget_left": self._budget_left(),
+                    "waiting_reason": self._waiting_reason,
+                },
+            ),
+        )
+
+    def _watch_limiter(self) -> None:
+        """Tell the UI when the shared limiter starts or stops making clauses wait."""
+        reason = self._limiter_reason()
+        with self._cond:
+            if reason == self._waiting_reason or not self._announced or self._closed:
+                return
+            if self._inflight == 0 and reason is not None:
+                return  # another review is the one waiting
+            self._progress()
+
+    def _limiter_reason(self) -> str | None:
+        try:
+            return self.ctx.limiter.waiting_reason()
+        except Exception:  # noqa: BLE001 - a limiter without the hook just never says
+            return None
+
+    def _budget_left(self) -> int | None:
+        try:
+            return self.ctx.limiter.remaining_today()
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _price(self, verdict: ClauseVerdict) -> float:
+        per_input = self.ctx.prices.get("input", 0.0)
+        per_output = self.ctx.prices.get("output", 0.0)
+        return (verdict.input_tokens * per_input + verdict.output_tokens * per_output) / 1e6
