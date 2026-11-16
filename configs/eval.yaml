@@ -18,7 +18,7 @@ scope:
   # prototype's remit. Everything else is carried but never published.
   topics: [liability, warranty]
   # Texts this short are section headings, not clauses. Flagged, not dropped:
-  # Phase 7's PDF splitter will produce these by the dozen, so the one real
+  # Phase 5's PDF splitter will produce these by the dozen, so the one real
   # example in the corpus is worth keeping.
   fragment_chars: 40
   # Anonymisation placeholders are part of the clause text and stay verbatim.

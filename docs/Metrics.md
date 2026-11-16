@@ -44,7 +44,7 @@ runs where every API call failed, it averaged 0.78, because a null verdict count
 - Precision, recall and F1 on the **void class only**, never averaged across classes. A
   model answering "valid" to everything is 92.5% accurate here and scores F1 0.0.
 - An `uncertain` verdict is **not** a void call, so abstaining costs recall
-  (`uncertain_counts_as_void: false`). Phase 6 routes abstentions to a human; until then
+  (`uncertain_counts_as_void: false`). Phase 7 routes abstentions to a human; until then
   they are not free.
 - A failed or unparseable call becomes a null verdict scored as "not void", so a failure
   costs recall rather than shrinking the denominator.

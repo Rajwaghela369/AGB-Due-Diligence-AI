@@ -69,7 +69,7 @@ def test_item_evaluator_marks_a_missed_void_clause():
 
 
 def test_item_evaluator_separates_abstention_from_a_wrong_answer():
-    # Phase 6 routes abstentions to a human, so they must be countable apart
+    # Phase 7 routes abstentions to a human, so they must be countable apart
     # from ordinary errors.
     scores = _item_scores({"verdict": "uncertain"}, True)
 

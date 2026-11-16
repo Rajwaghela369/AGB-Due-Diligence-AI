@@ -15,6 +15,8 @@ due diligence area.
 - `docs/Phase 3 Results.md` - the one-shot baseline, and why recall is the unstable half
 - `docs/Phase 4 Plan.md` - the agent: what it does, its runnability gate, and the continuous evaluation track
 - `docs/Phase 4 Results.md` - what Phase 4 built and the numbers measured so far
+- `docs/Phase 5 Plan.md` - the backend API: ingest, cache-first review runner, AG-UI stream, feedback
+- `docs/Phase 6 Plan.md` - the frontend: annotated document, findings, table, feedback
 
 ## Layout
 

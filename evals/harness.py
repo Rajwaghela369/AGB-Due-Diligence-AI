@@ -165,7 +165,7 @@ def item_evaluators() -> list[Any]:
                 comment=f"predicted {verdict!r}, label_void={label}",
             ),
             # Separated out because an abstention is a different failure from a
-            # wrong answer, and Phase 6 will route these to a human.
+            # wrong answer, and Phase 7 will route these to a human.
             Evaluation(name="abstained", value=1.0 if verdict == UNCERTAIN_VERDICT else 0.0),
             Evaluation(name="task_failed", value=1.0 if verdict is None else 0.0),
         ]

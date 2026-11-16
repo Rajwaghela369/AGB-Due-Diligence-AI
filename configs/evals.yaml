@@ -38,7 +38,7 @@ run:
 
 scoring:
   # An "uncertain" verdict is not a void call, so by default it costs recall.
-  # Phase 6 routes these to a human; until then abstaining is not free.
+  # Phase 7 routes these to a human; until then abstaining is not free.
   uncertain_counts_as_void: false
 
 dataset:

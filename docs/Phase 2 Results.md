@@ -56,7 +56,7 @@ is the one Phase 2 decision worth having confirmed by a lawyer.
 
 One in-scope clause is under 40 characters: `agb-1362`, `"12.3 WANN SIE ANWENDBAR SIND"`,
 a heading rather than a clause, not void, in the dev half. It is published to the clause
-table (Phase 7's PDF splitter will produce these by the dozen, so one real example is
+table (Phase 5's PDF splitter will produce these by the dozen, so one real example is
 worth keeping) and excluded from nothing, since it is not in the held-out half that the
 reported metric uses.
 
