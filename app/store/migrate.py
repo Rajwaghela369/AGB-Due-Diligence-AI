@@ -61,3 +61,8 @@ def apply_pending(
             conn.execute("insert into schema_migrations (version) values (%s)", (path.stem,))
             applied.append(path.stem)
     return applied
+
+
+if __name__ == "__main__":
+    applied = apply_pending()
+    print("applied:", ", ".join(applied) if applied else "nothing pending")
