@@ -1,0 +1,49 @@
+"""Local-disk FileStore: content-addressed blobs under one root.
+
+Keys are chosen by the caller (the document id for a PDF), so a blob is
+immutable: `put` of an existing key changes nothing. Writes go to a temp file
+in the same directory and are renamed into place, so a reader or a crash never
+sees a half-written file. Phase 9 swaps this for EU object storage behind the
+same three methods.
+"""
+
+import os
+import tempfile
+from pathlib import Path
+
+DEFAULT_ROOT = Path("stores/files")
+
+
+class LocalFileStore:
+    def __init__(self, root: Path | str = DEFAULT_ROOT) -> None:
+        self.root = Path(root)
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def _path(self, key: str) -> Path:
+        path = (self.root / key).resolve()
+        if not key or not path.is_relative_to(self.root.resolve()) or path == self.root.resolve():
+            raise ValueError(f"invalid file key: {key!r}")
+        return path
+
+    def put(self, key: str, data: bytes) -> str:
+        path = self._path(key)
+        if path.exists():
+            return key
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-")
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, path)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
+        return key
+
+    def get(self, key: str) -> bytes:
+        return self._path(key).read_bytes()
+
+    def exists(self, key: str) -> bool:
+        return self._path(key).is_file()
