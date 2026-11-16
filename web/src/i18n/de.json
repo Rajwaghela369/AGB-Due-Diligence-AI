@@ -52,5 +52,43 @@
       "valid": "{{count}} wirksam",
       "out": "{{count}} außerhalb des Umfangs"
     }
+  },
+  "viewer": {
+    "toolbar": "Dokumentwerkzeuge",
+    "loading": "Dokument wird geladen …",
+    "loadError": "Das Dokument konnte nicht geladen werden.",
+    "page": "Seite {{page}} von {{total}}",
+    "clause": "Klausel {{name}}: {{state}}",
+    "retry": "Erneut versuchen",
+    "retrying": "Wird erneut versucht …",
+    "retryClause": "Klausel {{name}} erneut prüfen",
+    "search": {
+      "label": "Im Dokument suchen",
+      "placeholder": "Suchen …",
+      "none": "Keine Treffer",
+      "position": "{{current}} / {{count}}",
+      "next": "Nächster Treffer",
+      "previous": "Vorheriger Treffer"
+    },
+    "nav": {
+      "label": "Fundstellen",
+      "position": "{{current}} / {{total}}",
+      "next": "Nächste Fundstelle",
+      "previous": "Vorherige Fundstelle"
+    },
+    "zoom": {
+      "label": "Zoom",
+      "in": "Vergrößern",
+      "out": "Verkleinern",
+      "reset": "Zoom {{percent}} % – auf 100 % zurücksetzen"
+    },
+    "steps": {
+      "label": "Fortschritt der Prüfung",
+      "upload": "Upload",
+      "read": "Lesen",
+      "split": "Aufteilen",
+      "done": "erledigt",
+      "check": "Prüfung {{done}}/{{total}}"
+    }
   }
 }
