@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import requests
 
+from core.hashing import content_hash
 from core.logging import get_logger
 from core.settings import load_settings
 
@@ -32,7 +33,25 @@ def embed_texts(
     task: str,
     batch_size: int = 64,
     normalized: bool = True,
+    cache: object | None = None,
 ) -> EmbeddingBatch:
+    """Embed text, reusing vectors whose content and model have not changed."""
+    cached: dict[int, list[float]] = {}
+    missing: list[tuple[int, str, str]] = []
+    if cache is not None:
+        for index, text in enumerate(texts):
+            digest = content_hash(text)
+            vector = cache.get_embedding(digest, model)
+            if vector is None:
+                missing.append((index, text, digest))
+            else:
+                cached[index] = vector
+    else:
+        missing = [(index, text, content_hash(text)) for index, text in enumerate(texts)]
+
+    if not missing:
+        return EmbeddingBatch(vectors=[cached[index] for index in range(len(texts))], tokens=0)
+
     api_key = load_settings().jina_api_key
     if not api_key:
         raise RuntimeError("JINA_API_KEY is not set; copy .env.example to .env")
@@ -41,8 +60,9 @@ def embed_texts(
     vectors: list[list[float]] = []
     tokens = 0
 
-    for start in range(0, len(texts), batch_size):
-        batch = texts[start : start + batch_size]
+    for start in range(0, len(missing), batch_size):
+        batch_entries = missing[start : start + batch_size]
+        batch = [entry[1] for entry in batch_entries]
         response = requests.post(
             ENDPOINT,
             headers=headers,
@@ -60,12 +80,15 @@ def embed_texts(
 
         # The API may return items out of order, so place them by index.
         ordered = sorted(payload["data"], key=lambda item: item["index"])
-        vectors.extend(item["embedding"] for item in ordered)
+        for (index, _, digest), item in zip(batch_entries, ordered, strict=True):
+            vector = item["embedding"]
+            cached[index] = vector
+            if cache is not None:
+                cache.put_embedding(digest, model, vector)
         tokens += payload.get("usage", {}).get("total_tokens", 0)
-        log.info("embedded %d/%d (%s)", len(vectors), len(texts), task)
+        log.info("embedded %d/%d (%s)", len(cached), len(texts), task)
 
-    if len(vectors) != len(texts):
-        raise RuntimeError(f"asked for {len(texts)} embeddings, received {len(vectors)}")
+    vectors = [cached[index] for index in range(len(texts))]
     if vectors and len(vectors[0]) != dimension:
         raise RuntimeError(f"expected {dimension} dimensions, received {len(vectors[0])}")
 

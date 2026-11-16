@@ -180,6 +180,9 @@ class Feedback(BaseModel):
     corrected_basis: list[str] = Field(default_factory=list)
     comment: str = ""
     source: Literal["vote", "decision"] = "vote"
+    # Langfuse observation id per scored step ("judge", "retrieval", "explanation",
+    # "clause"), filled when the scores are written; the audit trail of where each went.
+    observations: dict[str, str | None] = Field(default_factory=dict)
     created_at: datetime | None = None
 
 

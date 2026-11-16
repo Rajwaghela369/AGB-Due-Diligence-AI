@@ -13,4 +13,8 @@ class AgentState(TypedDict, total=False):
     retries: int
     # Which self_check rule fired, carried so the trace can show the reason.
     check: str
+    # The step observations collected for Phase 5 feedback attribution.
+    observations: dict[str, str | None]
+    # A per-invocation tracer lets one compiled graph run beneath each clause span.
+    tracer: Any
     result: dict[str, Any]
