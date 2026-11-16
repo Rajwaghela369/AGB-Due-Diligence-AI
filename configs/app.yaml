@@ -69,3 +69,19 @@ review:
   price_usd_per_million_tokens:
     input: 0
     output: 0
+
+# HTTP API (Phase 5). Read by app.api.main.build_app and passed to create_app.
+ingest:
+  # Upload size limit in MB; larger requests get 413 before they are read.
+  max_upload_mb: 20
+
+api:
+  # The frontend's origin only; every other origin is refused by CORS.
+  cors_origins: ["http://localhost:5173"]
+  # Uploads and reviews share one token bucket per client IP.
+  rate_limit_per_minute: 30
+  rate_limit_burst: 10
+
+files:
+  # Immutable source PDFs, one file per document. Docker mounts this as a volume.
+  root: stores/files

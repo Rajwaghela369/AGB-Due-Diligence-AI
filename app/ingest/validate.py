@@ -18,6 +18,14 @@ from app.ingest import IngestError
 
 DEFAULT_MAX_UPLOAD_MB = 20
 
+# DOCX is a ZIP, so its size on the wire says little about what LibreOffice will expand.
+# These limits are checked from the central directory, before any member is decompressed.
+MAX_ARCHIVE_ENTRIES = 1000
+MAX_ARCHIVE_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
+MAX_COMPRESSION_RATIO = 100
+RATIO_CHECK_FLOOR_BYTES = 1024 * 1024  # tiny archives compress well for innocent reasons
+MAX_PART_BYTES = 1024 * 1024  # the content-types part is small in any real document
+
 
 def max_upload_bytes() -> int:
     """Read the optional app limit, retaining the documented 20 MB default."""
@@ -60,12 +68,49 @@ def validate_pdf(data: bytes):
 def _validate_docx(data: bytes) -> None:
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            _check_archive_budget(archive.infolist(), len(data))
             names = {Path(name).as_posix().lower() for name in archive.namelist()}
-            content_types = archive.read("[Content_Types].xml").lower()
+            if "word/document.xml" not in names:
+                raise IngestError("unsupported_type", "Die Datei ist kein gültiges DOCX.")
+            if any(name.endswith("vbaproject.bin") for name in names):
+                raise IngestError(
+                    "unsupported_type", "DOCX-Dateien mit Makros werden nicht unterstützt."
+                )
+            content_types = _read_part(archive, "[Content_Types].xml").lower()
+    except IngestError:
+        raise
     except (KeyError, zipfile.BadZipFile, OSError) as exc:
         raise IngestError("unsupported_type", "Die Datei ist kein gültiges DOCX.") from exc
 
-    if "word/document.xml" not in names:
-        raise IngestError("unsupported_type", "Die Datei ist kein gültiges DOCX.")
-    if b"macroenabled" in content_types or any(name.endswith("vbaproject.bin") for name in names):
+    if b"macroenabled" in content_types:
         raise IngestError("unsupported_type", "DOCX-Dateien mit Makros werden nicht unterstützt.")
+
+
+def _check_archive_budget(infos: list[zipfile.ZipInfo], compressed_size: int) -> None:
+    """Refuse archives whose declared expansion is out of proportion, before reading them."""
+    if len(infos) > MAX_ARCHIVE_ENTRIES:
+        raise _too_expanded()
+    uncompressed = sum(info.file_size for info in infos)
+    if uncompressed > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
+        raise _too_expanded()
+    if (
+        uncompressed > RATIO_CHECK_FLOOR_BYTES
+        and uncompressed > compressed_size * MAX_COMPRESSION_RATIO
+    ):
+        raise _too_expanded()
+
+
+def _read_part(archive: zipfile.ZipFile, name: str) -> bytes:
+    """Read one member, but never more than the part limit, whatever its header claims."""
+    with archive.open(name) as part:
+        content = part.read(MAX_PART_BYTES + 1)
+    if len(content) > MAX_PART_BYTES:
+        raise _too_expanded()
+    return content
+
+
+def _too_expanded() -> IngestError:
+    return IngestError(
+        "archive_too_large",
+        "Die DOCX-Datei ist nach dem Entpacken zu groß.",
+    )

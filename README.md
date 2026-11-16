@@ -65,6 +65,35 @@ hash and `agent_version` and carrying the trace id. The run report lands in `rep
 Models, thresholds and the retrieval policy live in `configs/app.yaml`; run size and
 quota in `configs/evals.yaml`.
 
+## Running the API
+
+The API needs the same keys as the agent (`GEMINI_API_KEY`, `JINA_API_KEY`, `QDRANT_URL`,
+`QDRANT_API_KEY`, `DATABASE_URL`) and `GOTENBERG_URL` for DOCX conversion. `LOG_FORMAT=json`
+is optional: the API always logs one JSON object per line, with `request_id`, `review_id`,
+`document_id` and `trace_id` where known.
+
+```bash
+make api-up              # build and start the API and Gotenberg in Docker Compose
+make api                 # or: run the API locally with reload, Gotenberg from compose
+make api-down            # stop the compose stack; stored PDFs stay in the files volume
+```
+
+- `http://localhost:8000/api/v1/health` is liveness and always returns 200.
+- `http://localhost:8000/api/v1/ready` checks Neon, Qdrant, Gemini and Jina in parallel,
+  each with a two-second deadline. It returns 503 and names the failing check.
+
+The API runs with **one worker** (`--workers 1`). Review runs and their SSE event streams
+are held in process memory until they move to Postgres LISTEN/NOTIFY; a second worker
+would split a review's events from the clients watching it.
+
+The image copies `data/processed/bgb_chunks.jsonl` into the build. That file is gitignored
+and is written by `make kb`, so run it (or copy the file in) before `make api-up`, or the
+build fails at that step. `.dockerignore` does not exclude it.
+
+Limits live in `configs/app.yaml`: `ingest.max_upload_mb`, `api.cors_origins` (the only
+browser origin allowed), `api.rate_limit_per_minute` and `api.rate_limit_burst` (uploads
+and reviews per client IP), and `files.root` for the stored PDFs.
+
 ## Current state
 
 Reference numbers, with the caveats that matter, in `docs/Metrics.md`:

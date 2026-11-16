@@ -5,6 +5,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
+from app.api.middleware import (
+    _TOO_LARGE_MESSAGE,
+    REQUEST_ID_SCOPE_KEY,
+    RequestBodyTooLarge,
+)
 from app.api.schemas import ErrorBody
 
 
@@ -18,6 +23,21 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def api_error(_request: Request, exc: ApiError) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content=exc.body.model_dump())
+
+    @app.exception_handler(Exception)
+    async def unhandled(request: Request, _exc: Exception) -> JSONResponse:
+        # The id lets a user quote the failing request; the traceback is in the server log.
+        headers = {}
+        request_id = request.scope.get(REQUEST_ID_SCOPE_KEY)
+        if request_id:
+            headers["X-Request-Id"] = request_id
+        body = ErrorBody(code="internal_error", message="Unerwarteter Serverfehler.")
+        return JSONResponse(status_code=500, content=body.model_dump(), headers=headers)
+
+    @app.exception_handler(RequestBodyTooLarge)
+    async def body_too_large(_request: Request, _exc: RequestBodyTooLarge) -> JSONResponse:
+        body = ErrorBody(code="too_large", message=_TOO_LARGE_MESSAGE)
+        return JSONResponse(status_code=413, content=body.model_dump())
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:

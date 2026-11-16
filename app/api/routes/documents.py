@@ -15,14 +15,15 @@ from app.ingest import IngestError, ingest_file, ingest_text
 router = APIRouter()
 
 
+_STATUS_BY_CODE = {
+    "too_large": 413,
+    "archive_too_large": 413,
+    "unsupported_type": 415,
+}
+
+
 def _ingest_error(exc: IngestError) -> ApiError:
-    if exc.code == "too_large":
-        status = 413
-    elif exc.code == "unsupported_type":
-        status = 415
-    else:
-        status = 422
-    return ApiError(status, exc.code, exc.message)
+    return ApiError(_STATUS_BY_CODE.get(exc.code, 422), exc.code, exc.message)
 
 
 @router.post("/documents", response_model=DocumentOut)

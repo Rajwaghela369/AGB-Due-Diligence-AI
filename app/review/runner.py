@@ -61,7 +61,7 @@ from ag_ui.core import (
     StepStartedEvent,
 )
 from core.budget import LimiterClosed
-from core.logging import get_logger
+from core.logging import bind, get_logger, update
 
 from app.agent.run import ClauseFailed
 from app.domain import (
@@ -301,6 +301,11 @@ class ReviewRun:
             return self._cond.wait_for(lambda: self._inflight == 0, timeout)
 
     def _run(self) -> None:
+        # Worker threads start with an empty log context, so each run and clause binds its own.
+        with bind(review_id=self.review_id, document_id=self.review.document_id):
+            self._run_bound()
+
+    def _run_bound(self) -> None:
         pool = None
         try:
             self._start_trace()
@@ -324,6 +329,7 @@ class ReviewRun:
 
     def _start_trace(self) -> None:
         self._trace = start_review_trace(self.ctx.tracer, self.review, reason=self.reason)
+        update(trace_id=self._trace.trace_id)
         if self._trace.trace_id and self._trace.trace_id != self.review.trace_id:
             try:
                 self.ctx.store.reviews.set_trace(self.review_id, self._trace.trace_id)
@@ -416,6 +422,15 @@ class ReviewRun:
                 self._cond.notify_all()
 
     def _judge_clause(self, position: int) -> None:
+        with bind(
+            review_id=self.review_id,
+            document_id=self.review.document_id,
+            trace_id=self._trace.trace_id,
+            clause=position,
+        ):
+            self._judge_clause_guarded(position)
+
+    def _judge_clause_guarded(self, position: int) -> None:
         try:
             self._judge_clause_unguarded(position)
         except Exception as exc:  # noqa: BLE001 - the store, not the judge, failed
