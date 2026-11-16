@@ -153,3 +153,60 @@ def test_idle_timeout_and_no_follow_end_the_stream():
     bus.emit("rev", _started())
     assert [e.seq for e in bus.subscribe("rev", follow=False)] == [1]
     assert [e.seq for e in bus.subscribe("rev", idle_timeout=0)] == [1]
+
+
+def _review(store, review_id: str, status: str) -> None:
+    from app.domain import Review
+
+    store.reviews.create(
+        Review(
+            review_id=review_id,
+            document_id="doc",
+            agent_version="v1",
+            scope=["liability"],
+            status="queued",
+        )
+    )
+    store.reviews.set_status(review_id, status)
+
+
+def test_a_finish_is_not_final_while_the_review_is_running_again():
+    store = memory_store()
+    bus = EventBus(store, recheck_seconds=3600)
+    _review(store, "rev", "running")  # a retry has started (its RUN_STARTED may lag)
+    bus.emit("rev", _started())
+    bus.emit("rev", _finished())
+
+    out, thread = _consume(bus.subscribe("rev"))
+    assert [out.get(timeout=DEADLINE).seq for _ in range(2)] == [1, 2]
+    bus.emit("rev", _started())
+    assert out.get(timeout=DEADLINE).seq == 3  # still following past the old finish
+    store.reviews.set_status("rev", "finished")
+    bus.emit("rev", _finished())
+    assert [e.seq for e in _drain(out)] == [4]
+    thread.join(DEADLINE)
+
+
+def test_a_terminal_review_without_a_terminal_event_ends_the_stream_after_a_recheck():
+    store = memory_store()
+    bus = EventBus(store, recheck_seconds=0.01)
+    _review(store, "rev", "finished")
+    bus.emit("rev", _started())  # the process died before RUN_FINISHED was stored
+    assert [e.seq for e in bus.subscribe("rev")] == [1]
+
+
+def test_a_running_review_keeps_its_stream_open_across_rechecks():
+    store = memory_store()
+    bus = EventBus(store, recheck_seconds=0.001)
+    _review(store, "rev", "running")
+    bus.emit("rev", _started())
+    out, thread = _consume(bus.subscribe("rev"))
+    assert out.get(timeout=DEADLINE).seq == 1
+    # Rechecks pass while running; the finish alone does not end the stream either,
+    # until the stored review is terminal too.
+    bus.emit("rev", _finished())
+    assert out.get(timeout=DEADLINE).seq == 2
+    store.reviews.set_status("rev", "finished")
+    assert _drain(out) == []
+    thread.join(DEADLINE)
+    assert not thread.is_alive()

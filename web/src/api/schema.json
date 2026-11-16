@@ -1,0 +1,1365 @@
+{
+  "$defs": {
+    "ClauseSpan": {
+      "description": "One clause as the splitter found it. Position is its 0-based index in the document.",
+      "properties": {
+        "content_hash": {
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "end": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
+        },
+        "heading": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heading"
+        },
+        "in_scope": {
+          "default": true,
+          "title": "In Scope",
+          "type": "boolean"
+        },
+        "number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Number"
+        },
+        "page": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page"
+        },
+        "position": {
+          "title": "Position",
+          "type": "integer"
+        },
+        "rects": {
+          "items": {
+            "$ref": "#/$defs/Rect"
+          },
+          "title": "Rects",
+          "type": "array"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "topic": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Topic"
+        }
+      },
+      "required": [
+        "position",
+        "text",
+        "content_hash"
+      ],
+      "title": "ClauseSpan",
+      "type": "object"
+    },
+    "ClauseVerdict": {
+      "description": "A verdict keyed by (content_hash, agent_version); shared by every document.",
+      "properties": {
+        "agent_version": {
+          "title": "Agent Version",
+          "type": "string"
+        },
+        "basis_scores": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Basis Scores",
+          "type": "object"
+        },
+        "candidates": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Candidates",
+          "type": "array"
+        },
+        "check": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Check"
+        },
+        "confidence": {
+          "title": "Confidence",
+          "type": "number"
+        },
+        "content_hash": {
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "input_tokens": {
+          "default": 0,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "latency_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Latency Ms"
+        },
+        "legal_basis": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Legal Basis",
+          "type": "array"
+        },
+        "observations": {
+          "$ref": "#/$defs/StepObservations"
+        },
+        "output_tokens": {
+          "default": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "reason_de": {
+          "default": "",
+          "title": "Reason De",
+          "type": "string"
+        },
+        "reason_unavailable": {
+          "default": false,
+          "title": "Reason Unavailable",
+          "type": "boolean"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        },
+        "verdict": {
+          "enum": [
+            "valid",
+            "potentially_void",
+            "uncertain"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        },
+        "void_probability": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Void Probability"
+        }
+      },
+      "required": [
+        "content_hash",
+        "agent_version",
+        "verdict",
+        "confidence"
+      ],
+      "title": "ClauseVerdict",
+      "type": "object"
+    },
+    "Decision": {
+      "properties": {
+        "action": {
+          "enum": [
+            "accept",
+            "override",
+            "dismiss"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "corrected_basis": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Corrected Basis",
+          "type": "array"
+        },
+        "corrected_verdict": {
+          "anyOf": [
+            {
+              "enum": [
+                "valid",
+                "potentially_void",
+                "uncertain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Corrected Verdict"
+        },
+        "decided_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decided At"
+        },
+        "decided_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decided By"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        },
+        "position": {
+          "title": "Position",
+          "type": "integer"
+        },
+        "review_id": {
+          "title": "Review Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "review_id",
+        "position",
+        "action"
+      ],
+      "title": "Decision",
+      "type": "object"
+    },
+    "DecisionIn": {
+      "properties": {
+        "action": {
+          "enum": [
+            "accept",
+            "override",
+            "dismiss"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "corrected_basis": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Corrected Basis",
+          "type": "array"
+        },
+        "corrected_verdict": {
+          "anyOf": [
+            {
+              "enum": [
+                "valid",
+                "potentially_void",
+                "uncertain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Corrected Verdict"
+        },
+        "note": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "DecisionIn",
+      "type": "object"
+    },
+    "DecisionOut": {
+      "properties": {
+        "decision": {
+          "$ref": "#/$defs/Decision"
+        }
+      },
+      "required": [
+        "decision"
+      ],
+      "title": "DecisionOut",
+      "type": "object"
+    },
+    "Document": {
+      "properties": {
+        "created_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Created At"
+        },
+        "document_id": {
+          "title": "Document Id",
+          "type": "string"
+        },
+        "filename": {
+          "title": "Filename",
+          "type": "string"
+        },
+        "page_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page Count"
+        },
+        "parser_version": {
+          "title": "Parser Version",
+          "type": "string"
+        },
+        "source_type": {
+          "enum": [
+            "pdf",
+            "docx",
+            "text"
+          ],
+          "title": "Source Type",
+          "type": "string"
+        },
+        "splitter_version": {
+          "title": "Splitter Version",
+          "type": "string"
+        },
+        "text_hash": {
+          "title": "Text Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "document_id",
+        "filename",
+        "source_type",
+        "parser_version",
+        "splitter_version",
+        "text_hash"
+      ],
+      "title": "Document",
+      "type": "object"
+    },
+    "DocumentList": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/DocumentListItem"
+          },
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "DocumentList",
+      "type": "object"
+    },
+    "DocumentListItem": {
+      "properties": {
+        "document": {
+          "$ref": "#/$defs/Document"
+        },
+        "latest_review": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Review"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "document"
+      ],
+      "title": "DocumentListItem",
+      "type": "object"
+    },
+    "DocumentOut": {
+      "properties": {
+        "clauses": {
+          "items": {
+            "$ref": "#/$defs/ClauseSpan"
+          },
+          "title": "Clauses",
+          "type": "array"
+        },
+        "document": {
+          "$ref": "#/$defs/Document"
+        },
+        "latest_review": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Review"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reused": {
+          "default": false,
+          "title": "Reused",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "document",
+        "clauses"
+      ],
+      "title": "DocumentOut",
+      "type": "object"
+    },
+    "ErrorBody": {
+      "description": "Every 4xx/5xx body. `code` is stable and drives the UI's message.",
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "ErrorBody",
+      "type": "object"
+    },
+    "Feedback": {
+      "properties": {
+        "agent_version": {
+          "title": "Agent Version",
+          "type": "string"
+        },
+        "comment": {
+          "default": "",
+          "title": "Comment",
+          "type": "string"
+        },
+        "corrected_basis": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Corrected Basis",
+          "type": "array"
+        },
+        "corrected_verdict": {
+          "anyOf": [
+            {
+              "enum": [
+                "valid",
+                "potentially_void",
+                "uncertain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Corrected Verdict"
+        },
+        "created_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Created At"
+        },
+        "feedback_id": {
+          "title": "Feedback Id",
+          "type": "string"
+        },
+        "observations": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Observations",
+          "type": "object"
+        },
+        "position": {
+          "title": "Position",
+          "type": "integer"
+        },
+        "reasons": {
+          "items": {
+            "enum": [
+              "verdict_wrong",
+              "basis_wrong",
+              "reasoning_unclear",
+              "clause_cut"
+            ],
+            "type": "string"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "review_id": {
+          "title": "Review Id",
+          "type": "string"
+        },
+        "source": {
+          "default": "vote",
+          "enum": [
+            "vote",
+            "decision"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "vote": {
+          "enum": [
+            "up",
+            "down"
+          ],
+          "title": "Vote",
+          "type": "string"
+        }
+      },
+      "required": [
+        "feedback_id",
+        "review_id",
+        "position",
+        "agent_version",
+        "vote"
+      ],
+      "title": "Feedback",
+      "type": "object"
+    },
+    "FeedbackIn": {
+      "properties": {
+        "comment": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Comment",
+          "type": "string"
+        },
+        "corrected_basis": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Corrected Basis",
+          "type": "array"
+        },
+        "corrected_verdict": {
+          "anyOf": [
+            {
+              "enum": [
+                "valid",
+                "potentially_void",
+                "uncertain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Corrected Verdict"
+        },
+        "position": {
+          "title": "Position",
+          "type": "integer"
+        },
+        "reasons": {
+          "items": {
+            "enum": [
+              "verdict_wrong",
+              "basis_wrong",
+              "reasoning_unclear",
+              "clause_cut"
+            ],
+            "type": "string"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "review_id": {
+          "title": "Review Id",
+          "type": "string"
+        },
+        "vote": {
+          "enum": [
+            "up",
+            "down"
+          ],
+          "title": "Vote",
+          "type": "string"
+        }
+      },
+      "required": [
+        "review_id",
+        "position",
+        "vote"
+      ],
+      "title": "FeedbackIn",
+      "type": "object"
+    },
+    "FeedbackOut": {
+      "properties": {
+        "feedback_id": {
+          "title": "Feedback Id",
+          "type": "string"
+        },
+        "scored_steps": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Scored Steps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "feedback_id",
+        "scored_steps"
+      ],
+      "title": "FeedbackOut",
+      "type": "object"
+    },
+    "Finding": {
+      "description": "One clause's result inside one review: the reload path for the UI.",
+      "properties": {
+        "clause": {
+          "$ref": "#/$defs/ClauseSpan"
+        },
+        "decision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Decision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "feedback": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Feedback"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "position": {
+          "title": "Position",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "checking",
+            "done",
+            "failed",
+            "out_of_scope"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "verdict": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClauseVerdict"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "position",
+        "clause",
+        "status"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "FindingsOut": {
+      "properties": {
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/Finding"
+          },
+          "title": "Findings",
+          "type": "array"
+        },
+        "review": {
+          "$ref": "#/$defs/Review"
+        }
+      },
+      "required": [
+        "review",
+        "findings"
+      ],
+      "title": "FindingsOut",
+      "type": "object"
+    },
+    "Health": {
+      "properties": {
+        "status": {
+          "const": "ok",
+          "default": "ok",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "title": "Health",
+      "type": "object"
+    },
+    "PasteIn": {
+      "description": "`POST /documents` with JSON instead of multipart, for pasted text.",
+      "properties": {
+        "filename": {
+          "default": "Eingefügter Text",
+          "title": "Filename",
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "PasteIn",
+      "type": "object"
+    },
+    "Ready": {
+      "properties": {
+        "checks": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "title": "Checks",
+          "type": "object"
+        },
+        "ready": {
+          "title": "Ready",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ready",
+        "checks"
+      ],
+      "title": "Ready",
+      "type": "object"
+    },
+    "Rect": {
+      "description": "One line of clause text on a page, in PDF points from the top-left corner.",
+      "properties": {
+        "bottom": {
+          "title": "Bottom",
+          "type": "number"
+        },
+        "page": {
+          "title": "Page",
+          "type": "integer"
+        },
+        "top": {
+          "title": "Top",
+          "type": "number"
+        },
+        "x0": {
+          "title": "X0",
+          "type": "number"
+        },
+        "x1": {
+          "title": "X1",
+          "type": "number"
+        }
+      },
+      "required": [
+        "page",
+        "x0",
+        "top",
+        "x1",
+        "bottom"
+      ],
+      "title": "Rect",
+      "type": "object"
+    },
+    "Review": {
+      "properties": {
+        "agent_version": {
+          "title": "Agent Version",
+          "type": "string"
+        },
+        "cost_usd": {
+          "default": 0.0,
+          "title": "Cost Usd",
+          "type": "number"
+        },
+        "counts": {
+          "$ref": "#/$defs/ReviewCounts"
+        },
+        "created_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Created At"
+        },
+        "document_id": {
+          "title": "Document Id",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Finished At"
+        },
+        "review_id": {
+          "title": "Review Id",
+          "type": "string"
+        },
+        "scope": {
+          "items": {
+            "enum": [
+              "liability",
+              "warranty"
+            ],
+            "type": "string"
+          },
+          "title": "Scope",
+          "type": "array"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "running",
+            "finished",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        }
+      },
+      "required": [
+        "review_id",
+        "document_id",
+        "agent_version",
+        "scope",
+        "status"
+      ],
+      "title": "Review",
+      "type": "object"
+    },
+    "ReviewCounts": {
+      "properties": {
+        "cache_hits": {
+          "default": 0,
+          "title": "Cache Hits",
+          "type": "integer"
+        },
+        "done": {
+          "default": 0,
+          "title": "Done",
+          "type": "integer"
+        },
+        "failed": {
+          "default": 0,
+          "title": "Failed",
+          "type": "integer"
+        },
+        "out_of_scope": {
+          "default": 0,
+          "title": "Out Of Scope",
+          "type": "integer"
+        },
+        "potentially_void": {
+          "default": 0,
+          "title": "Potentially Void",
+          "type": "integer"
+        },
+        "total": {
+          "default": 0,
+          "title": "Total",
+          "type": "integer"
+        },
+        "uncertain": {
+          "default": 0,
+          "title": "Uncertain",
+          "type": "integer"
+        },
+        "valid": {
+          "default": 0,
+          "title": "Valid",
+          "type": "integer"
+        }
+      },
+      "title": "ReviewCounts",
+      "type": "object"
+    },
+    "ReviewIn": {
+      "properties": {
+        "document_id": {
+          "title": "Document Id",
+          "type": "string"
+        },
+        "scope": {
+          "items": {
+            "enum": [
+              "liability",
+              "warranty"
+            ],
+            "type": "string"
+          },
+          "title": "Scope",
+          "type": "array"
+        }
+      },
+      "required": [
+        "document_id"
+      ],
+      "title": "ReviewIn",
+      "type": "object"
+    },
+    "ReviewOut": {
+      "properties": {
+        "budget_left": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Budget Left"
+        },
+        "cache_hit_rate": {
+          "default": 0.0,
+          "title": "Cache Hit Rate",
+          "type": "number"
+        },
+        "review": {
+          "$ref": "#/$defs/Review"
+        },
+        "waiting_reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "rate_limit",
+                "daily_budget"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Waiting Reason"
+        }
+      },
+      "required": [
+        "review"
+      ],
+      "title": "ReviewOut",
+      "type": "object"
+    },
+    "StatuteOut": {
+      "properties": {
+        "chunk_id": {
+          "title": "Chunk Id",
+          "type": "string"
+        },
+        "citation": {
+          "title": "Citation",
+          "type": "string"
+        },
+        "source_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Url"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "chunk_id",
+        "citation",
+        "title",
+        "text"
+      ],
+      "title": "StatuteOut",
+      "type": "object"
+    },
+    "StepObservations": {
+      "description": "Langfuse observation ids of the steps feedback can be scored on.",
+      "properties": {
+        "clause_span": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Clause Span"
+        },
+        "explanation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Explanation"
+        },
+        "judge": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Judge"
+        },
+        "retrieval": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retrieval"
+        }
+      },
+      "title": "StepObservations",
+      "type": "object"
+    },
+    "StoredEvent": {
+      "description": "One AG-UI event as persisted in `run_events` and sent as one SSE message.\n\n`seq` starts at 1 per review and is the SSE `id`, so `Last-Event-ID: n`\nresumes at `seq > n`. `payload` is the AG-UI event serialised with\n`model_dump(by_alias=True, exclude_none=True)` plus `schemaVersion`.",
+      "properties": {
+        "created_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Created At"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "review_id": {
+          "title": "Review Id",
+          "type": "string"
+        },
+        "seq": {
+          "title": "Seq",
+          "type": "integer"
+        },
+        "type": {
+          "enum": [
+            "RUN_STARTED",
+            "STATE_SNAPSHOT",
+            "STEP_STARTED",
+            "STEP_FINISHED",
+            "STATE_DELTA",
+            "CUSTOM",
+            "RUN_ERROR",
+            "RUN_FINISHED"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "review_id",
+        "seq",
+        "type",
+        "payload"
+      ],
+      "title": "StoredEvent",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Generated from app.api.schemas and app.domain.StoredEvent.",
+  "properties": {
+    "DecisionIn": {
+      "$ref": "#/$defs/DecisionIn"
+    },
+    "DecisionOut": {
+      "$ref": "#/$defs/DecisionOut"
+    },
+    "DocumentList": {
+      "$ref": "#/$defs/DocumentList"
+    },
+    "DocumentListItem": {
+      "$ref": "#/$defs/DocumentListItem"
+    },
+    "DocumentOut": {
+      "$ref": "#/$defs/DocumentOut"
+    },
+    "ErrorBody": {
+      "$ref": "#/$defs/ErrorBody"
+    },
+    "FeedbackIn": {
+      "$ref": "#/$defs/FeedbackIn"
+    },
+    "FeedbackOut": {
+      "$ref": "#/$defs/FeedbackOut"
+    },
+    "FindingsOut": {
+      "$ref": "#/$defs/FindingsOut"
+    },
+    "Health": {
+      "$ref": "#/$defs/Health"
+    },
+    "PasteIn": {
+      "$ref": "#/$defs/PasteIn"
+    },
+    "Ready": {
+      "$ref": "#/$defs/Ready"
+    },
+    "ReviewIn": {
+      "$ref": "#/$defs/ReviewIn"
+    },
+    "ReviewOut": {
+      "$ref": "#/$defs/ReviewOut"
+    },
+    "StatuteOut": {
+      "$ref": "#/$defs/StatuteOut"
+    },
+    "StoredEvent": {
+      "$ref": "#/$defs/StoredEvent"
+    }
+  },
+  "title": "AGB Check API contracts",
+  "type": "object"
+}

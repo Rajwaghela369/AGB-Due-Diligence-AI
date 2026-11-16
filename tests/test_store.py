@@ -299,6 +299,20 @@ def test_active_for_dedupes_queued_and_running_only(store):
     assert store.reviews.active_for(doc, "v1") is None
 
 
+def test_one_active_review_per_document_and_version(store):
+    doc = uid()
+    first = store.reviews.create(make_review(doc))
+    # A second active review of the same document and version loses to the first.
+    assert store.reviews.create(make_review(doc)).review_id == first.review_id
+    assert store.reviews.create(make_review(doc, "v2")).review_id != first.review_id
+
+    store.reviews.set_status(first.review_id, "finished")
+    second = store.reviews.create(make_review(doc))
+    assert second.review_id != first.review_id
+    with pytest.raises(Exception):  # noqa: B017 - ValueError in memory, UniqueViolation in Postgres
+        store.reviews.set_status(first.review_id, "running")
+
+
 def test_latest_for_returns_the_newest_review(store):
     doc = uid()
     assert store.reviews.latest_for(doc) is None

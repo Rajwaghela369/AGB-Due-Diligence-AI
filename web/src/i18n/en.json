@@ -1,0 +1,34 @@
+{
+  "app": {
+    "name": "AGB Check",
+    "disclaimer": "Not legal advice — the lawyer makes the decision.",
+    "theme": "Change appearance"
+  },
+  "nav": {
+    "home": "Home",
+    "upload": "Upload document"
+  },
+  "health": {
+    "label": "API status",
+    "reachable": "API reachable",
+    "unreachable": "API unreachable",
+    "checking": "Checking API"
+  },
+  "pages": {
+    "home": {
+      "title": "Review contracts calmly and transparently",
+      "description": "Your recent reviews will appear here."
+    },
+    "upload": {
+      "title": "Add a contract",
+      "description": "PDF, DOCX and pasted text will be supported in the next step."
+    },
+    "review": {
+      "title": "Review",
+      "description": "The document view and findings will be brought together here."
+    },
+    "notFound": {
+      "title": "Page not found"
+    }
+  }
+}
