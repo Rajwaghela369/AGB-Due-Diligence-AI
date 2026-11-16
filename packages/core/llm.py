@@ -24,6 +24,10 @@ when it ran out, it degraded, and returned a verdict-shaped error for every
 remaining clause. A run out of allowance should stop.
 """
 
+import random
+import re
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -39,6 +43,8 @@ ANTHROPIC = "anthropic"
 # above the ceiling can never fire. Callers comparing against `value` need it.
 NOUL_FLOOR = 0.01
 NOUL_CEILING = 0.99
+MAX_ATTEMPTS = 3
+_BACKOFF_SECONDS = 0.5
 
 
 @dataclass(frozen=True)
@@ -136,6 +142,54 @@ def _tokens(usage: Any) -> tuple[int, int]:
     )
 
 
+def _status_code(exc: Exception) -> int | None:
+    """Extract an HTTP status across the Google and Anthropic SDK exception shapes."""
+    response = getattr(exc, "response", None)
+    candidates = (
+        getattr(exc, "status_code", None),
+        getattr(exc, "code", None),
+        getattr(response, "status_code", None),
+    )
+    for candidate in candidates:
+        candidate = getattr(candidate, "value", candidate)
+        try:
+            return int(candidate)
+        except (TypeError, ValueError):
+            continue
+    match = re.search(r"(?<!\d)(429|5\d\d)(?!\d)", str(exc))
+    return int(match.group(1)) if match else None
+
+
+def _retryable(exc: Exception) -> bool:
+    status = _status_code(exc)
+    return status == 429 or (status is not None and 500 <= status < 600)
+
+
+def _request_with_retries[T](call: Callable[[], T], budget: RequestBudget | None) -> T:
+    """Retry transient provider responses, accounting each network attempt separately."""
+    for attempt in range(MAX_ATTEMPTS):
+        if budget is not None:
+            budget.reserve()
+        try:
+            return call()
+        except BudgetExceeded:
+            raise
+        except Exception as exc:
+            if attempt + 1 == MAX_ATTEMPTS or not _retryable(exc):
+                raise
+            delay = _BACKOFF_SECONDS * (2**attempt)
+            sleep_for = random.uniform(delay / 2, delay)
+            log.warning(
+                "provider call returned %s; retrying attempt %s/%s in %.2fs",
+                _status_code(exc),
+                attempt + 2,
+                MAX_ATTEMPTS,
+                sleep_for,
+            )
+            time.sleep(sleep_for)
+    raise AssertionError("retry loop exhausted")
+
+
 def decide(
     text: str,
     questions: dict[str, dict],
@@ -158,9 +212,10 @@ def decide(
 
     try:
         resolved = _gemini_client(client)
-        if budget is not None:
-            budget.reserve()
-        result = resolved.decisions.create(model=name, input=text, questions=questions)
+        result = _request_with_retries(
+            lambda: resolved.decisions.create(model=name, input=text, questions=questions),
+            budget,
+        )
     except BudgetExceeded:
         # Not a provider fault: the run is out of allowance and must stop.
         raise
@@ -208,21 +263,22 @@ def _complete_gemini(
     client: Any,
 ) -> Completion:
     resolved = _gemini_client(client)
-    if budget is not None:
-        budget.reserve()
 
     # `response_json_schema` is the parameter that accepts a plain JSON Schema;
     # `response_schema` wants a genai Schema or pydantic type and must be
     # omitted alongside it. `response_mime_type` is required either way.
-    response = resolved.models.generate_content(
-        model=name,
-        contents=user,
-        config={
-            "system_instruction": system,
-            "max_output_tokens": max_tokens,
-            "response_mime_type": "application/json",
-            "response_json_schema": schema,
-        },
+    response = _request_with_retries(
+        lambda: resolved.models.generate_content(
+            model=name,
+            contents=user,
+            config={
+                "system_instruction": system,
+                "max_output_tokens": max_tokens,
+                "response_mime_type": "application/json",
+                "response_json_schema": schema,
+            },
+        ),
+        budget,
     )
     usage = getattr(response, "usage_metadata", None)
     return Completion(
@@ -243,17 +299,18 @@ def _complete_anthropic(
     client: Any,
 ) -> Completion:
     resolved = _anthropic_client(client)
-    if budget is not None:
-        budget.reserve()
 
     # Matches evals/baseline.py: the schema is enforced by the API, and
     # `temperature` is not a parameter of this API version.
-    response = resolved.messages.create(
-        model=name,
-        max_tokens=max_tokens,
-        system=system,
-        output_config={"format": {"type": "json_schema", "schema": schema}},
-        messages=[{"role": "user", "content": user}],
+    response = _request_with_retries(
+        lambda: resolved.messages.create(
+            model=name,
+            max_tokens=max_tokens,
+            system=system,
+            output_config={"format": {"type": "json_schema", "schema": schema}},
+            messages=[{"role": "user", "content": user}],
+        ),
+        budget,
     )
     text = "".join(
         block.text for block in response.content if getattr(block, "type", None) == "text"

@@ -1,19 +1,24 @@
-"""Postgres implementations of the store protocols, over `core.db.connection()`.
+"""Postgres implementations of the store protocols, with pooled production connections.
 
-Each method is one short transaction on its own connection, which keeps the
-repositories thread-safe without sharing a connection between worker threads.
+Each method is one short transaction on a checked-out connection, which keeps
+repositories thread-safe while avoiding a Neon handshake for every query.
 Content-addressed writes are `insert ... on conflict do nothing` followed by a
 select, so the first writer wins and every caller gets the stored row back.
 Array columns hold lists of ids; rects, observations and payloads are JSONB.
 """
 
+import queue
+import threading
+import time
 import uuid
 from collections.abc import Callable, Iterator
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from typing import Any
 
+import psycopg
 from core.db import connection
+from core.settings import load_settings
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
@@ -35,6 +40,103 @@ from app.store.files import LocalFileStore
 from app.store.interfaces import FileStore
 
 Connect = Callable[[], AbstractContextManager[Any]]
+
+
+IDLE_CHECK_SECONDS = 30.0
+
+
+class _ConnectionPool:
+    """Small lazy pool used because psycopg-pool is not an installed dependency."""
+
+    def __init__(self, max_size: int = 8) -> None:
+        self._max_size = max_size
+        # (connection, monotonic time it was returned), most recently used first.
+        self._idle: queue.LifoQueue[tuple[Any, float]] = queue.LifoQueue()
+        self._created = 0
+        self._closed = False
+        self._lock = threading.Lock()
+
+    def _new(self) -> Any:
+        url = load_settings().database_url
+        if not url:
+            raise RuntimeError("DATABASE_URL is not set; copy .env.example to .env")
+        return psycopg.connect(url)
+
+    def _checkout(self) -> Any:
+        while True:
+            try:
+                conn, since = self._idle.get_nowait()
+            except queue.Empty:
+                with self._lock:
+                    if self._closed:
+                        raise RuntimeError("the Postgres connection pool is closed") from None
+                    if self._created < self._max_size:
+                        self._created += 1
+                        create = True
+                    else:
+                        create = False
+                if create:
+                    try:
+                        return self._new()
+                    except Exception:
+                        with self._lock:
+                            self._created -= 1
+                        raise
+                conn, since = self._idle.get()
+            if not conn.closed and self._alive(conn, since):
+                return conn
+            self._discard(conn)
+
+    @staticmethod
+    def _alive(conn: Any, since: float) -> bool:
+        """Neon drops idle connections server-side, and `closed` stays False until the next
+        use, so a connection idle for a while is pinged before it is handed out."""
+        if time.monotonic() - since < IDLE_CHECK_SECONDS:
+            return True
+        try:
+            conn.execute("select 1")
+            conn.rollback()
+            return True
+        except Exception:  # noqa: BLE001 - any failure means: replace it
+            return False
+
+    def _discard(self, conn: Any) -> None:
+        try:
+            conn.close()
+        finally:
+            with self._lock:
+                self._created -= 1
+
+    @contextmanager
+    def connection(self) -> Iterator[Any]:
+        conn = self._checkout()
+        discard = False
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                discard = True
+            raise
+        finally:
+            with self._lock:
+                closed = self._closed
+            if discard or closed or conn.closed:
+                self._discard(conn)
+            else:
+                self._idle.put((conn, time.monotonic()))
+
+    def close(self) -> None:
+        with self._lock:
+            self._closed = True
+        while True:
+            try:
+                conn, _ = self._idle.get_nowait()
+            except queue.Empty:
+                return
+            self._discard(conn)
 
 
 def _rows(conn: Any, sql: str, params: tuple = ()) -> list[dict]:
@@ -204,6 +306,20 @@ class PostgresVerdictRepo(_Repo):
                 (content_hash, agent_version),
             )
         return _verdict(row) if row else None
+
+    def get_many(self, content_hashes: list[str], agent_version: str) -> dict[str, ClauseVerdict]:
+        hashes = list(dict.fromkeys(content_hashes))
+        if not hashes:
+            return {}
+        with self._connect() as conn:
+            rows = _rows(
+                conn,
+                f"select {_VERDICT_COLUMNS} from verdicts"
+                " where content_hash = any(%s) and agent_version = %s",
+                (hashes, agent_version),
+            )
+        verdicts = [_verdict(row) for row in rows]
+        return {verdict.content_hash: verdict for verdict in verdicts}
 
     def save(self, verdict: ClauseVerdict) -> ClauseVerdict:
         with self._connect() as conn:
@@ -551,10 +667,20 @@ class PostgresStore:
     events: PostgresEventRepo
     decisions: PostgresDecisionRepo
     feedback: PostgresFeedbackRepo
+    _pool: _ConnectionPool | None = None
+
+    def close(self) -> None:
+        """Close idle production connections; checked-out ones close when returned."""
+        if self._pool is not None:
+            self._pool.close()
 
 
-def postgres_store(files: FileStore | None = None, connect: Connect = connection) -> PostgresStore:
-    """A store over Postgres. `connect` is injectable so tests can point at a Neon branch."""
+def postgres_store(files: FileStore | None = None, connect: Connect | None = None) -> PostgresStore:
+    """A pooled store in production; `connect` keeps tests independently injectable."""
+    pool = None
+    if connect is None:
+        pool = _ConnectionPool()
+        connect = pool.connection
     return PostgresStore(
         files=files or LocalFileStore(),
         documents=PostgresDocumentRepo(connect),
@@ -564,4 +690,5 @@ def postgres_store(files: FileStore | None = None, connect: Connect = connection
         events=PostgresEventRepo(connect),
         decisions=PostgresDecisionRepo(connect),
         feedback=PostgresFeedbackRepo(connect),
+        _pool=pool,
     )

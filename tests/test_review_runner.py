@@ -919,6 +919,9 @@ def test_cost_is_charged_from_the_verdict_this_call_produced():
         def get(self, content_hash, agent_version):
             return None  # a miss, so the judge runs
 
+        def get_many(self, content_hashes, agent_version):
+            return {}  # all miss, so the judge runs
+
         def save(self, verdict):
             cheaper = verdict.model_copy(update={"input_tokens": 0, "output_tokens": 0})
             return self.inner.save(cheaper)

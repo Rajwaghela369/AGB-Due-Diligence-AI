@@ -142,6 +142,14 @@ class MemoryVerdictRepo:
             row = self._rows.get((content_hash, agent_version))
             return row.model_copy(deep=True) if row else None
 
+    def get_many(self, content_hashes: list[str], agent_version: str) -> dict[str, ClauseVerdict]:
+        with self._lock:
+            return {
+                content_hash: row.model_copy(deep=True)
+                for content_hash in dict.fromkeys(content_hashes)
+                if (row := self._rows.get((content_hash, agent_version))) is not None
+            }
+
     def save(self, verdict: ClauseVerdict) -> ClauseVerdict:
         with self._lock:
             row = self._rows.setdefault(

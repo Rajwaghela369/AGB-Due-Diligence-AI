@@ -202,16 +202,45 @@ def test_budget_refusal_happens_before_the_request():
     assert client.decisions.calls == []
 
 
-def test_a_provider_fault_is_still_data_not_a_crash():
+def test_a_provider_fault_is_still_data_not_a_crash(monkeypatch):
     # The distinction that matters: provider errors are absorbed, budget stops
     # are not.
     client = _FakeGenaiClient(raises=RuntimeError("500 internal"))
     budget = RequestBudget(max_requests=10)
+    monkeypatch.setattr("core.llm.time.sleep", lambda _seconds: None)
 
     result = decide("x", QUESTIONS, GEMINI_MODEL, budget=budget, client=client)
 
     assert result.error is not None
-    assert budget.spent() == 1
+    assert budget.spent() == 3
+
+
+def test_decide_retries_5xx_and_reserves_each_attempt(monkeypatch):
+    class TransientDecisions:
+        def __init__(self):
+            self.calls = 0
+
+        def create(self, **_):
+            self.calls += 1
+            if self.calls < 3:
+                error = RuntimeError("high demand")
+                error.status_code = 503
+                raise error
+            return _response()
+
+    client = _FakeGenaiClient()
+    client.decisions = TransientDecisions()
+    budget = RequestBudget(max_requests=3)
+    sleeps = []
+    monkeypatch.setattr("core.llm.random.uniform", lambda _low, high: high)
+    monkeypatch.setattr("core.llm.time.sleep", sleeps.append)
+
+    result = decide("x", QUESTIONS, GEMINI_MODEL, budget=budget, client=client)
+
+    assert result.error is None
+    assert client.decisions.calls == 3
+    assert budget.spent() == 3
+    assert sleeps == [0.5, 1.0]
 
 
 def test_complete_propagates_budget_exhaustion_too():
@@ -277,6 +306,54 @@ def test_complete_returns_an_error_result_instead_of_raising():
 
     assert result.text == ""
     assert "TimeoutError" in result.error
+
+
+def test_complete_retries_429_then_succeeds_and_reserves_again(monkeypatch):
+    class TransientModels:
+        def __init__(self):
+            self.calls = 0
+
+        def generate_content(self, **_):
+            self.calls += 1
+            if self.calls == 1:
+                error = RuntimeError("429 RESOURCE_EXHAUSTED")
+                error.status_code = 429
+                raise error
+            return _GenResponse('{"reason_de": "ok"}', _GenUsage(4, 2))
+
+    client = _FakeGenaiClient()
+    client.models = TransientModels()
+    budget = RequestBudget(max_requests=2)
+    monkeypatch.setattr("core.llm.random.uniform", lambda low, _high: low)
+    monkeypatch.setattr("core.llm.time.sleep", lambda _seconds: None)
+
+    result = complete("sys", "user", SCHEMA, GEMINI_GEN, budget=budget, client=client)
+
+    assert result.error is None and result.text == '{"reason_de": "ok"}'
+    assert client.models.calls == 2
+    assert budget.spent() == 2
+
+
+def test_complete_stops_after_three_retryable_failures(monkeypatch):
+    class UnavailableMessages:
+        def __init__(self):
+            self.calls = 0
+
+        def create(self, **_):
+            self.calls += 1
+            raise RuntimeError("503 high demand")
+
+    client = _FakeAnthropicClient()
+    client.messages = UnavailableMessages()
+    budget = RequestBudget(max_requests=3)
+    monkeypatch.setattr("core.llm.random.uniform", lambda _low, high: high)
+    monkeypatch.setattr("core.llm.time.sleep", lambda _seconds: None)
+
+    result = complete("sys", "user", SCHEMA, ANTHROPIC_GEN, budget=budget, client=client)
+
+    assert "503" in result.error
+    assert client.messages.calls == 3
+    assert budget.spent() == 3
 
 
 def test_complete_rejects_an_unknown_provider():

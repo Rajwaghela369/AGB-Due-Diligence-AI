@@ -46,6 +46,9 @@ def create_app(
             yield
         finally:
             service.shutdown(timeout=10)
+            close_store = getattr(store, "close", None)
+            if close_store is not None:
+                close_store()
 
     application = FastAPI(title="AGB-Check API", version="1", lifespan=lifespan)
     application.state.store = store
