@@ -155,3 +155,31 @@ def test_make_judge_nests_steps_and_keeps_a_failed_explanation(monkeypatch):
         item for item in tracer.observations if item.parent == verdict.observations.clause_span
     ]
     assert {item.name for item in children} >= {"retrieve", "judge", "explain"}
+
+
+def test_closing_the_limiter_wakes_a_request_waiting_for_tomorrow():
+    import threading
+
+    from core.budget import LimiterClosed
+
+    # Real (interruptible) sleep, fake clock: the second request would wait ~24 h.
+    limiter = SharedLimiter(daily_budget=1, clock=lambda: 1_800_000_000.0)
+    limiter.acquire()
+    raised: list[BaseException] = []
+
+    def second() -> None:
+        try:
+            limiter.acquire()
+        except BaseException as exc:  # noqa: BLE001 - recorded for the assertion
+            raised.append(exc)
+
+    thread = threading.Thread(target=second)
+    thread.start()
+    limiter.close()
+    thread.join(5)
+    assert not thread.is_alive()
+    assert len(raised) == 1 and isinstance(raised[0], LimiterClosed)
+    assert isinstance(raised[0], BudgetExceeded)
+    assert limiter.closed and limiter.waiting_reason() is None
+    with pytest.raises(LimiterClosed):
+        limiter.reserve()

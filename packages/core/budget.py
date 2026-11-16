@@ -26,6 +26,14 @@ class BudgetExceeded(RuntimeError):
     """The next call would exceed the run's request allowance."""
 
 
+class LimiterClosed(BudgetExceeded):
+    """The limiter was closed (server shutdown) while a request waited or asked for room.
+
+    A subclass of BudgetExceeded so every caller that already lets a budget stop
+    propagate (core.llm) lets this one through too, instead of retrying it.
+    """
+
+
 @dataclass
 class RequestBudget:
     """Counts and paces provider requests. Safe to share across worker threads.
@@ -126,7 +134,11 @@ class SharedLimiter:
       a silent failure.
     - `waiting_reason()` -> "rate_limit" | "daily_budget" | None, for the UI.
     - `remaining_today()` -> int | None.
-    - `clock` and `sleep` are injectable so tests run without real time.
+    - `close()` wakes every waiter at once; it and every later `acquire` raise
+      `LimiterClosed`. A wait until midnight must not hold up a server shutdown,
+      so the default sleep is an `Event.wait` that `close()` interrupts.
+    - `clock` and `sleep` are injectable so tests run without real time; an
+      injected sleep is not interrupted, but the closed check follows it.
     - Thread-safe; sleeping happens outside the lock.
     """
 
@@ -136,7 +148,7 @@ class SharedLimiter:
         rpm: int | None = None,
         daily_budget: int | None = None,
         clock=time.time,
-        sleep=time.sleep,
+        sleep=None,
     ) -> None:
         if rpm is not None and rpm < 1:
             raise ValueError("rpm must be positive")
@@ -145,7 +157,8 @@ class SharedLimiter:
         self.rpm = rpm
         self.daily_budget = daily_budget
         self._clock = clock
-        self._sleep = sleep
+        self._closed = threading.Event()
+        self._sleep = sleep if sleep is not None else self._closed.wait
         self._recent: list[float] = []
         self._day: str | None = None
         self._spent_today = 0
@@ -166,6 +179,9 @@ class SharedLimiter:
         started = self._clock()
         while True:
             with self._lock:
+                if self._closed.is_set():
+                    self._waiting_reason = None
+                    raise LimiterClosed("the limiter is closed: the server is shutting down")
                 now = self._clock()
                 self._roll_day(now)
                 reason, wait = self._wait_for(n, now)
@@ -187,6 +203,16 @@ class SharedLimiter:
     def reserve(self, n: int = 1) -> None:
         """Offer the RequestBudget protocol used by core.llm."""
         self.acquire(n)
+
+    def close(self) -> None:
+        """Wake every waiting request and refuse new ones (LimiterClosed). Idempotent."""
+        self._closed.set()
+        with self._lock:
+            self._waiting_reason = None
+
+    @property
+    def closed(self) -> bool:
+        return self._closed.is_set()
 
     def waiting_reason(self) -> str | None:
         with self._lock:
