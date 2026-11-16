@@ -52,5 +52,87 @@
       "valid": "{{count}} valid",
       "out": "{{count}} out of scope"
     }
+  },
+  "findings": {
+    "title": "Findings",
+    "filter": "Filter",
+    "filters": {
+      "void": "Void",
+      "review": "Review",
+      "all": "All"
+    },
+    "confidence": {
+      "high": "High confidence",
+      "medium": "Medium confidence",
+      "low": "Low confidence"
+    },
+    "empty": "No findings in this view.",
+    "waiting": "The first results will appear shortly.",
+    "failedHint": "Could not be checked — retry under “Technical details”.",
+    "activity": "Activity",
+    "activityEmpty": "No changes since opening.",
+    "step": {
+      "queued": "queued",
+      "checking": "checking",
+      "done": "checked",
+      "failed": "failed",
+      "out_of_scope": "out of scope"
+    }
+  },
+  "drawer": {
+    "close": "Close",
+    "description": "Details for the selected clause with legal basis, reasoning and feedback.",
+    "clause": "Clause",
+    "confidence": "Confidence",
+    "legalBasis": "Legal basis",
+    "noBasis": "No legal basis cited.",
+    "statuteLoading": "Loading statute text …",
+    "statuteError": "The statute text could not be loaded.",
+    "statuteSource": "Open source",
+    "reasoning": "Reasoning",
+    "reasonUnavailable": "Reasoning not available",
+    "noVerdict": "There is no verdict for this clause yet.",
+    "technical": "Technical details",
+    "confidenceNumeric": "Confidence (number)",
+    "candidates": "Candidates and scores",
+    "noCandidates": "No candidates.",
+    "retry": "Retry check",
+    "retryError": "The retry could not be started.",
+    "trace": "Trace in Langfuse"
+  },
+  "feedback": {
+    "prompt": "Was this assessment helpful?",
+    "up": "Helpful",
+    "down": "Not helpful",
+    "sentUp": "Helpful",
+    "sentDown": "Not helpful",
+    "error": "Feedback could not be saved.",
+    "reasons": "What was wrong?",
+    "reason": {
+      "verdict_wrong": "Verdict wrong",
+      "basis_wrong": "Wrong or missing §",
+      "reasoning_unclear": "Reasoning unclear",
+      "clause_cut": "Clause cut incorrectly"
+    },
+    "correctVerdict": "Correct verdict",
+    "chooseVerdict": "Please choose",
+    "verdict": {
+      "valid": "Valid",
+      "potentially_void": "Potentially void",
+      "uncertain": "Needs review"
+    },
+    "correctBasis": "Correct or missing §",
+    "basisPlaceholder": "e.g. § 309 Nr. 7 BGB",
+    "comment": "Comment (optional)",
+    "send": "Send",
+    "cancel": "Cancel",
+    "steps": "Rate individual steps",
+    "step": {
+      "clause_span": "Clause split",
+      "retrieval": "Legal basis retrieval",
+      "judge": "Verdict",
+      "explanation": "Reasoning"
+    },
+    "stepDown": "Rate step “{{step}}” down"
   }
 }
