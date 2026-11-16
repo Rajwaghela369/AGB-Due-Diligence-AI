@@ -134,5 +134,72 @@
       "explanation": "Begründung"
     },
     "stepDown": "Schritt „{{step}}“ negativ bewerten"
+  },
+  "home": {
+    "loading": "Prüfungen werden geladen …",
+    "loadError": "Die Dokumente konnten nicht geladen werden.",
+    "title": "Ihre Prüfungen",
+    "description": "Öffnen Sie eine frühere Prüfung oder starten Sie eine neue.",
+    "newReview": "Neue Prüfung",
+    "empty": {
+      "title": "Noch keine Prüfung",
+      "description": "Laden Sie einen Vertrag hoch, um die erste Prüfung zu starten."
+    },
+    "notReviewed": "Noch nicht geprüft",
+    "progress": "{{done}} von {{total}} Klauseln geprüft",
+    "status": {
+      "queued": "Wartet",
+      "running": "Läuft",
+      "finished": "Abgeschlossen",
+      "failed": "Fehlgeschlagen"
+    }
+  },
+  "upload": {
+    "title": "Vertrag hinzufügen",
+    "description": "Laden Sie ein PDF oder DOCX hoch oder fügen Sie den Vertragstext ein.",
+    "dropzone": "Datei hierher ziehen",
+    "formats": "PDF oder DOCX",
+    "chooseFile": "Datei auswählen",
+    "pasteAlternative": "Text einfügen",
+    "pasteLabel": "Vertragstext",
+    "fileAlternative": "Stattdessen Datei hochladen",
+    "scope": "Prüfumfang",
+    "liability": "Haftung",
+    "warranty": "Gewährleistung",
+    "start": "Prüfung starten",
+    "errors": {
+      "too_large": "Die Datei ist zu groß.",
+      "unsupported_type": "Dieser Dateityp wird nicht unterstützt. Bitte PDF oder DOCX verwenden.",
+      "encrypted": "Die Datei ist passwortgeschützt. Bitte ohne Passwortschutz hochladen.",
+      "no_text_layer": "Das PDF enthält keinen Text (vermutlich ein Scan). Bitte ein durchsuchbares PDF verwenden.",
+      "conversion_failed": "Die Datei konnte nicht umgewandelt werden.",
+      "parse_failed": "Die Datei konnte nicht gelesen werden.",
+      "parse_timeout": "Das Lesen der Datei hat zu lange gedauert. Bitte erneut versuchen.",
+      "empty": "Es wurde kein Text gefunden. Bitte Datei oder Text angeben.",
+      "archive_too_large": "Das Archiv ist zu groß.",
+      "rate_limited": "Zu viele Anfragen. Bitte kurz warten und erneut versuchen.",
+      "no_scope": "Bitte mindestens einen Prüfumfang wählen.",
+      "generic": "Das Hochladen ist fehlgeschlagen. Bitte erneut versuchen."
+    }
+  },
+  "table": {
+    "label": "Ergebnisse als Tabelle",
+    "search": "Klauseln durchsuchen",
+    "verdict": "Bewertung",
+    "topic": "Thema",
+    "allVerdicts": "Alle Bewertungen",
+    "allTopics": "Alle Themen",
+    "rows": "{{count}} Klauseln",
+    "number": "Nr.",
+    "clause": "Klausel",
+    "basis": "Rechtsgrundlage",
+    "confidence": "Sicherheit",
+    "status": "Status",
+    "statusDone": "Geprüft",
+    "confidenceBands": {
+      "high": "Hoch",
+      "medium": "Mittel",
+      "low": "Niedrig"
+    }
   }
 }
