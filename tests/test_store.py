@@ -460,6 +460,13 @@ def test_feedback_upserts_on_feedback_id(store):
     assert changed.comment == "falsch" and got[0].created_at is not None
 
 
+def test_feedback_get_by_id(store):
+    rid, fid = uid(), uid()
+    assert store.feedback.get(fid) is None
+    store.feedback.put(_feedback(rid, 3, "up", fid))
+    assert store.feedback.get(fid).vote == "up"
+
+
 def test_feedback_for_review_is_the_latest_vote_per_position(store):
     rid = uid()
     store.feedback.put(_feedback(rid, 0, "up"))

@@ -347,6 +347,11 @@ class MemoryFeedbackRepo:
             self._rows[feedback.feedback_id] = stored
             return stored.model_copy(deep=True)
 
+    def get(self, feedback_id: str) -> Feedback | None:
+        with self._lock:
+            row = self._rows.get(feedback_id)
+            return row.model_copy(deep=True) if row else None
+
     def for_review(self, review_id: str) -> dict[int, Feedback]:
         with self._lock:
             latest: dict[int, Feedback] = {}

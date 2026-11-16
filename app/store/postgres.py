@@ -519,6 +519,15 @@ class PostgresFeedbackRepo(_Repo):
             )
         return Feedback(**row)
 
+    def get(self, feedback_id: str) -> Feedback | None:
+        with self._connect() as conn:
+            rows = _rows(
+                conn,
+                f"select {_FEEDBACK_COLUMNS} from feedback where feedback_id = %s",
+                (feedback_id,),
+            )
+        return Feedback(**rows[0]) if rows else None
+
     def for_review(self, review_id: str) -> dict[int, Feedback]:
         with self._connect() as conn:
             rows = _rows(

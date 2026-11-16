@@ -15,14 +15,13 @@ verdict cache makes the resumed run pay only for clauses never judged.
 import threading
 import time
 import uuid
-from collections.abc import Iterator
 from typing import Any
 
 from ag_ui.core import RunErrorEvent, RunFinishedEvent, StateSnapshotEvent
 from core.logging import get_logger
 
 from app.domain import Finding, Review, StoredEvent, Topic
-from app.review.events import TERMINAL_TYPES, EventBus, serialise
+from app.review.events import TERMINAL_TYPES, EventBus, Subscription, serialise
 from app.review.limiter import DEFAULT_MAX_CONCURRENCY
 from app.review.runner import ReviewRun, RunContext, build_state, load_entries
 from app.store.interfaces import Store
@@ -150,10 +149,11 @@ class Service:
             clauses = self.store.documents.clauses(review.document_id)
             self._launch(review, clauses, positions=[position], reason="retry")
 
-    def events(
-        self, review_id: str, after_seq: int = 0, *, follow: bool = True
-    ) -> Iterator[StoredEvent]:
-        """See `ReviewService.events`. Raises KeyError at once for an unknown review."""
+    def events(self, review_id: str, after_seq: int = 0, *, follow: bool = True) -> Subscription:
+        """See `ReviewService.events`. Raises KeyError at once for an unknown review.
+
+        The iterator's `close()` is thread-safe and ends a blocked `next()`.
+        """
         self._reconcile(self._review(review_id))
         return self._events(review_id, after_seq, follow)
 
@@ -190,20 +190,23 @@ class Service:
             )
             self.bus.emit(review.review_id, event)
 
-    def _events(self, review_id: str, after_seq: int, follow: bool) -> Iterator[StoredEvent]:
+    def _events(self, review_id: str, after_seq: int, follow: bool) -> Subscription:
+        first = []
         if after_seq > 0:
             # Built from the store when the client reconnects. Anything it already reflects
             # and is replayed below is a `replace`, so applying it twice changes nothing.
             review = self._review(review_id)
             clauses = self.store.documents.clauses(review.document_id)
             state = build_state(review, load_entries(self.store, review, clauses))
-            yield StoredEvent(
-                review_id=review_id,
-                seq=0,
-                type="STATE_SNAPSHOT",
-                payload=serialise(StateSnapshotEvent(snapshot=state)),
+            first.append(
+                StoredEvent(
+                    review_id=review_id,
+                    seq=0,
+                    type="STATE_SNAPSHOT",
+                    payload=serialise(StateSnapshotEvent(snapshot=state)),
+                )
             )
-        yield from self.bus.subscribe(review_id, after_seq, follow=follow)
+        return self.bus.subscribe(review_id, after_seq, follow=follow, first=first)
 
     def resume_running(self) -> int:
         """Resume reviews left `running` by a restart; returns how many were resumed.

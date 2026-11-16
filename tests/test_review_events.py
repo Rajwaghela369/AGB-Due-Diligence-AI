@@ -210,3 +210,48 @@ def test_a_running_review_keeps_its_stream_open_across_rechecks():
     assert _drain(out) == []
     thread.join(DEADLINE)
     assert not thread.is_alive()
+
+
+def test_close_from_another_thread_ends_a_blocked_next():
+    store = memory_store()
+    bus = EventBus(store, recheck_seconds=3600)
+    _review(store, "rev", "running")
+    bus.emit("rev", _started())
+    sub = bus.subscribe("rev")
+    assert next(sub).seq == 1
+
+    blocked = threading.Event()
+    result: queue.Queue = queue.Queue()
+
+    def wait_for_next() -> None:
+        blocked.set()
+        try:
+            result.put(next(sub))
+        except StopIteration:
+            result.put("stopped")
+
+    thread = threading.Thread(target=wait_for_next, daemon=True)
+    thread.start()
+    blocked.wait(DEADLINE)
+    sub.close()  # whether next() is already waiting or about to, it must end
+    assert result.get(timeout=DEADLINE) == "stopped"
+    thread.join(DEADLINE)
+    assert bus.subscriber_count("rev") == 0
+    sub.close()  # idempotent
+    assert list(sub) == []
+
+
+def test_close_without_a_running_next_unregisters_at_once():
+    store = memory_store()
+    bus = EventBus(store, recheck_seconds=3600)
+    bus.emit("rev", _started())
+    sub = bus.subscribe("rev")
+    assert next(sub).seq == 1  # suspended at a yield, registered
+    assert bus.subscriber_count("rev") == 1
+    sub.close()
+    assert bus.subscriber_count("rev") == 0
+    assert list(sub) == []
+
+    never_started = bus.subscribe("rev")
+    never_started.close()
+    assert list(never_started) == [] and bus.subscriber_count("rev") == 0
