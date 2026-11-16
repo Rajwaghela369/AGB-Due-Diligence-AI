@@ -1,6 +1,6 @@
 # Single entry point: CI runs exactly these targets, so local and CI never diverge.
 .PHONY: help install smoke kb eval-data eval-data-dry recheck baseline baseline-held-out \
-	baseline-smoke eval lint format test check clean
+	baseline-smoke eval eval-held-out eval-smoke seed-prompts lint format test check clean
 
 PY := uv run
 
@@ -25,17 +25,26 @@ eval-data-dry:  ## P2 EVAL-PREP, asserting everything but writing to no store
 recheck:  ## Re-score retrieval on real clause text (needs Qdrant + the embedding API)
 	$(PY) python -m pipelines.p2_eval.flow --recheck-only
 
-baseline:  ## Phase 3 baseline on the dev half - where prompt iteration belongs
+baseline:  ## Phase 3 one-shot baseline, kept as history; not part of the agent workflow
 	$(PY) python -m evals.run_baseline --split dev
 
-baseline-held-out:  ## Phase 3 gate number. One run per phase; 8 void clauses only
-	$(PY) python -m evals.run_baseline --split held_out
+baseline-held-out:  ## Phase 3 baseline on held-out data, kept as history
+	$(PY) python -m evals.run_baseline --split held_out --slice all
 
-baseline-smoke:  ## 40 dev clauses, to prove the harness works without spending much
-	$(PY) python -m evals.run_baseline --split dev --limit 40
+baseline-smoke:  ## 5 clauses, to prove the harness works without spending much
+	$(PY) python -m evals.run_baseline --split dev --slice first:5
 
-eval:  ## Run the eval suite against the current agent
-	@echo "Phase 3 - not implemented yet"
+eval:  ## Agent on the stratified 70-clause dev slice, for continuous evaluation
+	$(PY) python -m evals.run_agent --split dev
+
+eval-held-out:  ## Agent on held-out data; only to confirm a configuration worth keeping
+	$(PY) python -m evals.run_agent --split held_out --slice all
+
+eval-smoke:  ## Phase 4 gate: 5 clauses through the agent, end to end
+	$(PY) python -m evals.run_agent --split dev --slice first:5
+
+seed-prompts:  ## Seed the agent prompts into Langfuse under the `evaluation` label
+	$(PY) python scripts/seed_prompts.py
 
 lint:  ## Lint, format check, and component boundary contracts
 	$(PY) ruff check .

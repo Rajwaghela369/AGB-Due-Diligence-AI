@@ -1,303 +1,163 @@
 # Phase 4 Plan — Agentic RAG core
 
-Nov 13, 2026
+Revised Nov 16, 2026. Supersedes the Nov 15 plan, which gated Phase 4 on a 70-clause
+baseline-vs-agent comparison. Phase 4 now closes when the agent is **runnable**: it takes a
+clause, grounds a verdict in retrieved law, explains it, traces it, and persists it.
+Measuring and improving that verdict is a continuous track (see **Continuous
+evaluation**), not something later phases wait on.
 
 ## Goal
 
-Make the verdict grounded in actual law instead of the model's recollection of it.
+Make the verdict grounded in actual law instead of the model's recollection of it, as a
+headless graph that later phases (AG-UI streaming, human in the loop) can call.
 
-The Phase 3 baseline guessed: 121 void calls on 419 dev clauses to find 21, citing
-§§ 307–309 fluently without ever reading them. Phase 4 replaces the guess with a
-pipeline — topic router → retrieve the real BGB text → judge the clause against it →
-self-check → retry retrieval once, or finish — so every verdict carries the paragraph it
-rests on.
+**Gate:** the agent runs end to end on real clauses —
 
-**Gate** (`docs/Development Phases.md`): void recall > 0.70, F1 > **0.276** on dev,
-grounding rate 100%. Clauses the judge cannot decide are marked `uncertain`, not guessed.
+- `make eval-smoke` completes on 5 dev clauses with **zero task failures**
+- every `potentially_void` verdict is grounded (grounding rate 100%, true by construction)
+- each clause produces one nested Langfuse trace, and its `verdicts` row carries that
+  trace id and the `agent_version`
+- `make check` is green
 
-**Known obstacle:** retrieval fetches the right paragraph 26% of the time
-(`docs/Phase 2 Results.md`). Grounding a judge in the wrong § fixes nothing, so steps
-4.1–4.2 fix retrieval before any agent code exists.
+No F1 or recall threshold gates Phase 4. Those numbers are tracked, not gated.
 
-**Structural constraint:** `app/` may not import `pipelines/` (enforced by
-`.importlinter`). Retrieval currently lives in `pipelines/p1_kb/s5_check_retrieval.py`,
-so the agent cannot reuse it. Step 4.1 exists because of this.
+## Why the scope changed
 
-## Steps
+The first run (`reports/p4_agent_dev.json`, 419 items, F1 0.286) failed on 229 items:
+113 from exhausted Anthropic credit, 116 from an unguarded `_parse()`. The Nov 15 plan
+answered that with a stratified 70-clause comparison on Gemini, against a re-run baseline.
+The baseline re-run then failed on all 70 clauses with a 404 (`gemini-2.5-flash` is
+retired for new users).
 
-### 4.1 · One retriever, shared by the agent and the scorer
+Each round of measurement was costing more time than the build. The fixes those runs
+pointed at are now in, and the agent has been run successfully by hand. Prompt, `top_k`
+and chunk-granularity tuning will go on for the life of the project; holding Phase 5 until
+they converge would stall everything behind an open-ended loop.
 
-**Goal:** make the 0.258 re-check measure the agent's *actual* retrieval, not a lookalike.
+## Architecture: Gemini Decisions, not a generating judge
 
-**Build:** `packages/core/retrieval.py`
+`gemini-decision-1` runs on the **Decisions API**, which answers typed questions over an
+input and **generates zero output tokens**. It cannot write `reason_de`, so explanation is
+a separate, conditional text call. For everything else it is a better instrument than a
+generating judge:
 
-```python
-@dataclass(frozen=True)
-class Retrieved:
-    chunk_id: str; citation: str; text: str; score: float; rank: int
+- **Up to 1,000 questions per request, one forward pass**, shared input billed once. The
+  judge is `is_void` plus one question per candidate chunk, in a single call.
+- **Per-chunk probabilities** instead of one enum pick — and grounding cannot be
+  hallucinated, because we supply the chunk list.
+- **Calibrated confidence from the API**, so the 0.6 abstention threshold means something.
+- **No router LLM call.** Routing is a Jina-embedding topic classifier, so it costs one
+  embedding, not a generation. Its topic is a hint, never a gate: `general` chunks and
+  §§ 305–310 are always in the candidate set, so a mis-routed clause costs ranking, not
+  evidence.
 
-def retrieve(text: str, topic: str, policy: dict, depth: int = 20) -> list[Retrieved]
-```
-
-Embeds via `core.embeddings.embed_texts` (Jina, `retrieval.query` task), queries the alias
-`bgb_agb`, asserts the `StoreManifest` against the config hash on first use.
-
-**Technical detail:**
-
-- Retrieval *policy* — `top_k`, `always_include_topics`, `always_include_paragraphs`,
-  `search_depth` — moves from `configs/kb.yaml` to `configs/app.yaml`. `kb.yaml` is hashed
-  into the index lineage, so today a `top_k` change would make the app refuse its own
-  index. Policy is runtime, not lineage.
-- `pipelines/p1_kb/s5_check_retrieval.py` is refactored to call `core.retrieval.retrieve`
-  and keep only the scoring.
-- Tests: filter construction against a fake Qdrant client, with the `other`-tag case
-  covered explicitly.
-
-**Done when:** `make recheck` reproduces primary@5 **0.258 exactly** on the refactored
-path. Behaviour-preserving first, so the next step's change is attributable to the change.
-
-### 4.2 · Experiment 1: fix reachability, then widen the candidate set
-
-**Goal:** stop 7 of 31 answers being unreachable by construction. This is the experiment
-already specified in `docs/Development Phases.md`; baseline 0.258 / 0.333-reachable.
-
-**Build:** two config changes in `app.yaml`, measured separately.
-
-1. `always_include_paragraphs: [305, 305a, 305b, 305c, 306, 306a, 307, 308, 309, 310]`.
-   The filter becomes `kind = chunk AND (topic ∈ {routed, general} OR paragraph ∈
-   AGB-control)`. Uses the existing `paragraph` payload index — **no index rebuild**,
-   lineage untouched. Chunks tagged `other` stop being invisible.
-2. `top_k: 10` for the agent's candidate set. Phase 2 measured reachable @10 at 0.833: the
-   right chunk is usually *found*, just ranked 6–13. Ten candidates let Sonnet discriminate
-   what the embedder cannot rank.
-
-**Decision point:** if primary@10 over all 31 clears ~0.75, hybrid/BM25 (cause 2, the
-register mismatch) is deferred. If not, it becomes 4.2b.
-
-**Done when:** `make recheck` shows the 7 formerly-unreachable queries with a rank, and
-`docs/Metrics.md` gains the new row.
-
-### 4.3 · Clause loader and verdict store
-
-**Goal:** the agent reads clauses the only way it is allowed to, and writes verdicts
-somewhere permanent.
-
-**Build:** `app/agent/clauses.py`, `app/agent/verdicts.py`
-
-**Technical detail:**
-
-- `load_clauses(split=None) -> list[Clause]` reads Neon `clauses` via `core.db` and calls
-  `assert_no_labels(columns, "clauses table at read")` — the third assertion of the
-  invariant that `docs/Phase 2 Results.md` promises. Now actually true.
-- `clauses` gains a `content_hash` column: `sha256` of the clause text after whitespace
-  collapse and Unicode NFC, and nothing more. The 523 AGB-DE rows keep `agb-NNN` as their
-  stable external id; the hash is the dedup key the storage design below builds on. Writing
-  it also tells us how many exact-duplicate clauses the corpus holds (Phase 2 found 11
-  across the split; `agb-2808` and `agb-3123` are one example).
-- `verdicts` table keyed **`(clause_id, agent_version)`**, with `run_id` as a plain column.
-  Other columns match `core.schemas.VerdictRecord`: `verdict`, `legal_basis text[]`,
-  `reason_de`, `confidence`, `lawyer_decision` (null until Phase 6), `langfuse_trace_id`.
-  Upsert on the key, so the same agent version judging the same clause converges, and a
-  new version writes beside the old rather than over it — verdicts are superseded, never
-  overwritten.
-- `agent_version` is `core.config.config_hash` over everything that can change a verdict:
-  both prompt versions, both model ids, the retrieval policy block, and the index's own
-  `config_hash`. Same pattern the index already uses, one level up.
-- Tests with the fake-connection pattern from `tests/test_publish.py`.
-
-**Done when:** the loader returns 523 `Clause` objects with no label field reachable; a
-`VerdictRecord` round-trips; two writes with the same `(clause_id, agent_version)` leave
-one row.
-
-**Why this key, and what it buys later.** Keying verdicts on content and agent version
-makes the table a cache: a clause this version of the agent has already judged is served
-from Postgres with no LLM call. The 523 eval clauses are the first beneficiaries — rerunning
-an unchanged agent costs nothing — but the real payoff is the upload path in Phase 5, where
-the same template keeps coming back with small edits. The storage design that completes
-this is recorded below so it is decided once.
-
-### 4.4 · Prompts in Langfuse, grounding enforced by schema
-
-**Goal:** prompts versioned outside the code, and a judge that *cannot* cite a paragraph it
-was not shown.
-
-**Build:** `app/agent/prompts.py`, `scripts/seed_prompts.py`
-
-**Technical detail:**
-
-- Two prompts in Langfuse prompt management, `agb-router` and `agb-judge`, fetched by
-  name + label (`production`), cached per process. **Local fallback files** in
-  `app/agent/prompts/` so unit tests run offline and CI needs no key.
-- Judge output via `output_config.json_schema`, as in the baseline — with one addition
-  that does real work:
-
-  ```python
-  "legal_basis": {"type": "array", "items": {"enum": [c.chunk_id for c in candidates]}}
-  ```
-
-  The enum is built **per call from the retrieved set**. The API rejects any citation not
-  in it. Grounding is not checked afterwards; it is impossible to violate. Plus `verdict`,
-  `reason_de`, `confidence`.
-- Router output: `{"topic": "liability" | "warranty" | "other"}`.
-
-**Done when:** `seed_prompts.py` has pushed v1 of both; a fake-client test proves an
-out-of-set `chunk_id` fails the schema.
-
-### 4.5 · The graph
-
-**Goal:** the headless agent — route → retrieve → judge → self-check → retry once or
-finish — one Langfuse trace per clause.
-
-**Build:** `app/agent/graph.py` (LangGraph `StateGraph`), `app/agent/state.py`
+### The graph
 
 ```
-State: clause, topic, candidates, draft (verdict / legal_basis / reason / confidence),
-       retries, trace_id
-
-route        Haiku 4.5. Reads ONLY clause text + title (see open decision 1).
-retrieve     core.retrieval.retrieve(text, topic, policy)
-judge        Sonnet 5, schema-constrained to candidates.
-self_check   deterministic, no LLM:
-               confidence < 0.6              → verdict = uncertain
-               potentially_void, empty basis → retry   (if retries < 1)
-               else                          → finish
-retry        broaden: topic → general-only + AGB-control, depth ×2, re-judge.
-finish       persist VerdictRecord, return.
+route: classify topic (Jina embedding, no LLM)
+  -> retrieve top_k = 10 from {topic, general} + §§ 305–310 always included
+  -> ONE decide() call: {is_void: noul} + {chunk_id: noul} per candidate
+  -> threshold -> verdict, legal_basis (by probability), calibrated confidence
+  -> self-check: empty basis -> retry once broadened; else low confidence -> uncertain
+  -> if potentially_void and explain_enabled: ONE complete() call for reason_de
+  -> persist verdict keyed by (clause content hash, agent_version)
 ```
 
-- Conditional edges off `self_check`. `max_retrieval_retries: 1` and
-  `confidence_uncertain_below: 0.6` already sit in `app.yaml`.
-- Tracing via `langfuse.observe` on each node; the trace id is written into the
-  `VerdictRecord`.
-- Tests run the graph with fake router / judge / retriever to cover every edge: happy path,
-  low confidence → uncertain, empty basis → retry → finish, retry exhausted.
+**Cost per clause:** 2 Jina embeddings (route, query) + 1 Decisions call + ~0.3 text
+calls.
 
-**Done when:** `make eval --limit 5` produces 5 traces in Langfuse, each with the four
-nodes visible and a persisted verdict.
+### Verified SDK surface
 
-### 4.6 · Plug into the harness, add the grounding gate
+- `client.decisions.create(model=, input=, questions=)`; `NoulAnswer.noul/.confidence`,
+  `ChoiceAnswer.choice/.probabilities/.confidence`; usage as
+  `total_input_tokens`/`total_output_tokens`.
+- Generated text uses **`response_json_schema`** with `response_schema` omitted (sending
+  both is rejected; a test pins it). Tokens from `usage_metadata.prompt_token_count` /
+  `.candidates_token_count`.
+- `noul` is clamped 0.01–0.99, so no threshold above 0.99 can fire.
 
-**Goal:** the agent scored by exactly the code that scored the baseline.
+### One deliberate conflict, resolved
 
-**Build:** `app/agent/task.py`, `evals/run_agent.py`, one new evaluator
+"Never raise on a provider error" and "a half-finished run should stop deliberately"
+conflict for budget exhaustion. `BudgetExceeded` **propagates**; genuine provider faults
+are absorbed into an error-carrying result. Swallowing it would turn quota exhaustion into
+hundreds of verdict-shaped errors — how the $5 Anthropic run degraded instead of stopping.
 
-**Technical detail:**
+## Tasks
 
-- `task.run(*, item, **_) -> {verdict, reason_de, confidence, legal_basis, error}` —
-  identical signature to `evals.baseline.task`. The harness, scorers, datasets and config
-  stay **untouched**; that was the point of building them agent-agnostic.
-- New item evaluator `grounded`: a `potentially_void` verdict with ≥ 1 `legal_basis` id
-  that was in the candidate set. New run evaluator `grounding_rate`. **The gate is 100%**,
-  and with the schema enum from 4.4 it should be 100% by construction — so the evaluator
-  is the proof, not the mechanism.
-- Same Langfuse experiment name `agb-void-classification`, so agent runs sit beside
-  `baseline-dev-20261111-1701` in the UI.
-- `make eval` (dev) and `make eval-held-out`. The `evals.yml` smoke switches to the agent
-  and keeps the 10% task-failure guard.
+### 4.A · Required fixes — done
 
-**Done when:** a full dev run writes `reports/p4_agent_dev.json` with F1, grounding rate,
-and false negatives / positives by clause id.
+| Fix | Where |
+| --- | --- |
+| `_parse` never raises; a bad response yields a null verdict, not an exception | `graph.py` |
+| Cap `reason_de` length, raise `max_output_tokens` | `prompts.py` |
+| Nothing reads the annotators' `topics` | `graph.py` |
+| Real `agent_version` from config, index hash and prompt fingerprints | `task.py` |
+| Self-check order: retry on empty basis first, then abstain on low confidence | `graph.py` |
+| Rich run metadata (models, prompt fingerprints, `agent_version`, retrieval policy) | `run_agent.py` |
+| Tests for retrieval, hashing, prompts, verdicts, clauses — fakes only, no network | `tests/` |
 
-### 4.7 · Iterate, on dev only
+### 4.B · Tracing — done
 
-**Goal:** beat F1 0.276 honestly.
+One `agent` observation per clause, with `retriever` spans (ranked chunk ids, citations,
+scores), `generation` spans (model, prompt version, tokens), and `span`s for self-check
+and retry. The trace id is written to the `VerdictRecord`; traces are tagged with
+`agent_version` and split; nesting works with `tracer=None`.
 
-Two or three loops, each a Langfuse run compared on dev's 31 positives: judge prompt
-wording, `top_k` 10 vs 15, whether the retry helps or only spends. Held-out **once**, at
-the end, read with the ±0.125 rule from `docs/Metrics.md`.
+### 4.C · Provider abstraction and request budget — done
 
-**Done when:** dev F1 > 0.276, dev recall > 0.70, grounding 100% — or a documented reason
-it is not.
+`core.llm` exposes `decide()` and `complete()` behind `model["provider"]` (Gemini;
+Anthropic kept reachable for a possible stronger judge later). `core.budget` counts
+requests per run and raises *before* the call that would exceed `run.request_budget`;
+`max_concurrency` is 4 with an RPM cap and backoff on 429.
 
-### 4.8 · Record
+### 4.D · Retrieval policy — done
 
-`docs/Phase 4 Results.md`, the `docs/Metrics.md` scoreboard, the gate ticked in
-`docs/Development Phases.md`, and the error analysis: which void clauses still slip
-through, and whether they are the same three the baseline missed and Phase 2 had already
-doubted (`agb-1464`, `agb-1607`, `agb-3490`).
+`top_k: 10`; §§ 305–310 always reachable; the topic filter stays, fed by the Jina router.
+Experiment 1 on real clause text: primary@5 **0.258 → 0.355**, MRR 0.142 → 0.194
+(`reports/p2_retrieval_recheck.json`). Removing the topic filter entirely was measured
+too and scored 0.258, below 0.355, so the router was kept.
 
-## Storage design for the upload path (decided here, built in Phase 5)
+### 4.E · Make it runnable — remaining
 
-The question that prompted this: if someone uploads the same contract again and again, the
-naive design stores it again and again, and judges it again and again. The answer is
-**content-addressed storage** — identify documents and clauses by a hash of their text,
-not by when they arrived. It is how git stores files, and it fits this problem exactly.
+**Goal:** anyone can run the agent from a clean checkout, and the repo says so.
 
-```
-uploads            who uploaded what, when            one row per upload EVENT
-   │ many → one
-documents          document_id = sha256(normalised full text)
-   │ one → many
-document_clauses   (document_id, position, clause_id)  the order within a document
-   │ many → one
-clauses            clause_id = sha256(normalised clause text)   ← content_hash from 4.3
-   │ one → many
-verdicts           (clause_id, agent_version) → verdict, legal_basis, reason, …
-```
+- Drop the baseline from the v1 workflow: the `baseline` Makefile target's help text and
+  the `eval` target's "same slice as `make baseline`" wording; the comparison framing in
+  `configs/evals.yaml`. The Phase 3 baseline code and reports stay as history.
+- Bring stale descriptions in line with the code: the `graph.py` docstring still says
+  "there is no router node", and `.env.example` and the README still describe Anthropic as
+  the router and judge provider.
+- `make eval-smoke` as the documented entry point; README section on running the agent
+  (env vars, `make seed-prompts`, `make eval-smoke`, where the trace and verdict land).
+- Commit the Phase 4 work, which is currently uncommitted on `phase-2-eval-prep`.
 
-Four things fall out of hashing, none of which needs extra code:
+**Done when:** the gate above holds from a clean checkout.
 
-1. **Re-uploading an identical contract stores nothing new.** Same text, same
-   `document_id`, document already present. A new `uploads` row keeps the audit trail
-   (who, when); zero new clause rows; zero LLM calls.
-2. **Identical clauses across shops are stored once.** `agb-2808` and `agb-3123` are
-   word-for-word the same clause in two contracts; they become one `clauses` row with two
-   `document_clauses` references.
-3. **Verdicts are a cache.** A clause this `agent_version` has already judged is answered
-   from the table — instant and free. A re-uploaded contract gets its whole risk table back
-   in milliseconds.
-4. **An edited contract re-judges only what changed.** Fifty unchanged clauses hash to
-   existing ids and reuse their verdicts; the three reworded ones are judged. In due
-   diligence, where the same template returns with small edits, this is the real saving.
+### 4.F · Record
 
-**Normalisation — the one place to be careful.** Hash after collapsing whitespace and
-applying Unicode NFC, and nothing else. Over-normalise and clauses that differ in a word
-that matters merge — "nur bei Vorsatz" and "nur bei Vorsatz und grober Fahrlässigkeit" are
-different clauses with different verdicts. Under-normalise and a stray double space defeats
-the dedup.
+`docs/Phase 4 Results.md`: what was built, the retrieval policy and its numbers, the
+smoke-run evidence for the gate, and the known limitations. It states plainly that Phase 4
+closed on runnability, and that F1 and recall are tracked in `docs/Metrics.md`, not
+claimed as a gate.
 
-**Sequencing.** 4.3 adds `content_hash` to `clauses` and keys `verdicts` on
-`(clause_id, agent_version)`, so the two tables that exist today are already in the right
-shape. `uploads`, `documents` and `document_clauses` wait for Phase 5, when something can
-actually write to them — building tables with no writer is how schemas drift. Phase 7's PDF
-splitter writes into the same tables; nothing here changes for it.
+## Continuous evaluation
 
-## Open decisions — to settle before 4.1
+Runs alongside Phase 5 onwards, never blocking it. Each run is a Langfuse experiment run
+under `agb-void-classification`, reconstructable from its `agent_version` and prompt
+fingerprints, and recorded in `docs/Metrics.md` with its slice stated.
 
-1. **The router must not read `input.topics`.** The eval items carry `topics` from
-   AGB-DE's *annotators*. A real client's AGB arrives untagged, so a router that reads them
-   would score well on the test and fail in use. Proposal: the router reads clause text
-   only, and the annotators' topics become **free ground truth for router accuracy** — a
-   diagnostic for nothing. The 8 multi-topic clauses are where it will legitimately
-   disagree.
+- `make eval` — the stratified dev slice (31 void + 39 non-void, seed 0), reporting raw
+  and **weighted** precision (×9.95 per non-void false positive). Tune on weighted
+  precision; raw precision on a 44%-void slice rewards over-flagging.
+- Targets to work towards: void recall > 0.70, F1 clearly above Phase 3's 0.276,
+  grounding 100%, task failures < 2%.
+- `make eval-held-out` — once, when a configuration is worth confirming, not per iteration.
+- Improvement candidates, roughly in cost order: decision thresholds, prompt wording,
+  hybrid/BM25 for the register mismatch (Phase 2 cause 2), chunk granularity, a stronger
+  judge via Anthropic, and the three gold mappings awaiting legal review.
 
-2. **Retrieval policy moves out of `kb.yaml` lineage into `app.yaml`.** Otherwise every
-   `top_k` tweak changes the index's config hash and the app refuses to start. One-time
-   move in 4.1.
+## Open decisions
 
-3. **Self-check stays deterministic in this phase.** Confidence threshold, empty-basis
-   retry, nothing else. An LLM critic is a plausible 4.7 experiment, but it adds cost
-   before it adds a measurable number. Start without it.
-
-## Files this phase touches
-
-```
-packages/core/retrieval.py         new   4.1
-configs/app.yaml                   edit  4.1, 4.2  (retrieval policy block)
-configs/kb.yaml                    edit  4.1       (retrieval block removed)
-pipelines/p1_kb/s5_check_retrieval.py  edit  4.1  (calls core.retrieval)
-app/agent/clauses.py               new   4.3       (+ content_hash on the clauses table)
-app/agent/verdicts.py              new   4.3       (keyed clause_id + agent_version)
-app/agent/prompts.py               new   4.4
-app/agent/prompts/*.md             new   4.4       (offline fallbacks)
-scripts/seed_prompts.py            new   4.4
-app/agent/state.py                 new   4.5
-app/agent/graph.py                 new   4.5
-app/agent/task.py                  new   4.6
-evals/run_agent.py                 new   4.6
-evals/harness.py                   edit  4.6       (grounded evaluator)
-.github/workflows/evals.yml        edit  4.6
-Makefile                           edit  4.6       (eval, eval-held-out)
-docs/Phase 4 Results.md            new   4.8
-docs/Metrics.md                    edit  4.2, 4.8
-```
+1. **Free-tier quota.** `request_budget: 10000` and `rpm: 180` are taken from the published
+   Gemini limits; confirm them against this key before a full 419-clause run.

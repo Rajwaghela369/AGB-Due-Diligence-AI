@@ -12,8 +12,9 @@ due diligence area.
 - `docs/Development Phases.md` - build order and the gate for each phase
 - `docs/Phase 1 Results.md` - knowledge base numbers, what the spikes settled, limitations
 - `docs/Phase 2 Results.md` - clause counts, the flag-not-drop decisions, answer-key caveats
-- `docs/Phase 3 Results.md` - the baseline to beat, and why recall is the unstable half
-- `docs/Phase 4 Plan.md` - the agent, step by step, and the three decisions it waits on
+- `docs/Phase 3 Results.md` - the one-shot baseline, and why recall is the unstable half
+- `docs/Phase 4 Plan.md` - the agent: what it does, its runnability gate, and the continuous evaluation track
+- `docs/Phase 4 Results.md` - what Phase 4 built and the numbers measured so far
 
 ## Layout
 
@@ -38,19 +39,38 @@ siblings and may not import each other, pipelines write the stores, the app read
 ## Getting started
 
 ```bash
-cp .env.example .env     # fill in ANTHROPIC_API_KEY and the Langfuse keys
+cp .env.example .env     # fill in the keys; see the comments in the file
 make install
 make smoke               # Phase 0 gate
 ```
 
+## Running the agent
+
+The agent needs `GEMINI_API_KEY` (judge and explanation), `JINA_API_KEY` (routing and
+retrieval), Qdrant (the BGB index built by `make kb`), `DATABASE_URL` (clauses and
+verdicts) and the Langfuse keys (prompts and traces).
+
+```bash
+make seed-prompts        # once, and after any prompt change
+make eval-smoke          # 5 dev clauses end to end - the Phase 4 gate
+make eval                # the stratified 70-clause dev slice, for continuous evaluation
+```
+
+Each clause produces one nested Langfuse trace (route, retrieve, judge, self-check,
+retry, explain) and a row in the Postgres `verdicts` table, keyed by clause content
+hash and `agent_version` and carrying the trace id. The run report lands in `reports/`:
+`p4_agent_dev5.json` for the smoke run, `p4_agent_dev70.json` for `make eval`.
+Models, thresholds and the retrieval policy live in `configs/app.yaml`; run size and
+quota in `configs/evals.yaml`.
+
 ## Current state
 
-Baselines to beat, with the caveats that matter, in `docs/Metrics.md`:
+Reference numbers, with the caveats that matter, in `docs/Metrics.md`:
 
-| Metric | Value | Beat it in |
+| Metric | Value | Where it stands |
 | --- | --- | --- |
-| Void F1 (dev, 419 clauses) | **0.276** | Phase 4 |
-| Retrieval primary@5 (real clauses) | **0.258** | Phase 4 |
+| Void F1, Phase 3 baseline (dev, 419 clauses) | **0.276** | target for continuous evaluation |
+| Retrieval primary@5 (real clauses) | 0.258 → **0.355** | improved in Phase 4 |
 
 
 Phase 1 complete: `make kb` builds and validates the BGB knowledge base, primary@5 0.933
@@ -74,11 +94,13 @@ times for every correct call, so precision is what Phase 4 has to earn. The harn
 `evals/` is permanent and agent-agnostic; Phase 4's graph plugs into it unchanged. See
 `docs/Phase 3 Results.md`.
 
-`make eval` and the later targets are not implemented yet.
+Phase 4: the agentic RAG graph runs end to end - see **Running the agent**. Phase 4
+closes on runnability, not on a metric; void F1 and recall are improved as continuous
+evaluation alongside later phases. See `docs/Phase 4 Plan.md`.
 
 ## Stack
 
 Python 3.12, uv, LangGraph, FastAPI, Qdrant Cloud for vectors, Neon Postgres for
 tables, Prefect Cloud for pipeline orchestration and run observability, Jina for
-embeddings, Anthropic (Claude) for the router, judge and baseline models, and Langfuse (Cloud EU) for traces,
+embeddings and topic routing, Gemini for the judge (Decisions API) and the explanation, and Langfuse (Cloud EU) for traces,
 prompts, datasets and scores.

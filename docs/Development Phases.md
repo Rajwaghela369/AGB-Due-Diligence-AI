@@ -63,18 +63,13 @@ One-shot classifier, no retrieval, run as a Langfuse experiment. Scorers for pre
 
 ### Phase 4 · Agentic RAG core
 
-Headless LangGraph graph: topic router → retrieve BGB → judge → self-check → retry retrieval once or finish. Uncertain verdicts are marked and skipped for now. Prompts versioned in Langfuse, one trace per clause, verdicts persisted to Neon Postgres.
+Headless LangGraph graph: topic router (Jina embedding) → retrieve BGB → judge (Gemini Decisions API, one call) → self-check → retry retrieval once → explain (`reason_de`, void verdicts only) → finish. Uncertain verdicts are marked and skipped for now. Prompts versioned in Langfuse, one trace per clause, verdicts persisted to Neon Postgres keyed by content hash and `agent_version`.
 
-**Gate:** void-class recall above 0.70, F1 above the Phase 3 baseline of **0.276 on dev** (held-out 0.304), grounding rate 100%. Expect 2–3 iterations on prompt, top-k and chunk granularity, compared as Langfuse experiments.
+**Gate:** the agent is runnable — `make eval-smoke` completes on 5 dev clauses with zero task failures, every void verdict is grounded in a retrieved chunk, each clause has one nested Langfuse trace whose id is on its `verdicts` row, and `make check` is green. See `docs/Phase 4 Plan.md`.
 
-**First experiment — fix topic tagging.** Phase 2's retrieval re-check on real clause text scored **primary@5 0.258** over 31 void clauses, against Phase 1's synthetic 0.933. Two causes, diagnosed in `docs/Phase 2 Results.md`:
+**Quality is tracked, not gated.** Void recall above 0.70 and F1 above the Phase 3 baseline (0.276 dev, 0.304 held-out) are targets for continuous evaluation alongside Phase 5 onwards, compared as Langfuse experiments and recorded in `docs/Metrics.md`. Experimentation is ongoing work, so it does not block the phases after this one.
 
-1. Seven of the 31 could never succeed — the topic filter admits only `{query topic, general}`, so chunks tagged `other` (§ 308 Nr. 4, § 309 Nr. 3) are unreachable by **any** query, and a liability clause whose basis is a warranty-tagged chunk is cut. This is a live defect in the shipped retrieval path.
-2. Fourteen reachable misses all landed at rank 6–13, 11 of them retrieving a substantive norm where a § 308/309 prohibition was the answer. Dense similarity finds the norm a clause is *about*, not the one that voids it.
-
-Candidates in cost order: treat § 305–310 as always-included so `other` stops hiding chunks; raise `top_k` from 5 to 10 (reachable @10 is 0.833); add hybrid/BM25 for the register mismatch.
-
-**Baseline to beat: 0.258 over all 31, 0.333 over the 24 reachable.** Re-measure with `make recheck`.
+**Retrieval, first experiment (done).** Phase 2's re-check on real clause text scored primary@5 0.258, against Phase 1's synthetic 0.933, partly because the topic filter made chunks tagged `other` unreachable (see `docs/Phase 2 Results.md`). Always including §§ 305–310 and raising `top_k` to 10 moved it to **0.355**. Hybrid/BM25 for the register mismatch remains a candidate.
 
 ### Phase 5 · AG-UI streaming
 

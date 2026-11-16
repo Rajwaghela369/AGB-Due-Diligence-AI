@@ -3,7 +3,7 @@
 Every number this project is judged on, where it came from, and how to reproduce it.
 Read this before quoting a figure: two of them look much better than they are.
 
-Last updated after Phase 3.
+Last updated after the Phase 4 retrieval experiment.
 
 ## The scoreboard
 
@@ -12,6 +12,7 @@ Last updated after Phase 3.
 | **Void F1, dev** | **0.276** | 3 | `make baseline` | `reports/p3_baseline_dev.json` |
 | Void F1, held-out | 0.304 | 3 | `make baseline-held-out` | `reports/p3_baseline_held_out.json` |
 | **Retrieval primary@5, real clauses** | **0.258** | 2 | `make recheck` | `reports/p2_retrieval_recheck.json` |
+| Retrieval primary@5, real clauses, Phase 4 policy | **0.355** | 4 | `make recheck` | `reports/p2_retrieval_recheck.json` |
 | Retrieval primary@5, synthetic | 0.933 | 1 | `make kb` | `reports/p1_retrieval_check.json` |
 | Clause counts | 523 / 39 void | 2 | `make eval-data` | `reports/p2_counts.json` |
 
@@ -63,14 +64,14 @@ also chose their answers, with knowledge of what the index contained. It shows t
 is structurally sound, not that it works on real input — `data/gold/README.md` said so
 before the re-check confirmed it.
 
-**0.258 is the honest number**, over 31 real void clauses whose void label comes from
+**0.355 is the current Phase 4 retrieval number**, over 31 real void clauses whose void label comes from
 AGB-DE's annotators. Its one weak link is that the *paragraph* for each was chosen by
 Claude; eight of the 31 mappings are flagged `confidence: low` in `configs/gold_map.yaml`
 and three are awaiting legal review.
 
 The gap decomposes into two causes (full analysis in `docs/Phase 2 Results.md`):
 
-1. **7 of 31 queries could never succeed.** The topic filter admits only
+1. **7 of 31 queries could never succeed under the old policy.** The topic filter admits only
    `{query topic, general}`, so chunks tagged `other` — § 308 Nr. 4, § 309 Nr. 3 — are
    unreachable by *any* query, and a liability clause whose basis is a warranty-tagged
    chunk is cut. This is a live defect in the retrieval path the agent will use.
@@ -80,6 +81,11 @@ The gap decomposes into two causes (full analysis in `docs/Phase 2 Results.md`):
 
 Note @10 reachable is 0.833: the right chunk is usually **found**, just ranked below the
 substantive norms. That is a ranking and top-k problem, not an embedding failure.
+
+Phase 4's first retrieval experiment sets `top_k: 10` and always includes §§ 305–310
+(including lettered sections). It raises primary@5 to **0.355**, reduces misses to 20,
+and makes the previously unreachable control paragraphs eligible for retrieval. The
+remaining rank-6–19 misses are the next retrieval/judge iteration target.
 
 ## Data counts (Phase 2 gate)
 
