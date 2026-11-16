@@ -1,20 +1,23 @@
-"""1.5 Validate: score the gold queries against the index."""
+"""1.5 Validate: score the gold queries against the index.
+
+Retrieval itself lives in core.retrieval so the agent and this scorer share one
+path; this module only embeds the gold file, searches it, and writes the score.
+"""
 
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from core import qdrant as store
-from core.embeddings import embed_texts
+from core.config import load_yaml
 from core.logging import get_logger
-from qdrant_client.models import FieldCondition, Filter, MatchValue
+from core.paths import CONFIGS
+from core.retrieval import embed_queries, search
 
 log = get_logger("p1.retrieval")
 
 # Deep enough to see where a miss actually ranked, which is what error analysis needs.
 SEARCH_DEPTH = 20
-ALWAYS_INCLUDED_TOPIC = "general"
 
 
 @dataclass
@@ -37,21 +40,6 @@ class RetrievalResult:
         return [o for o in self.outcomes if o.rank is None or o.rank > 5]
 
 
-def _topic_filter(topic: str) -> Filter:
-    """Narrow by topic without ever gating evidence away.
-
-    The router's topic is a hint, so `general` chunks stay in the candidate set
-    whatever it picks. A mis-routed clause should cost ranking, not evidence.
-    """
-    wanted = {topic, ALWAYS_INCLUDED_TOPIC}
-    return Filter(
-        must=[FieldCondition(key="kind", match=MatchValue(value=store.KIND_CHUNK))],
-        should=[
-            FieldCondition(key="topics", match=MatchValue(value=value)) for value in sorted(wanted)
-        ],
-    )
-
-
 def _metrics(outcomes: list[QueryOutcome]) -> dict[str, float]:
     total = len(outcomes)
     at = {
@@ -72,38 +60,31 @@ def check_retrieval(
     kb: dict[str, Any],
     report_dir: Path,
     report_name: str = "p1_retrieval_check.json",
+    collection: str | None = None,
+    policy: dict[str, Any] | None = None,
 ) -> RetrievalResult:
     """Score a gold file against the index.
 
     `report_name` exists so P2 can re-run this unchanged against real clause
     text and write its own report. Same code, same metrics, so the two numbers
     are directly comparable.
+
+    `collection` is the versioned collection the P1 ingest gate just built -
+    it runs before the alias moves, so scoring the alias would score the
+    previous index. Left as None, the alias is read, which is what P2 wants.
     """
     gold = [json.loads(line) for line in gold_path.read_text(encoding="utf-8").splitlines()]
+    policy = policy or load_yaml(CONFIGS / "app.yaml")["retrieval"]
+    target = collection or kb["store"]["alias"]
     embedding = kb["embedding"]
 
-    embedded = embed_texts(
-        [row["query"] for row in gold],
-        model=embedding["model"],
-        dimension=embedding["dimension"],
-        task=embedding["task_query"],
-        batch_size=embedding["batch_size"],
-        normalized=embedding["normalize"],
-    )
+    # One API call for the whole file, as the Phase 1 scorer always did.
+    embedded = embed_queries([row["query"] for row in gold], kb)
 
-    qdrant = store.client()
-    collection = kb["store"]["collection"]
     outcomes: list[QueryOutcome] = []
-
     for row, vector in zip(gold, embedded.vectors, strict=True):
-        hits = qdrant.query_points(
-            collection,
-            query=vector,
-            limit=SEARCH_DEPTH,
-            query_filter=_topic_filter(row["topic"]),
-            with_payload=["chunk_id"],
-        ).points
-        retrieved = [hit.payload["chunk_id"] for hit in hits]
+        hits = search(vector, row["topic"], policy, depth=SEARCH_DEPTH, collection=target)
+        retrieved = [hit.chunk_id for hit in hits]
         primary = row["primary_chunk_id"]
         outcomes.append(
             QueryOutcome(
@@ -123,9 +104,10 @@ def check_retrieval(
     report_path.write_text(
         json.dumps(
             {
-                "collection": collection,
+                "collection": target,
                 "embedding_model": embedding["model"],
                 "query_task": embedding["task_query"],
+                "policy": policy,
                 "metrics": metrics,
                 "queries": [
                     {

@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from core import qdrant as store
-from core.config import config_hash, load_yaml
+from core.config import index_config_hash, load_yaml
 from core.paths import CONFIGS, GOLD, INTERIM, PROCESSED, RAW, REPORTS, STORES
 from core.settings import load_settings
 from prefect import flow, get_run_logger, task
@@ -91,12 +91,16 @@ def build_index(chunks: ChunkResult, kb: dict, lineage: str) -> IndexResult:
 @task
 def check_retrieval(indexed: IndexResult, kb: dict) -> RetrievalResult:
     """1.5 Score the gold queries. The gate that decides whether the alias moves."""
-    result = run_check(GOLD / "kb_queries.jsonl", kb=kb, report_dir=REPORTS)
+    # The versioned collection just built, never the alias: the alias still
+    # points at the previous index until publish_alias runs.
+    result = run_check(
+        GOLD / "kb_queries.jsonl", kb=kb, report_dir=REPORTS, collection=indexed.collection
+    )
     log = get_run_logger()
     log.info(
         "primary@5 %.2f (gate %.2f), MRR %.3f, %d misses",
         result.metrics["primary_at_5"],
-        kb["retrieval"]["gate_primary_at_5"],
+        kb["gate"]["primary_at_5"],
         result.metrics["mrr"],
         len(result.misses),
     )
@@ -128,8 +132,9 @@ def kb_ingest(dataset_config: str = FULL_CONFIG, publish: bool = True) -> None:
     log = get_run_logger()
     kb = load_yaml(CONFIGS / "kb.yaml")
     paragraphs = load_yaml(CONFIGS / "kb_paragraphs.yaml")
-    # Both configs decide what the index contains, so both belong in its lineage.
-    lineage = config_hash(kb, paragraphs)
+    # Both configs decide what the index contains, so both belong in its lineage;
+    # the retrieval policy and the gate threshold do not (core.config.LINEAGE_EXCLUDED).
+    lineage = index_config_hash(kb, paragraphs)
     sampling = dataset_config != FULL_CONFIG
 
     log.info(
@@ -182,7 +187,7 @@ def kb_ingest(dataset_config: str = FULL_CONFIG, publish: bool = True) -> None:
         ),
     )
 
-    gate = kb["retrieval"]["gate_primary_at_5"]
+    gate = kb["gate"]["primary_at_5"]
     passed = checked.metrics["primary_at_5"] >= gate
 
     if not publish:

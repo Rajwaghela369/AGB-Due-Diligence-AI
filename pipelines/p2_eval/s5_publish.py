@@ -16,6 +16,7 @@ from typing import Any
 import pandas as pd
 from core import langfuse_client
 from core.db import connection
+from core.hashing import content_hash
 from core.invariants import assert_no_labels
 from core.logging import get_logger
 
@@ -33,13 +34,15 @@ create table if not exists {table} (
     split       text not null,
     title       text not null,
     text        text not null,
-    topics      text[] not null
+    topics      text[] not null,
+    content_hash text not null
 )
 """
 
+
 INSERT = """
-insert into {table} (clause_id, contract_id, split, title, text, topics)
-values (%s, %s, %s, %s, %s, %s)
+insert into {table} (clause_id, contract_id, split, title, text, topics, content_hash)
+values (%s, %s, %s, %s, %s, %s, %s)
 """
 
 
@@ -135,9 +138,10 @@ def publish_clauses(rows: pd.DataFrame, table: str, dry_run: bool) -> int:
         log.info("dry run: %d clause rows prepared for %s, nothing written", len(rows), table)
         return len(rows)
 
-    payload = [tuple(row) for row in rows.itertuples(index=False, name=None)]
+    payload = [tuple(row) + (content_hash(row.text),) for row in rows.itertuples(index=False)]
     with connection() as conn:
         conn.execute(DDL.format(table=table))
+        conn.execute(f"alter table {table} add column if not exists content_hash text")
         # Truncate and reinsert in the same transaction: a failure rolls back to
         # the previous contents rather than leaving the table empty.
         conn.execute(f"truncate {table}")

@@ -39,6 +39,7 @@ class Clause(BaseModel):
     title: str
     text: str
     topics: list[Topic]
+    split: str | None = None
 
 
 class LabeledClause(Clause):
