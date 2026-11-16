@@ -11,7 +11,8 @@
     "test": "vitest run",
     "gen:api": "node scripts/generate-api.mjs",
     "check:gen": "node scripts/generate-api.mjs --check",
-    "check": "pnpm check:gen && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "check": "pnpm check:gen && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@ag-ui/core": "1.0.4",
@@ -35,7 +36,9 @@
     "zustand": "5.1.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
     "@eslint/js": "10.0.1",
+    "@playwright/test": "1.65.1",
     "@tailwindcss/vite": "4.3.5",
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.3",

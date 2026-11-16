@@ -1,7 +1,7 @@
 # Single entry point: CI runs exactly these targets, so local and CI never diverge.
 .PHONY: help install smoke kb eval-data eval-data-dry recheck baseline baseline-held-out \
 	baseline-smoke eval eval-held-out eval-smoke seed-prompts lint format test web web-gen \
-	web-check check clean api api-up api-down
+	web-check e2e e2e-install check clean api api-up api-down
 
 PY := uv run
 
@@ -70,7 +70,13 @@ web-check:  ## Lint, test, typecheck, build, and verify generated frontend files
 	$(PY) python scripts/export_api_schema.py --check
 	cd web && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm check
 
-check: lint test web-check  ## What CI runs
+e2e-install:  ## One-time: download the Chromium build Playwright drives
+	cd web && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec playwright install chromium
+
+e2e:  ## Phase 6 gate in a browser: real API on fake model clients (ports 8010 and 5180)
+	cd web && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm e2e
+
+check: lint test web-check e2e  ## What CI runs (e2e needs `make e2e-install` once)
 
 api:  ## Run the API locally with reload, against Gotenberg from compose
 	docker compose up -d gotenberg

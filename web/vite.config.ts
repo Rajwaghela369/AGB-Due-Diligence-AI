@@ -6,11 +6,12 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {
-      "/api": "http://localhost:8000",
+      "/api": process.env.API_PROXY ?? "http://localhost:8000",
     },
   },
   test: {
     environment: "jsdom",
+    include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: "./src/test/setup.ts",
     restoreMocks: true,
   },

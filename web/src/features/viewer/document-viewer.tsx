@@ -6,6 +6,7 @@
 // anywhere scrolls the clause into view here.
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 
 import { api } from "../../api/client";
@@ -102,6 +103,11 @@ export function DocumentViewer(props: { documentId: string; review: ReviewData }
     setQuery(value);
     setActiveHit(0);
   }, []);
+  // Esc anywhere clears an active search; the drawer closes on its own Esc.
+  useHotkeys("esc", () => changeQuery(""), { enabled: query !== "", enableOnFormTags: true }, [
+    query,
+    changeQuery,
+  ]);
   const stepHit = useCallback(
     (delta: 1 | -1) => {
       if (hitCount === 0) return;

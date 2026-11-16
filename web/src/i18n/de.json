@@ -52,7 +52,8 @@
       "valid": "{{count}} wirksam",
       "out": "{{count}} außerhalb des Umfangs"
     },
-    "alreadyReviewed": "Bereits geprüft: Ergebnis aus der gespeicherten Prüfung, ohne neue KI-Anfragen."
+    "alreadyReviewed": "Bereits geprüft: Ergebnis aus der gespeicherten Prüfung, ohne neue KI-Anfragen.",
+    "views": "Ansichten"
   },
   "findings": {
     "title": "Fundstellen",

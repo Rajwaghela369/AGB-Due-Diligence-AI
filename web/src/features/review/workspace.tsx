@@ -9,6 +9,7 @@ import { FindingDrawer } from "../findings/finding-drawer";
 import { FindingsPanel } from "../findings/findings-panel";
 import { FindingsTable } from "../table/findings-table";
 import { DocumentViewer } from "../viewer/document-viewer";
+import { WorkspaceHotkeys } from "./hotkeys";
 import { useReviewUi } from "./store";
 import { useReview } from "./use-review";
 
@@ -48,17 +49,22 @@ export function ReviewWorkspace() {
           <span>{t("workspace.counts.valid", { count: counts?.valid ?? 0 })}</span>
           <span>{t("workspace.counts.out", { count: counts?.out_of_scope ?? 0 })}</span>
         </div>
-        <div role="tablist" className="mb-2 flex gap-2">
-          <button
-            role="tab"
-            aria-selected={view === "document"}
-            onClick={() => setView("document")}
-          >
-            {t("workspace.viewDocument")}
-          </button>
-          <button role="tab" aria-selected={view === "table"} onClick={() => setView("table")}>
-            {t("workspace.viewTable")}
-          </button>
+        <div className="mb-2 flex items-center gap-2">
+          <div role="tablist" aria-label={t("workspace.views")} className="flex gap-2">
+            <button
+              role="tab"
+              aria-selected={view === "document"}
+              onClick={() => setView("document")}
+            >
+              {t("workspace.viewDocument")}
+            </button>
+            <button role="tab" aria-selected={view === "table"} onClick={() => setView("table")}>
+              {t("workspace.viewTable")}
+            </button>
+          </div>
+          <div className="ml-auto">
+            <WorkspaceHotkeys />
+          </div>
         </div>
         {view === "document" ? (
           <DocumentViewer documentId={review.review.document_id} review={review} />
