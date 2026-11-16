@@ -944,3 +944,27 @@ def test_retry_is_refused_while_another_review_of_the_document_is_active():
         service.retry_clause(old.review_id, 0)
     judge.open("flaky")
     _finish(service, new.review_id)
+
+
+def test_service_events_can_be_closed_from_another_thread():
+    store = memory_store()
+    judge = FakeJudge(gated=("slow",))
+    service = _service(store, judge, recheck_seconds=3600)
+    review = service.start(_document(store, ["slow"]), ["liability"])
+    judge.wait_entered("slow")
+
+    events = service.events(review.review_id, after_seq=1)
+    assert next(events).seq == 0  # the reconnect snapshot comes first
+    done: queue.Queue = queue.Queue()
+
+    def drain() -> None:
+        done.put([e.seq for e in events])
+
+    thread = threading.Thread(target=drain, daemon=True)
+    thread.start()
+    events.close()
+    seqs = done.get(timeout=DEADLINE)
+    assert all(s > 1 for s in seqs)  # whatever it read before closing, nothing old
+    assert service.bus.subscriber_count(review.review_id) == 0
+    judge.open("slow")
+    _finish(service, review.review_id)
