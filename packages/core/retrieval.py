@@ -13,8 +13,9 @@ from typing import Any
 from qdrant_client.models import FieldCondition, Filter, MatchValue
 
 from core import qdrant as store
-from core.config import index_config_hash, load_yaml
+from core.config import config_hash, index_config_hash, load_yaml
 from core.embeddings import TASK_QUERY, EmbeddingBatch, embed_texts
+from core.hashing import content_hash
 from core.paths import CONFIGS
 
 
@@ -104,7 +105,9 @@ def _assert_manifest(qdrant: Any, collection: str, kb: dict[str, Any]) -> None:
     _validated[collection] = expected
 
 
-def embed_queries(texts: list[str], kb: dict[str, Any] | None = None) -> EmbeddingBatch:
+def embed_queries(
+    texts: list[str], kb: dict[str, Any] | None = None, cache: object | None = None
+) -> EmbeddingBatch:
     """Embed search queries in one API call, with the query-side adapter."""
     embedding = (kb or _kb())["embedding"]
     return embed_texts(
@@ -114,6 +117,7 @@ def embed_queries(texts: list[str], kb: dict[str, Any] | None = None) -> Embeddi
         task=embedding.get("task_query", TASK_QUERY),
         batch_size=embedding["batch_size"],
         normalized=embedding["normalize"],
+        cache=cache,
     )
 
 
@@ -165,7 +169,35 @@ def retrieve(
     policy: dict[str, Any],
     depth: int = 20,
     collection: str | None = None,
+    cache: object | None = None,
 ) -> list[Retrieved]:
-    """One clause in, ranked chunks out. The agent's entry point."""
-    vector = embed_queries([text]).vectors[0]
-    return search(vector, topic, policy, depth=depth, collection=collection)
+    """One clause in, ranked chunks out, reusing the policy-specific result."""
+    kb = _kb()
+    current_index_hash = index_config_hash(kb, load_yaml(CONFIGS / "kb_paragraphs.yaml"))
+    # Topic and depth change the candidate set as much as the policy does.
+    policy_hash = config_hash({"policy": policy, "topic": topic, "depth": depth})
+    digest = content_hash(text)
+    if cache is not None:
+        stored = cache.get_retrieval(digest, current_index_hash, policy_hash)
+        if stored is not None:
+            return [item if isinstance(item, Retrieved) else Retrieved(**item) for item in stored]
+
+    vector = embed_queries([text], kb, cache=cache).vectors[0]
+    results = search(vector, topic, policy, depth=depth, collection=collection)
+    if cache is not None:
+        cache.put_retrieval(
+            digest,
+            current_index_hash,
+            policy_hash,
+            [
+                {
+                    "chunk_id": item.chunk_id,
+                    "citation": item.citation,
+                    "text": item.text,
+                    "score": item.score,
+                    "rank": item.rank,
+                }
+                for item in results
+            ],
+        )
+    return results
