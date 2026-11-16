@@ -109,3 +109,32 @@ def from_config(run: dict) -> RequestBudget:
         max_requests=run.get("request_budget"),
         rpm=run.get("rpm", run.get("requests_per_minute")),
     )
+
+
+class SharedLimiter:
+    """One rate limit and one daily request budget for the whole server (Phase 5 contract).
+
+    `RequestBudget` is per run: two reviews at once would each pace themselves
+    to the full rpm and together exceed the provider's limit. The service builds
+    exactly one `SharedLimiter` at startup and hands it to every review.
+
+    Contract:
+    - `acquire(n=1, *, timeout=None)` blocks until `n` requests fit both the rpm
+      window and today's budget (UTC day), then claims them. Out of daily budget
+      means waiting for the next day (or `timeout`, then `BudgetExceeded`), never
+      a silent failure.
+    - `waiting_reason()` -> "rate_limit" | "daily_budget" | None, for the UI.
+    - `remaining_today()` -> int | None.
+    - `clock` and `sleep` are injectable so tests run without real time.
+    - Thread-safe; sleeping happens outside the lock.
+    """
+
+    def __init__(
+        self,
+        *,
+        rpm: int | None = None,
+        daily_budget: int | None = None,
+        clock=time.time,
+        sleep=time.sleep,
+    ) -> None:
+        raise NotImplementedError("Phase 5 Wave 1: core-hooks")

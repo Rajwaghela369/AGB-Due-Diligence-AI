@@ -19,3 +19,14 @@ layers =
     evals
     app : pipelines
     core
+
+# Inside app (Phase 5): api -> review -> {ingest, agent, store} -> domain.
+# The agent judges one clause and knows nothing of HTTP, reviews or storage.
+[importlinter:contract:app-layers]
+name = App layers
+type = layers
+layers =
+    app.api
+    app.review
+    app.ingest : app.agent : app.store
+    app.domain

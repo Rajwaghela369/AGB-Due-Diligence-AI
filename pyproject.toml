@@ -37,6 +37,9 @@ app = [
     "langfuse>=2.53",
     "qdrant-client>=1.12",
     "psycopg[binary]>=3.2",
+    "pdfplumber>=0.11.10",
+    "python-multipart>=0.0.34",
+    "ag-ui-protocol>=1.0.0",
 ]
 evals = [
     "anthropic>=0.40",
@@ -48,6 +51,7 @@ dev = [
     "ruff>=0.8",
     "pytest>=8.3",
     "import-linter>=2.1",
+    "httpx>=0.28.1",
 ]
 
 [build-system]
