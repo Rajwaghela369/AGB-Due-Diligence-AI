@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 from core.hashing import content_hash
+from core.paths import ROOT
 from core.schemas import LawChunk
 from fastapi.testclient import TestClient
 
@@ -630,7 +631,12 @@ def test_build_app_wires_the_real_service_contract(monkeypatch, with_langfuse):
         ),
     )
     monkeypatch.setattr("app.store.migrate.apply_pending", lambda: None)
-    monkeypatch.setattr("app.store.files.LocalFileStore", lambda: store.files)
+
+    def fake_file_store(root=None):
+        calls["files_root"] = root
+        return store.files
+
+    monkeypatch.setattr("app.store.files.LocalFileStore", fake_file_store)
     monkeypatch.setattr("app.store.postgres.postgres_store", lambda _files: store)
     monkeypatch.setattr("app.api.main.load_statutes", lambda _path: {})
 
@@ -678,3 +684,4 @@ def test_build_app_wires_the_real_service_contract(monkeypatch, with_langfuse):
         },
     )
     assert application.state.feedback.langfuse is expected_tracer
+    assert calls["files_root"] == ROOT / "stores/files"
