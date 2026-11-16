@@ -52,5 +52,72 @@
       "valid": "{{count}} valid",
       "out": "{{count}} out of scope"
     }
+  },
+  "home": {
+    "loading": "Loading reviews …",
+    "loadError": "The documents could not be loaded.",
+    "title": "Your reviews",
+    "description": "Open an earlier review or start a new one.",
+    "newReview": "New review",
+    "empty": {
+      "title": "No reviews yet",
+      "description": "Upload a contract to start the first review."
+    },
+    "notReviewed": "Not reviewed yet",
+    "progress": "{{done}} of {{total}} clauses checked",
+    "status": {
+      "queued": "Waiting",
+      "running": "Running",
+      "finished": "Finished",
+      "failed": "Failed"
+    }
+  },
+  "upload": {
+    "title": "Add a contract",
+    "description": "Upload a PDF or DOCX, or paste the contract text.",
+    "dropzone": "Drop a file here",
+    "formats": "PDF or DOCX",
+    "chooseFile": "Choose file",
+    "pasteAlternative": "Paste text",
+    "pasteLabel": "Contract text",
+    "fileAlternative": "Upload a file instead",
+    "scope": "Scope of review",
+    "liability": "Liability",
+    "warranty": "Warranty",
+    "start": "Start review",
+    "errors": {
+      "too_large": "The file is too large.",
+      "unsupported_type": "This file type is not supported. Please use PDF or DOCX.",
+      "encrypted": "The file is password protected. Please upload it without protection.",
+      "no_text_layer": "The PDF contains no text (probably a scan). Please use a searchable PDF.",
+      "conversion_failed": "The file could not be converted.",
+      "parse_failed": "The file could not be read.",
+      "parse_timeout": "Reading the file took too long. Please try again.",
+      "empty": "No text was found. Please provide a file or text.",
+      "archive_too_large": "The archive is too large.",
+      "rate_limited": "Too many requests. Please wait a moment and try again.",
+      "no_scope": "Please select at least one scope.",
+      "generic": "The upload failed. Please try again."
+    }
+  },
+  "table": {
+    "label": "Results as a table",
+    "search": "Search clauses",
+    "verdict": "Verdict",
+    "topic": "Topic",
+    "allVerdicts": "All verdicts",
+    "allTopics": "All topics",
+    "rows": "{{count}} clauses",
+    "number": "No.",
+    "clause": "Clause",
+    "basis": "Legal basis",
+    "confidence": "Confidence",
+    "status": "Status",
+    "statusDone": "Checked",
+    "confidenceBands": {
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    }
   }
 }
