@@ -40,7 +40,7 @@ def run_probes(
         pool.shutdown(wait=False, cancel_futures=True)
 
 
-def production_probes(*, alias: str, router_model: str) -> dict[str, Probe]:
+def production_probes(*, alias: str, router_model: str, explain_model: str) -> dict[str, Probe]:
     """The real checks behind `/ready`. Imports are local so the app loads without credentials."""
 
     def neon() -> bool:
@@ -61,9 +61,11 @@ def production_probes(*, alias: str, router_model: str) -> dict[str, Probe]:
         api_key = load_settings().gemini_api_key
         if not api_key:
             return False
-        models = genai.Client(api_key=api_key, http_options={"api_version": "v1beta"}).models
-        # Listing one model is metadata only: no generation, no tokens billed.
-        return next(iter(models.list(config={"page_size": 1})), None) is not None
+        # A metadata read of the explain model on the default API version. The judge model is
+        # served only on v1beta, so it is not probed here. Neither a decision nor a generation
+        # call belongs in readiness.
+        genai.Client(api_key=api_key).models.get(model=explain_model)
+        return True
 
     def jina() -> bool:
         import requests

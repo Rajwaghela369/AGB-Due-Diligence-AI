@@ -249,7 +249,9 @@ def test_probes_run_in_parallel():
 
 
 def test_production_probes_name_the_four_dependencies_without_calling_them():
-    probes = production_probes(alias="bgb_agb", router_model="jina-embeddings-v3")
+    probes = production_probes(
+        alias="bgb_agb", router_model="jina-embeddings-v3", explain_model="gemini-3.8-flash"
+    )
     assert set(probes) == {"neon", "qdrant", "gemini", "jina"}
     # Without credentials the two key-based probes report failure rather than raising.
     assert run_probes({"gemini": probes["gemini"], "jina": probes["jina"]}) == {

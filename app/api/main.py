@@ -129,6 +129,7 @@ def build_app() -> FastAPI:
         readiness=production_probes(
             alias=setting(config, "store.alias", "bgb_agb"),
             router_model=setting(config, "models.router.name", "jina-embeddings-v3"),
+            explain_model=setting(config, "models.explain.name", "gemini-3.8-flash"),
         ),
     )
 

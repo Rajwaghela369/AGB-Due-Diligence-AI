@@ -1,7 +1,7 @@
 # Single entry point: CI runs exactly these targets, so local and CI never diverge.
 .PHONY: help install smoke kb eval-data eval-data-dry recheck baseline baseline-held-out \
 	baseline-smoke eval eval-held-out eval-smoke seed-prompts lint format test web web-gen \
-	web-check check clean
+	web-check check clean api api-up api-down
 
 PY := uv run
 
@@ -71,6 +71,16 @@ web-check:  ## Lint, test, typecheck, build, and verify generated frontend files
 	cd web && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm check
 
 check: lint test web-check  ## What CI runs
+
+api:  ## Run the API locally with reload, against Gotenberg from compose
+	docker compose up -d gotenberg
+	GOTENBERG_URL=http://127.0.0.1:3000 $(PY) uvicorn app.api.main:build_app --factory --reload --host 127.0.0.1 --port 8000
+
+api-up:  ## Build and start the API and Gotenberg with compose
+	docker compose up -d --build
+
+api-down:  ## Stop the compose stack (the stored PDFs in the files volume are kept)
+	docker compose down
 
 clean:  ## Remove build artifacts, keep raw data and gold files
 	rm -rf .pytest_cache .ruff_cache **/__pycache__

@@ -1,0 +1,49 @@
+# The API and the Gotenberg service it calls for DOCX conversion. Run with `make api-up`.
+# Secrets come from .env (copy .env.example); nothing secret is written in this file.
+
+services:
+  api:
+    build: .
+    image: agb-check-api
+    env_file: .env
+    environment:
+      GOTENBERG_URL: http://gotenberg:3000
+    ports:
+      # Loopback only: the browser reaches the API through the Vite dev proxy or a reverse proxy.
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # Immutable source PDFs survive container rebuilds.
+      - files:/app/stores/files
+    depends_on:
+      gotenberg:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  gotenberg:
+    # The LibreOffice-only variant: DOCX conversion is all this service is used for, and
+    # the image without Chromium is smaller and starts no browser.
+    image: gotenberg/gotenberg:8-libreoffice
+    # Reachable inside the compose network as http://gotenberg:3000. The loopback mapping
+    # lets `make api` on the host use the same service; nothing else can reach it.
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  files:
