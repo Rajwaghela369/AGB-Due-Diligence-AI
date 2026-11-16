@@ -7,6 +7,11 @@ from app.domain import Finding, Review, StoredEvent, Topic
 
 
 class ReviewService(Protocol):
+    """Errors, which the API maps to responses: KeyError for an unknown review or
+    document (404), ValueError for a request the current state forbids, e.g. retrying a
+    clause that has not failed or reviewing a document with no clauses (409), and
+    RuntimeError while shutting down (503)."""
+
     def start(self, document_id: str, scope: list[Topic]) -> Review:
         """Start a review, or return the active one for the same document and agent version."""
         ...
@@ -35,4 +40,9 @@ class ReviewService(Protocol):
 
     def resume_running(self) -> int:
         """Resume reviews left `running` by a restart; returns how many."""
+        ...
+
+    def shutdown(self, timeout: float | None = None) -> None:
+        """Stop runs after their in-flight clauses, leave them `running` for resume,
+        and wake every blocked `events` iterator so SSE responses can end."""
         ...
