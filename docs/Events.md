@@ -45,14 +45,17 @@ field names inside them are Python's snake_case. Only the AG-UI envelope is came
 | --- | --- | --- |
 | `RUN_STARTED` | review starts or resumes | `threadId` = document_id, `runId` = review_id |
 | `STATE_SNAPSHOT` | right after `RUN_STARTED`, and on every reconnect | `snapshot` = the full state above |
-| `STEP_STARTED` | a clause starts being judged (after any cache check and limiter wait) | `stepName` = `clause:<position>` |
+| `STEP_STARTED` | a clause starts being judged (after the cache check, before any limiter wait inside the judge) | `stepName` = `clause:<position>` |
 | `STATE_DELTA` | a clause changes status (queued→checking, →done, →failed) | `delta` = JSON Patch ops: `replace /clauses/<position>` with the clause entry, plus `replace /review/counts` |
 | `STEP_FINISHED` | the clause is done or failed | `stepName` = `clause:<position>` |
 | `CUSTOM` `progress` | after each clause, and when the limiter starts or stops making clauses wait | `value` = `{counts, cost_usd, budget_left, waiting_reason}` |
-| `RUN_ERROR` | the review itself cannot continue (not a clause failure) | `message`, `code` |
+| `RUN_ERROR` | the review itself cannot continue (not a clause failure) | `message`, `code`: `review_failed` or `agent_version_changed` |
 | `RUN_FINISHED` | every in-scope clause is done or failed | `result` = `{counts, cost_usd}` |
 
 Cache hits emit `STATE_DELTA` (→done) and count in `counts.cache_hits`, without a
 `STEP_STARTED`/`STEP_FINISHED` pair. A retried clause (`POST …/clauses/{pos}/retry`) on a
 finished review emits `RUN_STARTED` and `STATE_SNAPSHOT`, then its own clause events and
 `RUN_FINISHED` again, all under the same review_id with increasing `seq`.
+
+The stream closes at `RUN_FINISHED`. After retrying a clause of a finished review, the
+client reopens the stream with its `Last-Event-ID` to receive the retry's events.

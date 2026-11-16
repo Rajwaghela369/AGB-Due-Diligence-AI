@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.domain import (
     ClauseSpan,
+    Decision,
     DecisionAction,
     Document,
     FeedbackReason,
@@ -86,6 +87,10 @@ class DecisionIn(BaseModel):
     corrected_verdict: Verdict | None = None
     corrected_basis: list[str] = Field(default_factory=list)
     note: str = Field(default="", max_length=2000)
+
+
+class DecisionOut(BaseModel):
+    decision: Decision
 
 
 class StatuteOut(BaseModel):

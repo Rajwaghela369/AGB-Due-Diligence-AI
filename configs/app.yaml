@@ -55,3 +55,17 @@ store:
 
 langfuse:
   enabled: true
+
+review:
+  # Clauses of one review judged at once. Each judge call reserves from the one
+  # shared limiter below, so this bounds threads, not provider requests.
+  max_concurrency: 4
+  # One limiter for the whole server (core.budget.SharedLimiter). Unset means no
+  # limit; a clause that hits either waits, it does not fail. Set both to the
+  # project's Gemini quota before the live gate.
+  rpm: null
+  daily_budget: null
+  # For `cost_usd`; 0 until the Gemini prices are confirmed for this project.
+  price_usd_per_million_tokens:
+    input: 0
+    output: 0
