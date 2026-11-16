@@ -4,6 +4,14 @@ export type Action = "accept" | "override" | "dismiss";
 export type CorrectedBasis = string[];
 export type CorrectedVerdict = ("valid" | "potentially_void" | "uncertain") | null;
 export type Note = string;
+export type Action1 = "accept" | "override" | "dismiss";
+export type CorrectedBasis1 = string[];
+export type CorrectedVerdict1 = ("valid" | "potentially_void" | "uncertain") | null;
+export type DecidedAt = string | null;
+export type DecidedBy = string | null;
+export type Note1 = string;
+export type Position = number;
+export type ReviewId = string;
 export type CreatedAt = string | null;
 export type DocumentId = string;
 export type Filename = string;
@@ -26,7 +34,7 @@ export type CreatedAt1 = string | null;
 export type DocumentId1 = string;
 export type Error = string | null;
 export type FinishedAt = string | null;
-export type ReviewId = string;
+export type ReviewId1 = string;
 export type Scope = ("liability" | "warranty")[];
 export type StartedAt = string | null;
 export type Status = "queued" | "running" | "finished" | "failed";
@@ -38,7 +46,7 @@ export type Heading = string | null;
 export type InScope = boolean;
 export type Number = string | null;
 export type Page = number | null;
-export type Position = number;
+export type Position1 = number;
 export type Bottom = number;
 export type Page1 = number;
 export type Top = number;
@@ -53,22 +61,14 @@ export type Reused = boolean;
 export type Code = string;
 export type Message = string;
 export type Comment = string;
-export type CorrectedBasis1 = string[];
-export type CorrectedVerdict1 = ("valid" | "potentially_void" | "uncertain") | null;
-export type Position1 = number;
+export type CorrectedBasis2 = string[];
+export type CorrectedVerdict2 = ("valid" | "potentially_void" | "uncertain") | null;
+export type Position2 = number;
 export type Reasons = ("verdict_wrong" | "basis_wrong" | "reasoning_unclear" | "clause_cut")[];
-export type ReviewId1 = string;
+export type ReviewId2 = string;
 export type Vote = "up" | "down";
 export type FeedbackId = string;
 export type ScoredSteps = string[];
-export type Action1 = "accept" | "override" | "dismiss";
-export type CorrectedBasis2 = string[];
-export type CorrectedVerdict2 = ("valid" | "potentially_void" | "uncertain") | null;
-export type DecidedAt = string | null;
-export type DecidedBy = string | null;
-export type Note1 = string;
-export type Position2 = number;
-export type ReviewId2 = string;
 export type Error1 = string | null;
 export type AgentVersion1 = string;
 export type Comment1 = string;
@@ -134,6 +134,7 @@ export type Type =
  */
 export interface AGBCheckAPIContracts {
   DecisionIn?: DecisionIn;
+  DecisionOut?: DecisionOut;
   DocumentList?: DocumentList;
   DocumentListItem?: DocumentListItem;
   DocumentOut?: DocumentOut;
@@ -158,6 +159,29 @@ export interface DecisionIn {
   corrected_basis?: CorrectedBasis;
   corrected_verdict?: CorrectedVerdict;
   note?: Note;
+  [k: string]: unknown;
+}
+/**
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "DecisionOut".
+ */
+export interface DecisionOut {
+  decision: Decision;
+  [k: string]: unknown;
+}
+/**
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "Decision".
+ */
+export interface Decision {
+  action: Action1;
+  corrected_basis?: CorrectedBasis1;
+  corrected_verdict?: CorrectedVerdict1;
+  decided_at?: DecidedAt;
+  decided_by?: DecidedBy;
+  note?: Note1;
+  position: Position;
+  review_id: ReviewId;
   [k: string]: unknown;
 }
 /**
@@ -204,7 +228,7 @@ export interface Review {
   document_id: DocumentId1;
   error?: Error;
   finished_at?: FinishedAt;
-  review_id: ReviewId;
+  review_id: ReviewId1;
   scope: Scope;
   started_at?: StartedAt;
   status: Status;
@@ -250,7 +274,7 @@ export interface ClauseSpan {
   in_scope?: InScope;
   number?: Number;
   page?: Page;
-  position: Position;
+  position: Position1;
   rects?: Rects;
   start?: Start;
   text: Text;
@@ -288,11 +312,11 @@ export interface ErrorBody {
  */
 export interface FeedbackIn {
   comment?: Comment;
-  corrected_basis?: CorrectedBasis1;
-  corrected_verdict?: CorrectedVerdict1;
-  position: Position1;
+  corrected_basis?: CorrectedBasis2;
+  corrected_verdict?: CorrectedVerdict2;
+  position: Position2;
   reasons?: Reasons;
-  review_id: ReviewId1;
+  review_id: ReviewId2;
   vote: Vote;
   [k: string]: unknown;
 }
@@ -328,21 +352,6 @@ export interface Finding {
   position: Position4;
   status: Status1;
   verdict?: ClauseVerdict | null;
-  [k: string]: unknown;
-}
-/**
- * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
- * via the `definition` "Decision".
- */
-export interface Decision {
-  action: Action1;
-  corrected_basis?: CorrectedBasis2;
-  corrected_verdict?: CorrectedVerdict2;
-  decided_at?: DecidedAt;
-  decided_by?: DecidedBy;
-  note?: Note1;
-  position: Position2;
-  review_id: ReviewId2;
   [k: string]: unknown;
 }
 /**

@@ -364,6 +364,18 @@
       "title": "DecisionIn",
       "type": "object"
     },
+    "DecisionOut": {
+      "properties": {
+        "decision": {
+          "$ref": "#/$defs/Decision"
+        }
+      },
+      "required": [
+        "decision"
+      ],
+      "title": "DecisionOut",
+      "type": "object"
+    },
     "Document": {
       "properties": {
         "created_at": {
@@ -1301,6 +1313,9 @@
   "properties": {
     "DecisionIn": {
       "$ref": "#/$defs/DecisionIn"
+    },
+    "DecisionOut": {
+      "$ref": "#/$defs/DecisionOut"
     },
     "DocumentList": {
       "$ref": "#/$defs/DocumentList"
