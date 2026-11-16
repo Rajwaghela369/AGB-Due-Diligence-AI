@@ -98,13 +98,9 @@ def make_judge(
 
     def explain_clause(clause: dict[str, Any], cited: list[Retrieved]) -> Any:
         evidence = "\n\n".join(f"{candidate.citation}\n{candidate.text}" for candidate in cited)
-        user = (
-            f"Abschnitt: {clause.get('title') or '(ohne Überschrift)'}\n"
-            f"Klausel:\n{clause['text']}\n\nMaßgebliche Normen:\n{evidence}"
-        )
         return complete(
             prompts.load("explain", label=label).text,
-            user,
+            prompts.explain_message(clause.get("title"), clause["text"], evidence),
             prompts.reason_schema(),
             explain_model,
             budget=limiter,
