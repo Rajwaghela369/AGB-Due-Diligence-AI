@@ -72,7 +72,18 @@ async def create_document(request: Request) -> DocumentOut:
             )
     except IngestError as exc:
         raise _ingest_error(exc) from exc
-    return DocumentOut(document=result.document, clauses=result.clauses, reused=result.reused)
+    # The upload page opens a reused document's stored review instead of starting another.
+    latest = (
+        dependencies.store.reviews.latest_for(result.document.document_id)
+        if result.reused
+        else None
+    )
+    return DocumentOut(
+        document=result.document,
+        clauses=result.clauses,
+        reused=result.reused,
+        latest_review=latest,
+    )
 
 
 @router.get("/documents", response_model=DocumentList)

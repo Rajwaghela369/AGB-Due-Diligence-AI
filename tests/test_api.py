@@ -608,6 +608,8 @@ def test_real_service_upload_review_feedback_and_cached_rereview():
     assert findings.json()["findings"][0]["status"] == "done"
     assert feedback.json()["scored_steps"] == ["explanation"]
     assert repeated_upload.json()["reused"] is True
+    # The upload page needs this to reopen the stored review instead of starting one.
+    assert repeated_upload.json()["latest_review"]["status"] == "finished"
     assert "event: RUN_FINISHED" in second_events.text
     assert second_review.json()["review"]["counts"]["cache_hits"] == 1
     assert repeated_findings.json()["findings"][0]["verdict"]["verdict"] == "potentially_void"
