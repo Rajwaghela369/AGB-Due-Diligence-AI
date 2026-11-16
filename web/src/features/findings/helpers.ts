@@ -24,7 +24,7 @@ export function isDevMode(): boolean {
 }
 
 export function langfuseTraceUrl(traceId: string | null | undefined): string | null {
-  const base = (import.meta.env as Record<string, string | undefined>).VITE_LANGFUSE_URL;
+  const base = import.meta.env.VITE_LANGFUSE_URL;
   if (!traceId || !base) return null;
   return `${base.replace(/\/$/, "")}/trace/${encodeURIComponent(traceId)}`;
 }
