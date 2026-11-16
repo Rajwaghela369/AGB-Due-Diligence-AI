@@ -101,11 +101,9 @@ def production_probes(*, alias: str, router_model: str, explain_model: str) -> d
         if not url:
             return False
         # connect_timeout bounds the handshake; statement_timeout bounds the query itself.
-        with psycopg.connect(
-            url,
-            connect_timeout=int(PROBE_TIMEOUT_SECONDS),
-            options=f"-c statement_timeout={timeout_ms}",
-        ) as conn:
+        # Set after connecting: Neon's pooler rejects the startup `options` parameter.
+        with psycopg.connect(url, connect_timeout=int(PROBE_TIMEOUT_SECONDS)) as conn:
+            conn.execute(f"set statement_timeout = {int(timeout_ms)}")
             return conn.execute("select 1").fetchone() == (1,)
 
     def qdrant() -> bool:

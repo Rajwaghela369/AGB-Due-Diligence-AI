@@ -344,6 +344,7 @@ def test_production_clients_are_created_with_explicit_timeouts(monkeypatch):
             return False
 
         def execute(self, sql):
+            seen.setdefault("neon_sql", []).append(sql)
             return SimpleNamespace(fetchone=lambda: (1,))
 
     monkeypatch.setattr(
@@ -385,7 +386,8 @@ def test_production_clients_are_created_with_explicit_timeouts(monkeypatch):
     assert run_probes(probes) == {"neon": True, "qdrant": True, "gemini": True, "jina": True}
 
     assert seen["neon"]["connect_timeout"] >= 1
-    assert "statement_timeout" in seen["neon"]["options"]
+    assert "options" not in seen["neon"]  # Neon's pooler rejects startup options
+    assert any("statement_timeout" in sql for sql in seen["neon_sql"])
     assert seen["qdrant"]["timeout"] >= 1
     assert seen["gemini"]["http_options"]["timeout"] > 0
     assert seen["gemini_model"] == "gemini-3.8-flash"
