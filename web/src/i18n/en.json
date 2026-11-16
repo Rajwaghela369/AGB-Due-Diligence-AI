@@ -30,5 +30,27 @@
     "notFound": {
       "title": "Page not found"
     }
+  },
+  "risk": {
+    "void": "Potentially void",
+    "review": "To review",
+    "valid": "Valid",
+    "queued": "Queued",
+    "checking": "Checking…",
+    "failed": "Could not be checked",
+    "out": "Out of scope"
+  },
+  "workspace": {
+    "loading": "Loading review…",
+    "loadError": "The review could not be loaded.",
+    "document": "Document",
+    "viewDocument": "Document",
+    "viewTable": "Table",
+    "counts": {
+      "void": "{{count}} potentially void",
+      "review": "{{count}} to review",
+      "valid": "{{count}} valid",
+      "out": "{{count}} out of scope"
+    }
   }
 }

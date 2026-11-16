@@ -30,5 +30,27 @@
     "notFound": {
       "title": "Seite nicht gefunden"
     }
+  },
+  "risk": {
+    "void": "Potenziell unwirksam",
+    "review": "Zu prüfen",
+    "valid": "Wirksam",
+    "queued": "Wartet",
+    "checking": "Wird geprüft …",
+    "failed": "Konnte nicht geprüft werden",
+    "out": "Außerhalb des Prüfumfangs"
+  },
+  "workspace": {
+    "loading": "Prüfung wird geladen …",
+    "loadError": "Die Prüfung konnte nicht geladen werden.",
+    "document": "Dokument",
+    "viewDocument": "Dokument",
+    "viewTable": "Tabelle",
+    "counts": {
+      "void": "{{count}} potenziell unwirksam",
+      "review": "{{count}} zu prüfen",
+      "valid": "{{count}} wirksam",
+      "out": "{{count}} außerhalb des Umfangs"
+    }
   }
 }

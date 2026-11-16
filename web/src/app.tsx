@@ -1,10 +1,13 @@
 import { Moon, Scale, Sun } from "lucide-react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, Navigate, Outlet, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, Outlet, Route, Routes, useNavigate } from "react-router-dom";
 import { useHotkeys } from "react-hotkeys-hook";
 
 import { HealthIndicator } from "./components/health-indicator";
+import { HomePage } from "./features/home/home-page";
+import { ReviewWorkspace } from "./features/review/workspace";
+import { UploadPage } from "./features/upload/upload-page";
 import { Button } from "./components/ui/button";
 import { useUiStore } from "./store/ui";
 
@@ -12,9 +15,9 @@ export function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route index element={<PlaceholderPage name="home" />} />
-        <Route path="upload" element={<PlaceholderPage name="upload" />} />
-        <Route path="reviews/:id" element={<ReviewPlaceholder />} />
+        <Route index element={<HomePage />} />
+        <Route path="upload" element={<UploadPage />} />
+        <Route path="reviews/:id" element={<ReviewWorkspace />} />
         <Route path="404" element={<PlaceholderPage name="notFound" />} />
         <Route path="*" element={<Navigate replace to="/404" />} />
       </Route>
@@ -74,26 +77,11 @@ function AppShell() {
   );
 }
 
-function PlaceholderPage({ name }: { name: "home" | "upload" | "notFound" }) {
+function PlaceholderPage({ name }: { name: "notFound" }) {
   const { t } = useTranslation();
   return (
     <section className="max-w-2xl rounded-xl border border-border bg-surface p-8 shadow-sm">
       <h1 className="text-3xl font-semibold tracking-tight">{t(`pages.${name}.title`)}</h1>
-      {name !== "notFound" && (
-        <p className="mt-3 text-lg text-muted-foreground">{t(`pages.${name}.description`)}</p>
-      )}
-    </section>
-  );
-}
-
-function ReviewPlaceholder() {
-  const { t } = useTranslation();
-  const { id } = useParams();
-  return (
-    <section className="max-w-2xl rounded-xl border border-border bg-surface p-8 shadow-sm">
-      <p className="text-sm font-medium text-accent">{id}</p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight">{t("pages.review.title")}</h1>
-      <p className="mt-3 text-lg text-muted-foreground">{t("pages.review.description")}</p>
     </section>
   );
 }
