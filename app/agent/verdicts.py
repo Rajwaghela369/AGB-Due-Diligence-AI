@@ -1,10 +1,15 @@
-"""Verdict storage, keyed by what produced the verdict rather than by when.
+"""Verdict storage for the evaluation harness, keyed by what produced the verdict.
 
-The key is `(clause_id, agent_version)`. Running the same agent over the same
-clause converges on one row; changing a prompt, a model, the retrieval policy or
-the index produces a new version that lands beside the old one. Verdicts are
-superseded, never overwritten, and a verdict already reached can be served from
-here instead of the model.
+The key is `(content_hash, agent_version)`, the same as the service's `verdicts`
+table: the hash of the clause text, not the eval clause id, so the harness and
+the product share one cache and a clause judged in an evaluation is not judged
+again in a review. Running the same agent over the same text converges on one
+row; changing a prompt, a model, the retrieval policy or the index produces a new
+version that lands beside the old one. Verdicts are superseded, never overwritten.
+
+The table itself belongs to `app.store.migrations`; this module only reads and
+writes it. A human's ruling on a clause is a `decision` on one review, not a
+column here.
 """
 
 from typing import Any
@@ -13,52 +18,28 @@ from core.config import config_hash
 from core.db import connection
 from core.schemas import VerdictRecord
 
-DDL = """
-create table if not exists {table} (
-    clause_id         text not null,
-    agent_version     text not null,
-    run_id            text not null,
-    verdict           text not null,
-    legal_basis       text[] not null,
-    reason_de         text not null,
-    confidence        double precision not null,
-    lawyer_decision   text,
-    langfuse_trace_id text,
-    primary key (clause_id, agent_version)
-)
-"""
+from app.domain import ClauseVerdict
 
 INSERT = """
-insert into {table}
-    (clause_id, agent_version, run_id, verdict, legal_basis, reason_de,
-     confidence, lawyer_decision, langfuse_trace_id)
-values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-on conflict (clause_id, agent_version) do update set
-    run_id = excluded.run_id,
-    verdict = excluded.verdict,
-    legal_basis = excluded.legal_basis,
-    reason_de = excluded.reason_de,
-    confidence = excluded.confidence,
-    langfuse_trace_id = excluded.langfuse_trace_id
+insert into verdicts
+    (content_hash, agent_version, verdict, legal_basis, reason_de, confidence, trace_id)
+values (%s, %s, %s, %s, %s, %s, %s)
+on conflict (content_hash, agent_version) do nothing
 """
-# lawyer_decision is deliberately absent from the DO UPDATE SET: a human's
-# ruling outlives any number of agent re-runs over the same clause.
 
 SELECT = """
-select run_id, clause_id, verdict, legal_basis, reason_de, confidence,
-       lawyer_decision, langfuse_trace_id
-from {table} where clause_id = %s and agent_version = %s
+select content_hash, agent_version, verdict, legal_basis, reason_de, confidence, trace_id
+from verdicts where content_hash = %s and agent_version = %s
 """
 
 _COLUMNS = (
-    "run_id",
-    "clause_id",
+    "content_hash",
+    "agent_version",
     "verdict",
     "legal_basis",
     "reason_de",
     "confidence",
-    "lawyer_decision",
-    "langfuse_trace_id",
+    "trace_id",
 )
 
 
@@ -84,38 +65,42 @@ def agent_version(
     )
 
 
-def ensure_table(table: str = "verdicts") -> None:
-    """Create the table once per run, from the caller's setup path.
+def ensure_table() -> None:
+    """Fail early, from the caller's setup path, if the migrations have not been applied.
 
-    Deliberately not called by `save`: at concurrency 8 that was one CREATE
-    TABLE per clause, which races on Postgres for no benefit.
+    Deliberately not called by `save`, and deliberately not creating anything:
+    the schema is the store's migrations' job (`python -m app.store.migrate`).
     """
     with connection() as conn:
-        conn.execute(DDL.format(table=table))
+        row = conn.execute(
+            "select 1 from information_schema.columns"
+            " where table_schema = current_schema()"
+            " and table_name = 'verdicts' and column_name = 'content_hash'"
+        ).fetchone()
+    if not row:
+        raise RuntimeError("verdicts table is missing or old; run `python -m app.store.migrate`")
 
 
-def save(record: VerdictRecord, version: str, table: str = "verdicts") -> None:
+def save(record: VerdictRecord, version: str, content_hash: str) -> None:
     with connection() as conn:
         conn.execute(
-            INSERT.format(table=table),
+            INSERT,
             (
-                record.clause_id,
+                content_hash,
                 version,
-                record.run_id,
                 record.verdict,
                 record.legal_basis,
                 record.reason_de,
                 record.confidence,
-                record.lawyer_decision,
                 record.langfuse_trace_id,
             ),
         )
 
 
-def get(clause_id: str, version: str, table: str = "verdicts") -> VerdictRecord | None:
-    """The cached verdict for this clause under this agent version, if any."""
+def get(content_hash: str, version: str) -> ClauseVerdict | None:
+    """The cached verdict for this clause text under this agent version, if any."""
     with connection() as conn:
-        row = conn.execute(SELECT.format(table=table), (clause_id, version)).fetchone()
+        row = conn.execute(SELECT, (content_hash, version)).fetchone()
     if not row:
         return None
-    return VerdictRecord(**dict(zip(_COLUMNS, row, strict=True)))
+    return ClauseVerdict(**dict(zip(_COLUMNS, row, strict=True)))

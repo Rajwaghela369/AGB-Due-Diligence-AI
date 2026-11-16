@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager
 
+import pytest
 from core.hashing import content_hash, normalise
 from core.schemas import VerdictRecord
 
@@ -23,6 +24,7 @@ RECORD = VerdictRecord(
     confidence=0.91,
     langfuse_trace_id="trace-abc",
 )
+HASH = content_hash("Wir haften nur bei Vorsatz.")
 
 
 class FakeConnection:
@@ -51,76 +53,72 @@ def _patch(monkeypatch, conn):
     monkeypatch.setattr(verdicts, "connection", lambda: _connection(conn))
 
 
-def test_save_does_not_create_the_table(monkeypatch):
-    """At concurrency 8 that was one CREATE TABLE per clause, racing for nothing."""
+def test_save_is_a_single_insert_and_creates_nothing(monkeypatch):
+    """At concurrency 8 a CREATE TABLE per clause raced on Postgres for no benefit."""
     conn = FakeConnection()
     _patch(monkeypatch, conn)
 
-    verdicts.save(RECORD, "version-1")
+    verdicts.save(RECORD, "version-1", HASH)
 
     assert len(conn.statements) == 1
     assert "create table" not in conn.statements[0].lower()
     assert conn.statements[0].lower().startswith("insert into verdicts")
 
 
-def test_save_upserts_on_the_content_and_version_key(monkeypatch):
+def test_save_keys_on_the_content_hash_and_version(monkeypatch):
     conn = FakeConnection()
     _patch(monkeypatch, conn)
 
-    verdicts.save(RECORD, "version-1")
-    sql = conn.statements[0].lower()
+    verdicts.save(RECORD, "version-1", HASH)
 
-    assert "on conflict (clause_id, agent_version) do update set" in sql
-    # The version, not the run, is part of the key.
-    assert conn.params[0][0] == "agb-349"
-    assert conn.params[0][1] == "version-1"
+    assert "on conflict (content_hash, agent_version) do nothing" in conn.statements[0].lower()
+    # The text hash, not the eval clause id; the version, not the run.
+    assert conn.params[0][:2] == (HASH, "version-1")
+    assert "agb-349" not in conn.params[0]
 
 
-def test_the_upsert_never_overwrites_a_lawyers_decision(monkeypatch):
-    """A human's ruling outlives any number of agent re-runs over the clause."""
+def test_there_is_no_lawyer_decision_column_any_more(monkeypatch):
+    """A ruling belongs to one review's `decisions`, not to every document sharing the clause."""
     conn = FakeConnection()
     _patch(monkeypatch, conn)
 
-    verdicts.save(RECORD, "version-1")
-    do_update = conn.statements[0].lower().split("do update set", 1)[1]
+    verdicts.save(RECORD, "version-1", HASH)
 
-    assert "lawyer_decision" not in do_update
-    assert "verdict = excluded.verdict" in do_update
+    assert "lawyer_decision" not in conn.statements[0].lower()
+    assert not hasattr(RECORD, "lawyer_decision")
 
 
-def test_ensure_table_creates_it(monkeypatch):
-    conn = FakeConnection()
+def test_ensure_table_only_checks_it_does_not_create(monkeypatch):
+    conn = FakeConnection(row=(1,))
     _patch(monkeypatch, conn)
 
     verdicts.ensure_table()
 
-    assert "create table if not exists verdicts" in conn.statements[0].lower()
+    assert "create table" not in conn.statements[0].lower()
+
+
+def test_ensure_table_points_at_the_migrations_when_the_schema_is_old(monkeypatch):
+    _patch(monkeypatch, FakeConnection(row=None))
+
+    with pytest.raises(RuntimeError, match="app.store.migrate"):
+        verdicts.ensure_table()
 
 
 def test_get_returns_none_when_the_clause_was_never_judged(monkeypatch):
     _patch(monkeypatch, FakeConnection(row=None))
 
-    assert verdicts.get("agb-349", "version-1") is None
+    assert verdicts.get(HASH, "version-1") is None
 
 
-def test_get_round_trips_a_record(monkeypatch):
-    row = (
-        "run-1",
-        "agb-349",
-        "potentially_void",
-        ["bgb-309-7-a"],
-        "Unwirksam.",
-        0.91,
-        None,
-        "trace-abc",
-    )
+def test_get_round_trips_a_row(monkeypatch):
+    row = (HASH, "version-1", "potentially_void", ["bgb-309-7-a"], "Unwirksam.", 0.91, "trace-abc")
     _patch(monkeypatch, FakeConnection(row=row))
 
-    found = verdicts.get("agb-349", "version-1")
+    found = verdicts.get(HASH, "version-1")
 
-    assert found.clause_id == "agb-349"
+    assert found.content_hash == HASH
     assert found.legal_basis == ["bgb-309-7-a"]
-    assert found.langfuse_trace_id == "trace-abc"
+    assert found.trace_id == "trace-abc"
 
 
 def test_agent_version_is_stable_for_the_same_inputs():
