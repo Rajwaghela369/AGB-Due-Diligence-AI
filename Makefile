@@ -1,6 +1,7 @@
 # Single entry point: CI runs exactly these targets, so local and CI never diverge.
 .PHONY: help install smoke kb eval-data eval-data-dry recheck baseline baseline-held-out \
-	baseline-smoke eval eval-held-out eval-smoke seed-prompts lint format test check clean
+	baseline-smoke eval eval-held-out eval-smoke seed-prompts lint format test web web-gen \
+	web-check check clean
 
 PY := uv run
 
@@ -58,7 +59,18 @@ format:  ## Apply formatting
 test:  ## Unit tests (pipelines logic only; the agent is measured by evals)
 	$(PY) pytest -q
 
-check: lint test  ## What CI runs
+web:  ## Run the Vite development server
+	cd web && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm dev
+
+web-gen:  ## Regenerate the committed frontend API contract
+	$(PY) python scripts/export_api_schema.py
+	cd web && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm gen:api
+
+web-check:  ## Lint, test, typecheck, build, and verify generated frontend files
+	$(PY) python scripts/export_api_schema.py --check
+	cd web && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm check
+
+check: lint test web-check  ## What CI runs
 
 clean:  ## Remove build artifacts, keep raw data and gold files
 	rm -rf .pytest_cache .ruff_cache **/__pycache__
