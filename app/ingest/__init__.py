@@ -7,8 +7,9 @@ Public surface (the Phase 5 contract):
     split(words) -> list[ClauseSpan]           # pure, unit-testable
     IngestError(code, message)                 # code is shown by the UI
 
-`IngestError.code` is one of: "too_large", "unsupported_type", "encrypted",
-"no_text_layer", "conversion_failed", "parse_failed", "parse_timeout", "empty".
+`IngestError.code` is one of: "too_large", "unsupported_type",
+"archive_too_large", "encrypted", "no_text_layer", "conversion_failed", "parse_failed",
+"parse_timeout", "empty".
 """
 
 from __future__ import annotations
