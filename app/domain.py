@@ -45,7 +45,7 @@ class ClauseSpan(BaseModel):
 
 
 class Document(BaseModel):
-    document_id: str  # sha256 of the stored bytes (the PDF, or the UTF-8 text)
+    document_id: str  # sha256 of the uploaded bytes (PDF, DOCX, or the UTF-8 text)
     filename: str
     source_type: SourceType
     page_count: int | None = None
