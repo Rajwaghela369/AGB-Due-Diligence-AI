@@ -35,7 +35,7 @@ def test_a_failed_write_leaves_neither_the_file_nor_a_temp(tmp_path, monkeypatch
     def boom(*a, **k):
         raise OSError("disk full")
 
-    monkeypatch.setattr("app.store.files.os.replace", boom)
+    monkeypatch.setattr("app.store.files.os.link", boom)
     with pytest.raises(OSError):
         files.put("a.bin", b"x")
 
@@ -138,3 +138,48 @@ def test_the_first_migration_keeps_the_legacy_eval_verdicts_and_leaves_clauses_a
     assert "create table verdicts (" in sql and "primary key (content_hash, agent_version)" in sql
     assert "lawyer_decision" not in sql.split("create table verdicts (")[1]
     assert "table clauses" not in sql  # the answer key is untouched
+
+
+def test_concurrent_puts_of_one_key_keep_the_first_writer(tmp_path):
+    import threading
+
+    files = LocalFileStore(tmp_path)
+    barrier = threading.Barrier(8)
+
+    def work(i):
+        barrier.wait()
+        files.put("k.bin", f"writer-{i}".encode())
+
+    threads = [threading.Thread(target=work, args=(i,)) for i in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    first = files.get("k.bin")
+    assert first.startswith(b"writer-")
+    files.put("k.bin", b"late")
+    assert files.get("k.bin") == first
+    assert [p.name for p in tmp_path.iterdir()] == ["k.bin"]
+
+
+def test_bookkeeping_table_is_created_only_after_taking_the_lock():
+    db = FakeDb()
+    order = []
+    orig = db.execute
+    db.execute = lambda sql, params=None: (
+        order.append(" ".join(sql.split())[:80]),
+        orig(sql, params),
+    )[1]
+
+    migrate.apply_pending(db.connect)
+
+    assert "advisory" in order[0] and "schema_migrations" in order[1]
+
+
+def test_legacy_verdicts_are_carried_over_deterministically():
+    sql = (migrate.MIGRATIONS / "001_app_tables.sql").read_text().lower()
+
+    assert "from verdicts_legacy_eval" in sql and "join clauses c" in sql
+    assert "distinct on (c.content_hash, l.agent_version)" in sql
+    assert "l.confidence desc, l.run_id, l.clause_id" in sql

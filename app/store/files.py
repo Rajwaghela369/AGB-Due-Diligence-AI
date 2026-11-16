@@ -9,6 +9,7 @@ same three methods.
 
 import os
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 
 DEFAULT_ROOT = Path("stores/files")
@@ -36,10 +37,11 @@ class LocalFileStore:
                 handle.write(data)
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(tmp, path)
-        except BaseException:
+            # link fails if the key exists, unlike rename: the first writer's blob stands.
+            with suppress(FileExistsError):
+                os.link(tmp, path)
+        finally:
             Path(tmp).unlink(missing_ok=True)
-            raise
         return key
 
     def get(self, key: str) -> bytes:

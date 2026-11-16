@@ -321,6 +321,9 @@ class MemoryFeedbackRepo:
         with self._lock:
             stored = feedback.model_copy(deep=True)
             stored.created_at = stored.created_at or _now()
+            existing = self._rows.get(feedback.feedback_id)
+            if existing:  # the id is the identity: a conflict never moves the row
+                stored.review_id, stored.position = existing.review_id, existing.position
             self._rows[feedback.feedback_id] = stored
             return stored.model_copy(deep=True)
 

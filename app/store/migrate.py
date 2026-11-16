@@ -44,6 +44,8 @@ def apply_pending(
 ) -> list[str]:
     """Apply every migration not yet recorded; returns the versions applied now."""
     with connect() as conn:
+        # Lock first: two first-time starters must not both create the bookkeeping table.
+        conn.execute("select pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
         conn.execute(_BOOKKEEPING)
 
     applied: list[str] = []

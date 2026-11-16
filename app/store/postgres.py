@@ -470,7 +470,7 @@ class PostgresDecisionRepo(_Repo):
 
 _FEEDBACK_COLUMNS = (
     "feedback_id, review_id, position, agent_version, vote, reasons, corrected_verdict,"
-    " corrected_basis, comment, source, created_at"
+    " corrected_basis, comment, source, created_at, observations"
 )
 
 
@@ -484,13 +484,13 @@ class PostgresFeedbackRepo(_Repo):
                 conn,
                 f"insert into feedback ({_FEEDBACK_COLUMNS}, step)"
                 " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,"
-                " coalesce(%s, clock_timestamp()), %s)"
+                " coalesce(%s, clock_timestamp()), %s, %s)"
                 " on conflict (feedback_id) do update set"
                 " agent_version = excluded.agent_version, vote = excluded.vote,"
                 " reasons = excluded.reasons, corrected_verdict = excluded.corrected_verdict,"
                 " corrected_basis = excluded.corrected_basis, comment = excluded.comment,"
                 " source = excluded.source, step = excluded.step,"
-                " created_at = excluded.created_at"
+                " created_at = excluded.created_at, observations = excluded.observations"
                 f" returning {_FEEDBACK_COLUMNS}",
                 (
                     feedback.feedback_id,
@@ -504,6 +504,7 @@ class PostgresFeedbackRepo(_Repo):
                     feedback.comment,
                     feedback.source,
                     feedback.created_at,
+                    Jsonb(feedback.observations),
                     step,
                 ),
             )

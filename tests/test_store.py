@@ -457,3 +457,16 @@ def test_feedback_for_review_is_the_latest_vote_per_position(store):
 
     assert sorted(got) == [0, 1]
     assert got[0].feedback_id == newest.feedback_id
+
+
+def test_feedback_upsert_keeps_review_and_position_and_stores_observations(store):
+    rid, fid = uid(), uid()
+    store.feedback.put(_feedback(rid, 2, "up", fid, observations={"clause_span": "o1"}))
+
+    changed = store.feedback.put(
+        _feedback(uid(), 9, "down", fid, observations={"judge": "o2", "retrieval": None})
+    )
+
+    assert (changed.review_id, changed.position) == (rid, 2)
+    assert changed.observations == {"judge": "o2", "retrieval": None}
+    assert store.feedback.for_review(rid)[2].observations == changed.observations

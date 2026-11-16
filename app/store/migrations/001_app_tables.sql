@@ -86,6 +86,28 @@ create table verdicts (
     primary key (content_hash, agent_version)
 );
 
+-- Carry the evaluation verdicts over, so re-running an evaluation hits the cache instead of
+-- paying for the same judgements again. The eval `clauses` table already holds each clause's
+-- content_hash (s5_publish). Two eval clauses with identical text under one agent version
+-- collapse to one row: the highest confidence wins, then the lowest run_id and clause_id, so
+-- the choice is deterministic. Legacy rows whose clause has no hash are left in the legacy table.
+do $$
+begin
+    if to_regclass('verdicts_legacy_eval') is not null and to_regclass('clauses') is not null then
+        insert into verdicts
+            (content_hash, agent_version, verdict, legal_basis, reason_de, confidence, trace_id)
+        select distinct on (c.content_hash, l.agent_version)
+            c.content_hash, l.agent_version, l.verdict, l.legal_basis, l.reason_de,
+            l.confidence, l.langfuse_trace_id
+        from verdicts_legacy_eval l
+        join clauses c on c.clause_id = l.clause_id
+        where c.content_hash is not null
+        order by c.content_hash, l.agent_version, l.confidence desc, l.run_id, l.clause_id
+        on conflict (content_hash, agent_version) do nothing;
+    end if;
+end
+$$;
+
 create table retrievals (
     content_hash text not null,
     index_hash   text not null,
@@ -155,7 +177,7 @@ create table feedback (
     position          integer not null,
     agent_version     text not null,
     step              text,
-    observation_id    text,
+    observations      jsonb not null default '{}',
     vote              text not null,
     reasons           text[] not null default '{}',
     corrected_verdict text,
