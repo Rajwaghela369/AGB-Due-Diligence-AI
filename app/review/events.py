@@ -94,15 +94,27 @@ class EventBus:
     ) -> Iterator[StoredEvent]:
         """Stored events with seq > after_seq, then live ones, each exactly once.
 
-        Stops after a RUN_FINISHED or RUN_ERROR that is the newest stored event
-        (a retried review stores more events after its first RUN_FINISHED, and a
-        replay must carry on through them). Also stops when `follow` is False
-        and the store is drained, after `idle_timeout` seconds without a new
-        event, or when the bus shuts down.
+        Ends after a RUN_FINISHED or RUN_ERROR once the stored review is terminal
+        too and one more read finds nothing after it. A retry appends its
+        RUN_STARTED before it marks the review running, so a follower either
+        sees the review running (and keeps following) or finds the new events
+        on that last read; either way a replay runs through every retry.
+
+        Also ends when the stored review is terminal on two timed re-reads in a
+        row (`recheck_seconds` apart) that find nothing new: the terminal event
+        was lost to a crash and the follower must not wait forever. Two, because
+        the runner writes the status just before the event, and one recheck may
+        land in between. And when `follow` is
+        False and the store is drained, after `idle_timeout` seconds without a
+        new event, or when the bus shuts down.
         """
         channel = self._register(review_id)
         last = after_seq
+        last_type: str | None = None
         idle_since = time.monotonic()
+        closing = False  # terminal event seen, review terminal: one last read
+        stale = False  # a timed re-read found nothing new
+        suspect = False  # ...and the review was already terminal on the previous one
         try:
             while True:
                 with channel.cond:
@@ -110,14 +122,23 @@ class EventBus:
                 batch = [e for e in self._store.events.since(review_id, last) if e.seq > last]
                 for event in batch:
                     yield event
-                    last = event.seq
+                    last, last_type = event.seq, event.type
                 if batch:
                     idle_since = time.monotonic()
-                    if batch[-1].type in TERMINAL_TYPES:
+                    closing = stale = suspect = False
+                elif closing:
+                    return
+                elif stale and self._review_terminal(review_id):
+                    if suspect:
                         return
+                    suspect = True
+                if last_type in TERMINAL_TYPES and self._review_terminal(review_id):
+                    closing = True
+                    continue
                 if not follow:
                     return
 
+                stale = False
                 with channel.cond:
                     while channel.version == seen_version and not self._closed:
                         wait = self._recheck
@@ -127,11 +148,21 @@ class EventBus:
                                 return
                             wait = min(wait, left)
                         if not channel.cond.wait(wait):
-                            break  # re-read the store in case another process appended
+                            stale = True  # re-read, in case another process appended
+                            break
                     if self._closed:
                         return
         finally:
             self._unregister(review_id, channel)
+
+    def _review_terminal(self, review_id: str) -> bool:
+        """The stored review is finished or failed (or unknown: nothing more will come)."""
+        try:
+            review = self._store.reviews.get(review_id)
+        except Exception:  # noqa: BLE001 - cannot tell; keep the stream open
+            log.warning("could not read review %s", review_id, exc_info=True)
+            return False
+        return review is None or review.status in ("finished", "failed")
 
     def _register(self, review_id: str) -> _Channel:
         with self._lock:

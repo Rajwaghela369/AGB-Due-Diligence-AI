@@ -3,8 +3,28 @@
 A run is a start, a resume after a restart, or a retry of failed clauses; all
 three are the same loop over a different set of positions. The run owns a
 small thread pool and never has more than `max_concurrency` clauses in it, so
-a stop request (shutdown) takes effect at the next free slot and the pool's
-queue is always empty.
+the pool's queue is always empty. A stop (shutdown) does not wait for clauses
+in flight: the service closes the shared limiter, which wakes any clause
+waiting on it with `LimiterClosed`, and such an interrupted clause is left
+`checking` (not failed) so the next process resumes it.
+
+`RUN_STARTED` and the first `STATE_SNAPSHOT` are appended synchronously by the
+service before the review is marked running (`announce`), so anyone who sees
+the review running also finds its new run in the event log.
+
+Paying once. Clauses are judged under a per-(content_hash, agent_version) lock
+shared by every run in the process, with a cache re-check after taking it: a
+clause repeated within a document, or shared by two concurrent reviews, costs
+one judge call; the others are cache hits. The lock is in-process only, which
+is enough for v1's single API worker; several workers would need a Postgres
+advisory lock on the same key.
+
+Cost after a crash. `cost_usd` is the sum of what this review's own judge calls
+cost, kept in memory and persisted with the counts. If the process dies after
+a verdict is saved but before its cost is persisted, the resumed run finds the
+verdict in the cache and counts a free cache hit, so `cost_usd` undercounts by
+that clause. Accepted for v1; exact accounting needs a per-review charge
+written in the same transaction as the verdict.
 
 Ordering. Every change to a clause is made, persisted and emitted while the
 run's lock is held, so the event log is a faithful, ordered replay of the
@@ -24,8 +44,9 @@ today every clause ingest keeps is judged.
 
 import threading
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -39,6 +60,7 @@ from ag_ui.core import (
     StepFinishedEvent,
     StepStartedEvent,
 )
+from core.budget import LimiterClosed
 from core.logging import get_logger
 
 from app.agent.run import ClauseFailed
@@ -57,6 +79,44 @@ from app.store.interfaces import Store
 log = get_logger("review.runner")
 
 
+class KeyedLocks:
+    """One lock per key, created on demand and dropped when nobody holds or waits for it."""
+
+    def __init__(self) -> None:
+        self._guard = threading.Lock()
+        self._locks: dict[Any, list] = {}  # key -> [lock, holders and waiters]
+
+    @contextmanager
+    def hold(self, key: Any) -> Iterator[None]:
+        with self._guard:
+            entry = self._locks.setdefault(key, [threading.Lock(), 0])
+            entry[1] += 1
+        try:
+            with entry[0]:
+                yield
+        finally:
+            with self._guard:
+                entry[1] -= 1
+                if entry[1] == 0:
+                    del self._locks[key]
+
+    def __len__(self) -> int:
+        with self._guard:
+            return len(self._locks)
+
+
+def interrupted(exc: BaseException) -> bool:
+    """True if a judge error was caused by the limiter closing (shutdown), however wrapped."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        if isinstance(current, LimiterClosed):
+            return True
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+    return False
+
+
 @dataclass
 class RunContext:
     """What every run shares: the service's dependencies and settings."""
@@ -69,6 +129,7 @@ class RunContext:
     max_concurrency: int = 4
     prices: dict[str, float] = field(default_factory=dict)  # USD per million tokens
     poll_seconds: float = 0.5  # how often a run looks at the limiter's waiting_reason
+    flights: KeyedLocks = field(default_factory=KeyedLocks)  # single-flight judge calls
 
 
 # --- state ------------------------------------------------------------------
@@ -141,9 +202,10 @@ def count(entries: dict[int, tuple], cache_hits: int) -> ReviewCounts:
 class ReviewRun:
     """Judges `positions` of one review on a background thread.
 
-    Lifecycle: `open()` (synchronous, under the service's lock) loads and
-    persists the starting state; `start()` launches the thread; the thread
-    announces the run, works the queue, and finishes by calling `finish_gate`
+    Lifecycle, under the service's lock: `open()` loads and persists the
+    starting state, `announce()` appends RUN_STARTED and STATE_SNAPSHOT, the
+    service marks the review running, and `start()` launches the thread. The
+    thread opens the trace, works the queue, and finishes under `finish_gate`
     (the service's lock) so that "nothing left to do" and "deregistered" are
     one step as far as a concurrent `retry_clause` can tell.
     """
@@ -233,13 +295,19 @@ class ReviewRun:
 
     # --- the run thread -------------------------------------------------------
 
+    def drain(self, timeout: float | None = None) -> bool:
+        """Wait for clauses still in flight after a stop; False on timeout."""
+        with self._cond:
+            return self._cond.wait_for(lambda: self._inflight == 0, timeout)
+
     def _run(self) -> None:
+        pool = None
         try:
-            self._announce()
-            with ThreadPoolExecutor(
+            self._start_trace()
+            pool = ThreadPoolExecutor(
                 max_workers=self.ctx.max_concurrency, thread_name_prefix=self._thread.name
-            ) as pool:
-                finished = self._work(pool)
+            )
+            finished = self._work(pool)
             if finished:
                 return
             self._trace.end({"stopped": True})
@@ -248,16 +316,24 @@ class ReviewRun:
         except Exception as exc:  # noqa: BLE001 - the review, not the process, fails
             log.exception("review %s failed", self.review_id)
             self._fail_run(exc)
+        finally:
+            if pool is not None:
+                # Never block here: a stopped run leaves in-flight clauses to finish (or be
+                # interrupted by the closed limiter) on their own; the pool queue is empty.
+                pool.shutdown(wait=False, cancel_futures=True)
 
-    def _announce(self) -> None:
-        store = self.ctx.store
+    def _start_trace(self) -> None:
         self._trace = start_review_trace(self.ctx.tracer, self.review, reason=self.reason)
         if self._trace.trace_id and self._trace.trace_id != self.review.trace_id:
             try:
-                store.reviews.set_trace(self.review_id, self._trace.trace_id)
+                self.ctx.store.reviews.set_trace(self.review_id, self._trace.trace_id)
                 self.review.trace_id = self._trace.trace_id
             except Exception:  # noqa: BLE001 - tracing never fails a review
                 log.warning("could not store the trace id of %s", self.review_id, exc_info=True)
+
+    def announce(self) -> None:
+        """Append RUN_STARTED and STATE_SNAPSHOT. The service calls it before `start`."""
+        store = self.ctx.store
         with self._cond:
             stored = store.reviews.get(self.review_id)
             if stored is not None:  # timings and trace id as persisted; counts are ours
@@ -279,14 +355,14 @@ class ReviewRun:
         while True:
             with self._cond:
                 if self._stopping:
-                    if self._inflight == 0:
-                        self._closed = True
-                        return False
+                    self._closed = True
+                    return False
                 else:
                     while self._pending and self._inflight < self.ctx.max_concurrency:
                         position = self._pending.popleft()
                         self._inflight += 1
-                        pool.submit(self._judge_clause, position)
+                        future = pool.submit(self._judge_clause, position)
+                        future.add_done_callback(self._release_if_cancelled)
                 idle = not self._pending and self._inflight == 0
                 if not idle:
                     self._cond.wait(self.ctx.poll_seconds)
@@ -333,6 +409,12 @@ class ReviewRun:
 
     # --- one clause (worker threads) --------------------------------------------
 
+    def _release_if_cancelled(self, future) -> None:
+        if future.cancelled():  # cancelled by a stop before it ran: the clause stays queued
+            with self._cond:
+                self._inflight -= 1
+                self._cond.notify_all()
+
     def _judge_clause(self, position: int) -> None:
         try:
             self._judge_clause_unguarded(position)
@@ -353,41 +435,62 @@ class ReviewRun:
         clause = self._clauses[position]
         step = f"clause:{position}"
 
-        cached = None
+        key = (clause.content_hash, self.review.agent_version)
+
+        if self._record_cache_hit(position):
+            return
+        with self.ctx.flights.hold(key):
+            # Whoever held the key may just have saved this very verdict.
+            if self._record_cache_hit(position):
+                return
+            with self._cond:
+                if self._stopping:
+                    return  # stays queued for the resume
+                self.ctx.bus.emit(self.review_id, StepStartedEvent(step_name=step))
+                self._set(position, "checking")
+
+            produced = None
+            try:
+                produced = judge(clause, parent=self._trace.span)
+                stored = store.verdicts.save(produced)
+            except Exception as exc:  # noqa: BLE001 - principle 3: the clause fails, not the run
+                if interrupted(exc):
+                    log.info(
+                        "review %s: clause %s interrupted by shutdown", self.review_id, position
+                    )
+                    return  # stays `checking`; the resume judges it
+                if isinstance(exc, ClauseFailed):
+                    error = str(exc) or "Die Klausel konnte nicht geprüft werden."
+                else:
+                    error = f"{type(exc).__name__}: {exc}"
+                outcome: tuple = ("failed", error)
+            else:
+                outcome = ("done", stored)
+
+            with self._cond:
+                if outcome[0] == "done":
+                    # Charge what this call cost, even if another verdict won the save.
+                    self._cost += self._price(produced)
+                    self._set(position, "done", verdict=outcome[1])
+                else:
+                    self._set(position, "failed", error=outcome[1])
+                self.ctx.bus.emit(self.review_id, StepFinishedEvent(step_name=step))
+                self._progress()
+
+    def _record_cache_hit(self, position: int) -> bool:
+        clause = self._clauses[position]
         try:
-            cached = store.verdicts.get(clause.content_hash, self.review.agent_version)
+            cached = self.ctx.store.verdicts.get(clause.content_hash, self.review.agent_version)
         except Exception:  # noqa: BLE001 - a cache read failing only costs a judge call
             log.warning("verdict cache read failed for %s", clause.content_hash, exc_info=True)
-        if cached is not None:
-            with self._cond:
-                self._cache_hits += 1
-                self._set(position, "done", verdict=cached)
-                self._progress()
-            return
-
+            return False
+        if cached is None:
+            return False
         with self._cond:
-            self.ctx.bus.emit(self.review_id, StepStartedEvent(step_name=step))
-            self._set(position, "checking")
-
-        try:
-            verdict = judge(clause, parent=self._trace.span)
-            verdict = store.verdicts.save(verdict)
-        except ClauseFailed as exc:
-            outcome: tuple = ("failed", str(exc) or "Die Klausel konnte nicht geprüft werden.")
-        except Exception as exc:  # noqa: BLE001 - principle 3: the clause fails, not the run
-            outcome = ("failed", f"{type(exc).__name__}: {exc}")
-        else:
-            outcome = ("done", verdict)
-
-        with self._cond:
-            if outcome[0] == "done":
-                verdict = outcome[1]
-                self._cost += self._price(verdict)
-                self._set(position, "done", verdict=verdict)
-            else:
-                self._set(position, "failed", error=outcome[1])
-            self.ctx.bus.emit(self.review_id, StepFinishedEvent(step_name=step))
+            self._cache_hits += 1
+            self._set(position, "done", verdict=cached)
             self._progress()
+        return True
 
     # --- helpers; callers hold self._cond -------------------------------------
 
