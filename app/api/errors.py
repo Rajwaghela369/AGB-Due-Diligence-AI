@@ -25,6 +25,21 @@ def install_error_handlers(app: FastAPI) -> None:
         body = ErrorBody(code="invalid_request", message=message)
         return JSONResponse(status_code=422, content=body.model_dump())
 
+    @app.exception_handler(KeyError)
+    async def service_not_found(_request: Request, exc: KeyError) -> JSONResponse:
+        body = ErrorBody(code="not_found", message=str(exc.args[0]) if exc.args else str(exc))
+        return JSONResponse(status_code=404, content=body.model_dump())
+
+    @app.exception_handler(ValueError)
+    async def service_conflict(_request: Request, exc: ValueError) -> JSONResponse:
+        body = ErrorBody(code="conflict", message=str(exc))
+        return JSONResponse(status_code=409, content=body.model_dump())
+
+    @app.exception_handler(RuntimeError)
+    async def service_unavailable(_request: Request, exc: RuntimeError) -> JSONResponse:
+        body = ErrorBody(code="service_unavailable", message=str(exc))
+        return JSONResponse(status_code=503, content=body.model_dump())
+
     @app.exception_handler(HTTPException)
     async def http_error(_request: Request, exc: HTTPException) -> JSONResponse:
         code = "not_found" if exc.status_code == 404 else "http_error"

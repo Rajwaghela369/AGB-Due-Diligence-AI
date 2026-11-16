@@ -30,8 +30,6 @@ def create_review(payload: ReviewIn, request: Request) -> ReviewOut:
     address = request.client.host if request.client else "unknown"
     if not dependencies.rate_limiter.allow(address):
         raise ApiError(429, "rate_limited", "Zu viele Anfragen. Bitte versuchen Sie es später.")
-    if dependencies.store.documents.get(payload.document_id) is None:
-        raise ApiError(404, "not_found", "Dokument nicht gefunden.")
     return _review_out(request, dependencies.service.start(payload.document_id, payload.scope))
 
 
@@ -55,18 +53,7 @@ def get_findings(review_id: str, request: Request) -> FindingsOut:
 @router.post("/reviews/{review_id}/clauses/{position}/retry", response_model=ReviewOut)
 def retry_clause(review_id: str, position: int, request: Request) -> ReviewOut:
     service = state(request).service
-    if service.get(review_id) is None:
-        raise ApiError(404, "not_found", "Prüfung nicht gefunden.")
-    try:
-        service.retry_clause(review_id, position)
-    except LookupError as exc:
-        raise ApiError(404, "not_found", "Klausel nicht gefunden.") from exc
-    except ValueError as exc:
-        raise ApiError(
-            409,
-            "not_failed",
-            "Nur fehlgeschlagene Klauseln können erneut geprüft werden.",
-        ) from exc
+    service.retry_clause(review_id, position)
     review = service.get(review_id)
     if review is None:  # the service contract guarantees it still exists
         raise ApiError(404, "not_found", "Prüfung nicht gefunden.")

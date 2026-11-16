@@ -15,8 +15,11 @@ still in flight. Across processes (Phase 9) the doorbell becomes LISTEN/NOTIFY;
 until then a periodic re-read of the store is the safety net.
 """
 
+from __future__ import annotations
+
 import threading
 import time
+from collections import deque
 from collections.abc import Iterator
 from typing import Any
 
@@ -45,6 +48,92 @@ class _Channel:
         self.cond = threading.Condition()
         self.version = 0
         self.subscribers = 0
+
+
+class _Subscription(Iterator[StoredEvent]):
+    """A blocking subscription whose `close` can safely wake another thread."""
+
+    def __init__(
+        self,
+        bus: EventBus,
+        review_id: str,
+        after_seq: int,
+        follow: bool,
+        idle_timeout: float | None,
+    ) -> None:
+        self._bus = bus
+        self._review_id = review_id
+        self._channel = bus._register(review_id)
+        self._last = after_seq
+        self._follow = follow
+        self._idle_timeout = idle_timeout
+        self._idle_since = time.monotonic()
+        self._pending: deque[StoredEvent] = deque()
+        self._terminal = False
+        self._stopped = threading.Event()
+        self._finish_lock = threading.Lock()
+        self._finished = False
+
+    def __next__(self) -> StoredEvent:
+        try:
+            while not self._stopped.is_set():
+                if self._pending:
+                    event = self._pending.popleft()
+                    self._last = event.seq
+                    return event
+                if self._terminal:
+                    break
+
+                with self._channel.cond:
+                    seen_version = self._channel.version
+                batch = [
+                    event
+                    for event in self._bus._store.events.since(self._review_id, self._last)
+                    if event.seq > self._last
+                ]
+                if batch:
+                    self._idle_since = time.monotonic()
+                    self._terminal = batch[-1].type in TERMINAL_TYPES
+                    self._pending.extend(batch)
+                    continue
+                if not self._follow:
+                    break
+
+                with self._channel.cond:
+                    while (
+                        self._channel.version == seen_version
+                        and not self._bus._closed
+                        and not self._stopped.is_set()
+                    ):
+                        wait = self._bus._recheck
+                        if self._idle_timeout is not None:
+                            left = self._idle_timeout - (time.monotonic() - self._idle_since)
+                            if left <= 0:
+                                self._stopped.set()
+                                break
+                            wait = min(wait, left)
+                        if not self._channel.cond.wait(wait):
+                            break
+                    if self._bus._closed:
+                        self._stopped.set()
+            self._finish()
+            raise StopIteration
+        except BaseException:
+            self._finish()
+            raise
+
+    def close(self) -> None:
+        """End the iterator even when `__next__` is blocked on another thread."""
+        self._stopped.set()
+        with self._channel.cond:
+            self._channel.cond.notify_all()
+
+    def _finish(self) -> None:
+        with self._finish_lock:
+            if self._finished:
+                return
+            self._finished = True
+            self._bus._unregister(self._review_id, self._channel)
 
 
 class EventBus:
@@ -100,38 +189,7 @@ class EventBus:
         and the store is drained, after `idle_timeout` seconds without a new
         event, or when the bus shuts down.
         """
-        channel = self._register(review_id)
-        last = after_seq
-        idle_since = time.monotonic()
-        try:
-            while True:
-                with channel.cond:
-                    seen_version = channel.version
-                batch = [e for e in self._store.events.since(review_id, last) if e.seq > last]
-                for event in batch:
-                    yield event
-                    last = event.seq
-                if batch:
-                    idle_since = time.monotonic()
-                    if batch[-1].type in TERMINAL_TYPES:
-                        return
-                if not follow:
-                    return
-
-                with channel.cond:
-                    while channel.version == seen_version and not self._closed:
-                        wait = self._recheck
-                        if idle_timeout is not None:
-                            left = idle_timeout - (time.monotonic() - idle_since)
-                            if left <= 0:
-                                return
-                            wait = min(wait, left)
-                        if not channel.cond.wait(wait):
-                            break  # re-read the store in case another process appended
-                    if self._closed:
-                        return
-        finally:
-            self._unregister(review_id, channel)
+        return _Subscription(self, review_id, after_seq, follow, idle_timeout)
 
     def _register(self, review_id: str) -> _Channel:
         with self._lock:

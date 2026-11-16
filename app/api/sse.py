@@ -82,8 +82,6 @@ async def stream_events(request: Request, events: Iterator[StoredEvent]) -> Asyn
         stopped.set()
         close = getattr(events, "close", None)
         if callable(close):
-            # Custom service iterators use close() to unregister a live listener.
-            # A Python generator currently blocked in the producer cannot be closed
-            # cross-thread; the stop flag makes it exit as soon as it yields again.
             with suppress(RuntimeError, ValueError):
                 close()
+        producer.join(timeout=1)

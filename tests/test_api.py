@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from collections.abc import Iterator
+from types import SimpleNamespace
 
 import pytest
 from core.hashing import content_hash
 from core.schemas import LawChunk
 from fastapi.testclient import TestClient
 
-from app.api.main import create_app
+from app.api.main import build_app, create_app
 from app.api.rate_limit import IpRateLimiter
+from app.api.sse import stream_events
 from app.domain import (
     ClauseSpan,
     ClauseVerdict,
@@ -22,6 +26,8 @@ from app.domain import (
 )
 from app.ingest import IngestError
 from app.review.feedback import FeedbackService
+from app.review.limiter import build_limiter
+from app.review.service import build_service
 from app.store.memory import memory_store
 
 
@@ -57,10 +63,19 @@ class FakeLangfuse:
     def __init__(self) -> None:
         self.scores: dict[str, dict] = {}
         self.calls: list[dict] = []
+        self.deleted: list[str] = []
+        self.delete_error: Exception | None = None
+        self.api = SimpleNamespace(scores=SimpleNamespace(delete=self._delete_score))
 
     def create_score(self, **kwargs) -> None:
         self.scores[kwargs["score_id"]] = kwargs
         self.calls.append(kwargs)
+
+    def _delete_score(self, score_id: str) -> None:
+        if self.delete_error is not None:
+            raise self.delete_error
+        self.deleted.append(score_id)
+        self.scores.pop(score_id, None)
 
 
 class FakeReviewService:
@@ -69,9 +84,12 @@ class FakeReviewService:
         self.resumed = 0
         self.closed = False
         self.retry_error: Exception | None = None
+        self.start_error: Exception | None = None
         self.event_log: list[StoredEvent] = []
 
     def start(self, document_id, scope) -> Review:
+        if self.start_error:
+            raise self.start_error
         review = Review(
             review_id="review-1",
             document_id=document_id,
@@ -113,7 +131,7 @@ class FakeReviewService:
         self.resumed += 1
         return 0
 
-    def shutdown(self) -> None:
+    def shutdown(self, timeout: float | None = None) -> None:
         self.closed = True
 
 
@@ -273,7 +291,7 @@ def test_review_findings_retry_statutes_health_and_readiness(api):
         missing = client.get("/api/v1/reviews/missing/findings")
         service.retry_error = ValueError("not failed")
         conflict = client.post("/api/v1/reviews/review-1/clauses/0/retry")
-        service.retry_error = LookupError("position")
+        service.retry_error = KeyError("position")
         missing_clause = client.post("/api/v1/reviews/review-1/clauses/99/retry")
         statute = client.get("/api/v1/statutes/bgb-309-7")
         no_statute = client.get("/api/v1/statutes/missing")
@@ -283,7 +301,7 @@ def test_review_findings_retry_statutes_health_and_readiness(api):
     assert started.status_code == 200
     assert len(findings.json()["findings"]) == 1
     assert (missing.status_code, missing.json()["code"]) == (404, "not_found")
-    assert (conflict.status_code, conflict.json()["code"]) == (409, "not_failed")
+    assert (conflict.status_code, conflict.json()["code"]) == (409, "conflict")
     assert missing_clause.status_code == 404
     assert statute.json()["citation"] == "§ 309 Nr. 7"
     assert no_statute.status_code == 404
@@ -345,6 +363,7 @@ def test_feedback_scores_steps_stably_and_clause_cut_is_store_only(api):
     assert all(
         "Korrigiertes Urteil: valid" in score["comment"] for score in langfuse.scores.values()
     )
+    first_score_ids = set(langfuse.scores)
     stored = store.feedback.for_review("review-1")[0]
     assert "clause_cut" in stored.reasons
     assert "clause_cut" not in stored.observations
@@ -355,7 +374,70 @@ def test_feedback_scores_steps_stably_and_clause_cut_is_store_only(api):
         )
     assert changed_vote.json()["feedback_id"] == first.json()["feedback_id"]
     assert changed_vote.json()["scored_steps"] == ["clause_span"]
-    assert len(langfuse.scores) == 4
+    assert len(langfuse.scores) == 1
+    assert set(langfuse.deleted) == set(first_score_ids)
+
+
+def test_changed_vote_and_reason_set_delete_scores_no_longer_applicable(api):
+    application, store, _service, langfuse = api
+    clause = _save_document(store)
+    _save_verdict(store, clause)
+    with TestClient(application) as client:
+        up = client.post(
+            "/api/v1/feedback",
+            json={"review_id": "review-1", "position": 0, "vote": "up"},
+        )
+        down = client.post(
+            "/api/v1/feedback",
+            json={
+                "review_id": "review-1",
+                "position": 0,
+                "vote": "down",
+                "reasons": ["verdict_wrong"],
+                "corrected_verdict": "valid",
+            },
+        )
+        changed_reason = client.post(
+            "/api/v1/feedback",
+            json={
+                "review_id": "review-1",
+                "position": 0,
+                "vote": "down",
+                "reasons": ["basis_wrong"],
+                "corrected_basis": ["bgb-309-7"],
+            },
+        )
+
+    assert up.json()["scored_steps"] == ["clause_span"]
+    assert down.json()["scored_steps"] == ["judge"]
+    assert changed_reason.json()["scored_steps"] == ["retrieval"]
+    assert len(langfuse.deleted) == 2
+    assert {score["observation_id"] for score in langfuse.scores.values()} == {"retrieve-1"}
+
+
+def test_stale_score_deletion_failure_does_not_reject_feedback(api):
+    application, store, _service, langfuse = api
+    clause = _save_document(store)
+    _save_verdict(store, clause)
+    with TestClient(application) as client:
+        client.post(
+            "/api/v1/feedback",
+            json={"review_id": "review-1", "position": 0, "vote": "up"},
+        )
+        langfuse.delete_error = RuntimeError("Langfuse unavailable")
+        changed = client.post(
+            "/api/v1/feedback",
+            json={
+                "review_id": "review-1",
+                "position": 0,
+                "vote": "down",
+                "reasons": ["reasoning_unclear"],
+            },
+        )
+
+    assert changed.status_code == 200
+    assert changed.json()["scored_steps"] == ["explanation"]
+    assert store.feedback.for_review("review-1")[0].vote == "down"
 
 
 def test_upvote_scores_clause_span_and_decision_upserts(api):
@@ -381,7 +463,218 @@ def test_upvote_scores_clause_span_and_decision_upserts(api):
         )
 
     assert vote.json()["scored_steps"] == ["clause_span"]
-    assert first.json()["action"] == "accept"
-    assert second.json()["action"] == "override"
+    assert first.json()["decision"]["action"] == "accept"
+    assert second.json()["decision"]["action"] == "override"
     assert store.decisions.for_review("review-1")[0].action == "override"
     assert any(score["observation_id"] == "span-1" for score in langfuse.calls)
+
+
+@pytest.mark.parametrize(
+    ("error", "status", "code"),
+    [
+        (KeyError("missing document"), 404, "not_found"),
+        (ValueError("no clauses"), 409, "conflict"),
+        (RuntimeError("shutting down"), 503, "service_unavailable"),
+    ],
+)
+def test_review_service_errors_follow_the_protocol(api, error, status, code):
+    application, store, service, _langfuse = api
+    _save_document(store)
+    service.start_error = error
+    with TestClient(application) as client:
+        response = client.post("/api/v1/reviews", json={"document_id": "doc-1"})
+    assert (response.status_code, response.json()["code"]) == (status, code)
+
+
+def test_idle_sse_disconnect_stops_its_producer_thread():
+    store = memory_store()
+
+    def judge(_clause, *, parent=None):  # pragma: no cover - this review is never run
+        raise AssertionError("judge should not run")
+
+    judge.agent_version = "agent-1"
+    service = build_service(
+        store,
+        judge,
+        build_limiter({}),
+        tracer=None,
+        recheck_seconds=3600,
+    )
+    store.reviews.create(
+        Review(
+            review_id="idle-review",
+            document_id="doc-1",
+            agent_version="agent-1",
+            scope=["liability"],
+            status="running",
+        )
+    )
+    events = service.events("idle-review")
+    existing_threads = set(threading.enumerate())
+
+    class DisconnectRequest:
+        checks = 0
+
+        async def is_disconnected(self) -> bool:
+            self.checks += 1
+            return self.checks > 1
+
+    async def consume() -> None:
+        async for _item in stream_events(DisconnectRequest(), events):
+            pass
+
+    asyncio.run(consume())
+    new_producers = [
+        thread
+        for thread in threading.enumerate()
+        if thread not in existing_threads and thread.name == "review-sse"
+    ]
+    assert new_producers == []
+    assert service.bus.subscriber_count("idle-review") == 0
+    service.shutdown(timeout=0)
+
+
+def test_real_service_upload_review_feedback_and_cached_rereview():
+    store = memory_store()
+    langfuse = FakeLangfuse()
+
+    class FakeJudge:
+        agent_version = "agent-e2e"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def __call__(self, clause, *, parent=None) -> ClauseVerdict:
+            self.calls += 1
+            return ClauseVerdict(
+                content_hash=clause.content_hash,
+                agent_version=self.agent_version,
+                verdict="potentially_void",
+                confidence=0.9,
+                trace_id="trace-e2e",
+                observations=StepObservations(
+                    clause_span="span-e2e",
+                    judge="judge-e2e",
+                    retrieval="retrieval-e2e",
+                    explanation="explanation-e2e",
+                ),
+            )
+
+    judge = FakeJudge()
+    limiter = build_limiter({})
+    service = build_service(store, judge, limiter, tracer=None)
+    application = create_app(
+        store=store,
+        service=service,
+        statutes={},
+        feedback=FeedbackService(store, langfuse),
+        settings={"ingest": {"max_upload_mb": 20}},
+    )
+
+    with TestClient(application) as client:
+        upload = client.post("/api/v1/documents", files={"file": ("terms.pdf", _pdf())})
+        document_id = upload.json()["document"]["document_id"]
+        first = client.post("/api/v1/reviews", json={"document_id": document_id})
+        first_id = first.json()["review"]["review_id"]
+        first_events = client.get(f"/api/v1/reviews/{first_id}/events")
+        findings = client.get(f"/api/v1/reviews/{first_id}/findings")
+        feedback = client.post(
+            "/api/v1/feedback",
+            json={
+                "review_id": first_id,
+                "position": 0,
+                "vote": "down",
+                "reasons": ["reasoning_unclear"],
+            },
+        )
+        repeated_upload = client.post(
+            "/api/v1/documents", files={"file": ("terms-again.pdf", _pdf())}
+        )
+        second = client.post("/api/v1/reviews", json={"document_id": document_id})
+        second_id = second.json()["review"]["review_id"]
+        second_events = client.get(f"/api/v1/reviews/{second_id}/events")
+        second_review = client.get(f"/api/v1/reviews/{second_id}")
+        repeated_findings = client.get(f"/api/v1/reviews/{second_id}/findings")
+
+    assert upload.status_code == 200
+    assert "event: RUN_FINISHED" in first_events.text
+    assert findings.json()["findings"][0]["status"] == "done"
+    assert feedback.json()["scored_steps"] == ["explanation"]
+    assert repeated_upload.json()["reused"] is True
+    assert "event: RUN_FINISHED" in second_events.text
+    assert second_review.json()["review"]["counts"]["cache_hits"] == 1
+    assert repeated_findings.json()["findings"][0]["verdict"]["verdict"] == "potentially_void"
+    assert judge.calls == 1
+
+
+@pytest.mark.parametrize("with_langfuse", [False, True])
+def test_build_app_wires_the_real_service_contract(monkeypatch, with_langfuse):
+    store = memory_store()
+    config = {"review": {"max_concurrency": 2}}
+    langfuse = object()
+    limiter = object()
+    judge = SimpleNamespace(agent_version="agent-wired")
+    service = SimpleNamespace(
+        limiter=limiter,
+        resume_running=lambda: 0,
+        shutdown=lambda timeout=None: None,
+    )
+    calls: dict[str, object] = {}
+
+    monkeypatch.setattr("core.config.load_yaml", lambda _path: config)
+    monkeypatch.setattr(
+        "core.settings.load_settings",
+        lambda: SimpleNamespace(
+            langfuse_public_key="pk" if with_langfuse else "",
+            langfuse_secret_key="sk" if with_langfuse else "",
+        ),
+    )
+    monkeypatch.setattr("app.store.migrate.apply_pending", lambda: None)
+    monkeypatch.setattr("app.store.files.LocalFileStore", lambda: store.files)
+    monkeypatch.setattr("app.store.postgres.postgres_store", lambda _files: store)
+    monkeypatch.setattr("app.api.main.load_statutes", lambda _path: {})
+
+    def fake_langfuse():
+        calls["langfuse"] = True
+        return langfuse
+
+    def fake_limiter(received_config):
+        calls["limiter_config"] = received_config
+        return limiter
+
+    def fake_review_settings(received_config):
+        calls["settings_config"] = received_config
+        return {"max_concurrency": 2, "prices": {"input": 0.0, "output": 0.0}}
+
+    def fake_judge(received_config, **kwargs):
+        calls["judge"] = (received_config, kwargs)
+        return judge
+
+    def fake_service(*args, **kwargs):
+        calls["service"] = (args, kwargs)
+        return service
+
+    monkeypatch.setattr("core.langfuse_client.client", fake_langfuse)
+    monkeypatch.setattr("app.review.limiter.build_limiter", fake_limiter)
+    monkeypatch.setattr("app.review.limiter.review_settings", fake_review_settings)
+    monkeypatch.setattr("app.agent.run.make_judge", fake_judge)
+    monkeypatch.setattr("app.review.service.build_service", fake_service)
+
+    application = build_app()
+    expected_tracer = langfuse if with_langfuse else None
+    assert calls.get("langfuse", False) is with_langfuse
+    assert calls["limiter_config"] is config
+    assert calls["settings_config"] is config
+    assert calls["judge"] == (
+        config,
+        {"limiter": limiter, "tracer": expected_tracer, "caches": store.caches},
+    )
+    assert calls["service"] == (
+        (store, judge, limiter, expected_tracer),
+        {
+            "statutes": {},
+            "max_concurrency": 2,
+            "prices": {"input": 0.0, "output": 0.0},
+        },
+    )
+    assert application.state.feedback.langfuse is expected_tracer

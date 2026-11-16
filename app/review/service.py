@@ -29,6 +29,25 @@ from app.store.interfaces import Store
 log = get_logger("review.service")
 
 
+class _ServiceEvents(Iterator[StoredEvent]):
+    """Prepend a reconnect snapshot while preserving the live iterator's close hook."""
+
+    def __init__(self, snapshot: StoredEvent | None, live_events: Iterator[StoredEvent]) -> None:
+        self._snapshot = snapshot
+        self._live_events = live_events
+
+    def __next__(self) -> StoredEvent:
+        if self._snapshot is not None:
+            snapshot, self._snapshot = self._snapshot, None
+            return snapshot
+        return next(self._live_events)
+
+    def close(self) -> None:
+        close = getattr(self._live_events, "close", None)
+        if callable(close):
+            close()
+
+
 class Service:
     """Implements `ReviewService`. Build it with `build_service`."""
 
@@ -146,23 +165,21 @@ class Service:
         self, review_id: str, after_seq: int = 0, *, follow: bool = True
     ) -> Iterator[StoredEvent]:
         """See `ReviewService.events`. Raises KeyError at once for an unknown review."""
-        self._review(review_id)
-        return self._events(review_id, after_seq, follow)
-
-    def _events(self, review_id: str, after_seq: int, follow: bool) -> Iterator[StoredEvent]:
+        review = self._review(review_id)
+        snapshot = None
         if after_seq > 0:
             # Built from the store when the client reconnects. Anything it already reflects
             # and is replayed below is a `replace`, so applying it twice changes nothing.
-            review = self._review(review_id)
             clauses = self.store.documents.clauses(review.document_id)
             state = build_state(review, load_entries(self.store, review, clauses))
-            yield StoredEvent(
+            snapshot = StoredEvent(
                 review_id=review_id,
                 seq=0,
                 type="STATE_SNAPSHOT",
                 payload=serialise(StateSnapshotEvent(snapshot=state)),
             )
-        yield from self.bus.subscribe(review_id, after_seq, follow=follow)
+        live_events = self.bus.subscribe(review_id, after_seq, follow=follow)
+        return _ServiceEvents(snapshot, live_events)
 
     def resume_running(self) -> int:
         """Resume reviews left `running` by a restart; returns how many were resumed.

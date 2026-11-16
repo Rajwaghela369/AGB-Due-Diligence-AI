@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import inspect
 import json
 from collections.abc import Mapping
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -38,11 +37,7 @@ def create_app(
         try:
             yield
         finally:
-            shutdown = getattr(service, "shutdown", None)
-            if callable(shutdown):
-                result = shutdown()
-                if inspect.isawaitable(result):
-                    await result
+            service.shutdown(timeout=10)
 
     application = FastAPI(title="AGB-Check API", version="1", lifespan=lifespan)
     application.state.store = store
@@ -75,16 +70,13 @@ def load_statutes(path: Path) -> dict[str, LawChunk]:
 def build_app() -> FastAPI:
     """Wire production adapters lazily for ``uvicorn app.api.main:app --factory``."""
     from core import langfuse_client
-    from core.budget import SharedLimiter
     from core.config import load_yaml
     from core.paths import CONFIGS, PROCESSED
     from core.settings import load_settings
 
     from app.agent.run import make_judge
     from app.review.feedback import FeedbackService
-
-    # The runner branch is merged after this one; keeping this import here lets
-    # route tests run against their fake without requiring its implementation.
+    from app.review.limiter import build_limiter, review_settings
     from app.review.service import build_service
     from app.store.files import LocalFileStore
     from app.store.migrate import apply_pending
@@ -94,20 +86,24 @@ def build_app() -> FastAPI:
     environment = load_settings()
     apply_pending()
     store = postgres_store(LocalFileStore())
-    limiter = SharedLimiter(
-        rpm=setting(config, "limits.rpm", None),
-        daily_budget=setting(config, "limits.daily_requests", None),
-    )
+    statutes = load_statutes(PROCESSED / "bgb_chunks.jsonl")
+    limiter = build_limiter(config)
     tracer = None
     if environment.langfuse_public_key and environment.langfuse_secret_key:
-        with suppress(Exception):
-            tracer = langfuse_client.client()
+        tracer = langfuse_client.client()
     judge = make_judge(config, limiter=limiter, tracer=tracer, caches=store.caches)
-    service = build_service(store=store, judge=judge, limiter=limiter, tracer=tracer)
+    service = build_service(
+        store,
+        judge,
+        limiter,
+        tracer,
+        statutes=statutes,
+        **review_settings(config),
+    )
     return create_app(
         store=store,
         service=service,
-        statutes=load_statutes(PROCESSED / "bgb_chunks.jsonl"),
+        statutes=statutes,
         feedback=FeedbackService(store, tracer),
         settings=config,
     )

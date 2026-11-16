@@ -10,8 +10,12 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
+from core.logging import get_logger
+
 from app.domain import REASON_STEP, Decision, Feedback
 from app.store.interfaces import Store
+
+log = get_logger("review.feedback")
 
 
 def _stable_id(*parts: object) -> str:
@@ -53,6 +57,11 @@ class FeedbackService:
                 )
             )
 
+        previous = self.store.feedback.for_review(request.review_id).get(request.position)
+        if previous is not None and previous.feedback_id == feedback_id:
+            for step in previous.observations.keys() - set(steps):
+                self._delete_score(feedback_id, step)
+
         observations: dict[str, str | None] = {}
         scored_steps: list[str] = []
         score_comment = self._score_comment(request)
@@ -86,6 +95,16 @@ class FeedbackService:
             observations=observations,
         )
         return self.store.feedback.put(feedback), scored_steps
+
+    def _delete_score(self, feedback_id: str, step: str) -> None:
+        """Remove a score made obsolete by an edited vote without rejecting the edit."""
+        if self.langfuse is None:
+            return
+        score_id = _stable_id(feedback_id, step)
+        try:
+            self.langfuse.api.scores.delete(score_id)
+        except Exception:  # noqa: BLE001 - tracing is best effort by contract
+            log.warning("could not delete stale Langfuse score %s", score_id, exc_info=True)
 
     def decide(self, review_id: str, position: int, request: Any) -> Decision:
         if request.action == "override" and request.corrected_verdict is None:
