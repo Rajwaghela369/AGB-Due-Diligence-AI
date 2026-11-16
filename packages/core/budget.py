@@ -13,6 +13,7 @@ rejects bursts even when the daily total is nowhere near its cap.
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 
 from core.logging import get_logger
 
@@ -137,4 +138,86 @@ class SharedLimiter:
         clock=time.time,
         sleep=time.sleep,
     ) -> None:
-        raise NotImplementedError("Phase 5 Wave 1: core-hooks")
+        if rpm is not None and rpm < 1:
+            raise ValueError("rpm must be positive")
+        if daily_budget is not None and daily_budget < 1:
+            raise ValueError("daily_budget must be positive")
+        self.rpm = rpm
+        self.daily_budget = daily_budget
+        self._clock = clock
+        self._sleep = sleep
+        self._recent: list[float] = []
+        self._day: str | None = None
+        self._spent_today = 0
+        self._waiting_reason: str | None = None
+        self._lock = threading.Lock()
+
+    def acquire(self, n: int = 1, *, timeout: float | None = None) -> None:
+        """Reserve requests after both shared limits allow them."""
+        if n < 1:
+            raise ValueError(f"cannot acquire {n} requests")
+        if self.rpm is not None and n > self.rpm:
+            raise ValueError(f"cannot acquire {n} requests with rpm={self.rpm}")
+        if self.daily_budget is not None and n > self.daily_budget:
+            raise ValueError(f"cannot acquire {n} requests with daily_budget={self.daily_budget}")
+        if timeout is not None and timeout < 0:
+            raise ValueError("timeout must not be negative")
+
+        started = self._clock()
+        while True:
+            with self._lock:
+                now = self._clock()
+                self._roll_day(now)
+                reason, wait = self._wait_for(n, now)
+                if reason is None:
+                    self._recent.extend([now] * n)
+                    self._spent_today += n
+                    self._waiting_reason = None
+                    return
+
+                elapsed = now - started
+                if timeout is not None and elapsed + wait > timeout:
+                    self._waiting_reason = None
+                    raise BudgetExceeded(f"timed out waiting for {reason}")
+                self._waiting_reason = reason
+
+            # Do not hold the accounting lock while a review waits.
+            self._sleep(wait)
+
+    def reserve(self, n: int = 1) -> None:
+        """Offer the RequestBudget protocol used by core.llm."""
+        self.acquire(n)
+
+    def waiting_reason(self) -> str | None:
+        with self._lock:
+            return self._waiting_reason
+
+    def remaining_today(self) -> int | None:
+        if self.daily_budget is None:
+            return None
+        with self._lock:
+            self._roll_day(self._clock())
+            return max(0, self.daily_budget - self._spent_today)
+
+    def _roll_day(self, now: float) -> None:
+        day = datetime.fromtimestamp(now, UTC).date().isoformat()
+        if day != self._day:
+            self._day = day
+            self._spent_today = 0
+
+    def _wait_for(self, n: int, now: float) -> tuple[str | None, float]:
+        if self.daily_budget is not None and self._spent_today + n > self.daily_budget:
+            current = datetime.fromtimestamp(now, UTC)
+            tomorrow = datetime.combine(
+                current.date() + timedelta(days=1), datetime.min.time(), UTC
+            )
+            return "daily_budget", max(0.0, tomorrow.timestamp() - now)
+
+        if self.rpm is None:
+            return None, 0.0
+        cutoff = now - _WINDOW_SECONDS
+        self._recent = [stamp for stamp in self._recent if stamp > cutoff]
+        if len(self._recent) + n <= self.rpm:
+            return None, 0.0
+        index = len(self._recent) + n - self.rpm - 1
+        return "rate_limit", max(0.0, self._recent[index] + _WINDOW_SECONDS - now)

@@ -73,6 +73,11 @@ def _update(observation: Any, **kwargs: Any) -> None:
         observation.update(**kwargs)
 
 
+def _observation_id(observation: Any) -> str | None:
+    """Read an SDK observation id without making tracing load-bearing."""
+    return getattr(observation, "id", None) if observation is not None else None
+
+
 def build_questions(candidates: list[Retrieved], label: str = "production") -> dict[str, dict]:
     """One void question plus one question per candidate chunk.
 
@@ -167,9 +172,14 @@ def build_graph(
     top_k = int(policy.get("top_k", 10))
     depth = int(policy.get("search_depth", 20))
 
+    def invocation_tracer(state: AgentState) -> Any:
+        return state.get("tracer", tracer)
+
     def route(state: AgentState) -> AgentState:
         clause = state["clause"]
-        with _observe(tracer, "route", input={"clause": clause["text"]}) as observation:
+        with _observe(
+            invocation_tracer(state), "route", input={"clause": clause["text"]}
+        ) as observation:
             topic = router(clause["text"]) if router else ""
             _update(observation, output={"topic": topic})
         return {"topic": topic}
@@ -177,7 +187,7 @@ def build_graph(
     def get_candidates(state: AgentState) -> AgentState:
         clause = state["clause"]
         with _observe(
-            tracer,
+            invocation_tracer(state),
             "retrieve",
             as_type="retriever",
             input={"query": clause["text"]},
@@ -196,13 +206,19 @@ def build_graph(
                     for candidate in found
                 ],
             )
-        return {"candidates": found}
+        return {
+            "candidates": found,
+            "observations": {
+                **state.get("observations", {}),
+                "retrieval": _observation_id(observation),
+            },
+        }
 
     def judge(state: AgentState) -> AgentState:
         clause, candidates = state["clause"], state["candidates"]
         questions = build_questions(candidates, prompt_label)
         with _observe(
-            tracer,
+            invocation_tracer(state),
             "judge",
             as_type="generation",
             input={
@@ -239,7 +255,13 @@ def build_graph(
                     "total": result.input_tokens + result.output_tokens,
                 },
             )
-        return {"draft": draft}
+        return {
+            "draft": draft,
+            "observations": {
+                **state.get("observations", {}),
+                "judge": _observation_id(observation),
+            },
+        }
 
     def self_check(state: AgentState) -> AgentState:
         """Deterministic. Retry an ungrounded void call first, abstain second.
@@ -268,7 +290,7 @@ def build_graph(
         else:
             check = "accept"
 
-        with _observe(tracer, "self-check", input=state["draft"]) as observation:
+        with _observe(invocation_tracer(state), "self-check", input=state["draft"]) as observation:
             _update(observation, output={"rule": check, "draft": draft})
         return {"draft": draft, "check": check}
 
@@ -289,7 +311,7 @@ def build_graph(
         }
         wider_k = int(top_k * 1.5)
         with _observe(
-            tracer,
+            invocation_tracer(state),
             "retry-retrieve",
             as_type="retriever",
             input={"query": state["clause"]["text"]},
@@ -298,14 +320,21 @@ def build_graph(
             found = retriever(state["clause"]["text"], "", wider, depth=wider["search_depth"])
             found = found[:wider_k]
             _update(observation, output=[candidate.chunk_id for candidate in found])
-        return {"candidates": found, "retries": int(state.get("retries", 0)) + 1}
+        return {
+            "candidates": found,
+            "retries": int(state.get("retries", 0)) + 1,
+            "observations": {
+                **state.get("observations", {}),
+                "retrieval": _observation_id(observation),
+            },
+        }
 
     def explain(state: AgentState) -> AgentState:
         """Generate the German reason. The Decisions API cannot, so this is a text call."""
         draft = dict(state["draft"])
         cited = [c for c in state["candidates"] if c.chunk_id in draft["legal_basis"]]
         with _observe(
-            tracer,
+            invocation_tracer(state),
             "explain",
             as_type="generation",
             input={"legal_basis": draft["legal_basis"]},
@@ -314,6 +343,7 @@ def build_graph(
             completion = explainer(state["clause"], cited)
             if completion.error:
                 # A missing reason is cosmetic; the verdict and its basis stand.
+                draft["reason_unavailable"] = True
                 _update(observation, output={"error": completion.error}, level="WARNING")
             else:
                 draft["reason_de"] = prompts.read_reason(completion.text)
@@ -331,7 +361,13 @@ def build_graph(
                         "total": completion.input_tokens + completion.output_tokens,
                     },
                 )
-        return {"draft": draft}
+        return {
+            "draft": draft,
+            "observations": {
+                **state.get("observations", {}),
+                "explanation": _observation_id(observation),
+            },
+        }
 
     def finish(state: AgentState) -> AgentState:
         draft = state["draft"]
@@ -339,6 +375,7 @@ def build_graph(
         result = {
             "verdict": draft.get("verdict"),
             "legal_basis": list(draft.get("legal_basis", [])),
+            "basis_scores": dict(draft.get("basis_scores", {})),
             "candidates": candidates,
             "reason_de": draft.get("reason_de", ""),
             "confidence": float(draft.get("confidence", 0.0)),
@@ -347,11 +384,13 @@ def build_graph(
             "check": state.get("check"),
             "input_tokens": int(draft.get("input_tokens", 0)),
             "output_tokens": int(draft.get("output_tokens", 0)),
+            "reason_unavailable": bool(draft.get("reason_unavailable", False)),
+            "observations": state.get("observations", {}),
         }
         trace_id = None
-        if tracer is not None:
+        if invocation_tracer(state) is not None:
             try:
-                trace_id = tracer.get_current_trace_id()
+                trace_id = invocation_tracer(state).get_current_trace_id()
             except Exception:  # noqa: BLE001
                 trace_id = None
 
