@@ -91,6 +91,19 @@ class EventBus:
         *,
         follow: bool = True,
         idle_timeout: float | None = None,
+        first: list[StoredEvent] | None = None,
+    ) -> "Subscription":
+        """A closable iterator over `_follow`; `first` events are yielded before it."""
+        return Subscription(self, review_id, after_seq, follow, idle_timeout, first or [])
+
+    def _follow(
+        self,
+        sub: "Subscription",
+        review_id: str,
+        after_seq: int,
+        follow: bool,
+        idle_timeout: float | None,
+        first: list[StoredEvent],
     ) -> Iterator[StoredEvent]:
         """Stored events with seq > after_seq, then live ones, each exactly once.
 
@@ -106,9 +119,13 @@ class EventBus:
         the runner writes the status just before the event, and one recheck may
         land in between. And when `follow` is
         False and the store is drained, after `idle_timeout` seconds without a
-        new event, or when the bus shuts down.
+        new event, when the bus shuts down, or when the subscription is closed.
         """
+        yield from first
+        if sub.closed:
+            return
         channel = self._register(review_id)
+        sub.attach(channel)
         last = after_seq
         last_type: str | None = None
         idle_since = time.monotonic()
@@ -123,6 +140,8 @@ class EventBus:
                 for event in batch:
                     yield event
                     last, last_type = event.seq, event.type
+                    if sub.closed:
+                        return
                 if batch:
                     idle_since = time.monotonic()
                     closing = stale = suspect = False
@@ -140,7 +159,7 @@ class EventBus:
 
                 stale = False
                 with channel.cond:
-                    while channel.version == seen_version and not self._closed:
+                    while channel.version == seen_version and not self._closed and not sub.closed:
                         wait = self._recheck
                         if idle_timeout is not None:
                             left = idle_timeout - (time.monotonic() - idle_since)
@@ -150,7 +169,7 @@ class EventBus:
                         if not channel.cond.wait(wait):
                             stale = True  # re-read, in case another process appended
                             break
-                    if self._closed:
+                    if self._closed or sub.closed:
                         return
         finally:
             self._unregister(review_id, channel)
@@ -189,3 +208,69 @@ class EventBus:
         for channel in channels:
             with channel.cond:
                 channel.cond.notify_all()
+
+
+class Subscription:
+    """An event stream another thread can end: `close()` wakes a blocked `__next__`.
+
+    The SSE producer thread sits in `next()` while the client disconnects on the
+    event loop's thread, and a generator cannot be closed from a thread other
+    than the one running it ("generator already executing"). So `close()` sets
+    a flag and rings the channel; the thread inside `next()` sees the flag, ends
+    the generator (which unregisters it) and gets StopIteration. If no thread is
+    inside `next()`, `close()` ends the generator itself.
+    """
+
+    def __init__(
+        self,
+        bus: EventBus,
+        review_id: str,
+        after_seq: int,
+        follow: bool,
+        idle_timeout: float | None,
+        first: list[StoredEvent],
+    ) -> None:
+        self.review_id = review_id
+        self._lock = threading.Lock()
+        self._closed = False
+        self._running = False
+        self._channel: _Channel | None = None
+        self._gen = bus._follow(self, review_id, after_seq, follow, idle_timeout, first)
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    def attach(self, channel: _Channel) -> None:
+        with self._lock:
+            self._channel = channel
+
+    def __iter__(self) -> "Subscription":
+        return self
+
+    def __next__(self) -> StoredEvent:
+        with self._lock:
+            if self._closed:
+                raise StopIteration
+            self._running = True
+        try:
+            return next(self._gen)
+        finally:
+            with self._lock:
+                self._running = False
+                finish = self._closed
+            if finish:
+                self._gen.close()  # closed while we were inside: unregister now
+
+    def close(self) -> None:
+        """End the stream from any thread. Idempotent."""
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            running, channel = self._running, self._channel
+        if channel is not None:
+            with channel.cond:
+                channel.cond.notify_all()
+        if not running:
+            self._gen.close()
