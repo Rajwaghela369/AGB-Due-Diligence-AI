@@ -22,6 +22,11 @@ import { useReviewUi } from "../review/store";
 export function FindingsTable({ review }: { review: ReviewData }) {
   const { t } = useTranslation();
   const parent = useRef<HTMLDivElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
+  const focusSearch = useReviewUi((state) => state.focusSearch);
+  useEffect(() => {
+    if (focusSearch > 0) searchInput.current?.focus();
+  }, [focusSearch]);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [search, setSearch] = useState("");
   const [verdict, setVerdict] = useState("all");
@@ -94,6 +99,7 @@ export function FindingsTable({ review }: { review: ReviewData }) {
             size={16}
           />
           <input
+            ref={searchInput}
             className="h-9 rounded-md border border-border bg-surface pl-8 pr-2 text-sm"
             placeholder={t("table.search")}
             value={search}

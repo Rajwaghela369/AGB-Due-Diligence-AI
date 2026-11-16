@@ -107,6 +107,8 @@ export function UploadPage() {
           <input
             ref={input}
             className="sr-only"
+            aria-label={t("upload.chooseFile")}
+            tabIndex={-1}
             type="file"
             accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             onChange={(event) => selectFile(event.target.files?.[0])}

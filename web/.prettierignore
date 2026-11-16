@@ -4,3 +4,5 @@ dist
 pnpm-lock.yaml
 src/api/schema.json
 src/api/types.gen.ts
+test-results
+playwright-report

@@ -4,11 +4,20 @@
 // workspace with no new LLM calls. The live stream overlays clause status and verdicts
 // while a review runs. Components never fetch findings or open streams themselves.
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 
 import { api } from "../../api/client";
-import { useReviewStream } from "../../api/events";
-import type { ClauseSpan, ClauseVerdict, Finding, Review, Status1 } from "../../api/types.gen";
+import { useReviewStream, type ReviewProgress } from "../../api/events";
+import type {
+  ClauseSpan,
+  ClauseVerdict,
+  DocumentOut,
+  Finding,
+  Review,
+  Status1,
+} from "../../api/types.gen";
+
+export type { ReviewProgress };
 
 export interface ReviewFinding {
   position: number;
@@ -29,6 +38,12 @@ export interface ReviewData {
   error: Error | null;
   /** True once the stream reported RUN_FINISHED/RUN_ERROR or the stored review is final. */
   isFinal: boolean;
+  /** Latest `CUSTOM progress` value; null until the stream has sent one. */
+  progress: ReviewProgress | null;
+  /** The reviewed document (clauses, source type), fetched once and cached. */
+  document: DocumentOut | null;
+  /** Refetch the findings and reopen the stream, e.g. after retrying a clause. */
+  refresh: () => Promise<void>;
 }
 
 export const reviewKeys = {
@@ -44,9 +59,24 @@ export function useReview(reviewId: string | undefined): ReviewData {
   });
   const storedFinal =
     stored.data !== undefined && ["finished", "failed"].includes(stored.data.review.status);
+  const documentId = stored.data?.review.document_id;
+  const documentQuery = useQuery({
+    queryKey: reviewKeys.document(documentId ?? ""),
+    queryFn: () => api.documents.get(documentId as string),
+    enabled: documentId !== undefined,
+    staleTime: Infinity,
+  });
   // A finished review is complete in storage; only an unfinished one needs the stream.
   const live = useReviewStream(storedFinal ? undefined : reviewId);
 
+  const { refetch } = stored;
+  const { reopen } = live;
+  const refresh = useCallback(async () => {
+    await refetch();
+    reopen();
+  }, [refetch, reopen]);
+
+  const documentData = documentQuery.data ?? null;
   return useMemo(() => {
     const base: ReviewFinding[] = (stored.data?.findings ?? []).map((f) => ({
       position: f.position,
@@ -72,6 +102,18 @@ export function useReview(reviewId: string | undefined): ReviewData {
       isLoading: stored.isLoading,
       error: (stored.error as Error | null) ?? live.error,
       isFinal: review !== null && ["finished", "failed"].includes(review.status),
+      progress: live.progress,
+      document: documentData,
+      refresh,
     };
-  }, [stored.data, stored.isLoading, stored.error, live.state, live.error]);
+  }, [
+    stored.data,
+    stored.isLoading,
+    stored.error,
+    live.state,
+    live.error,
+    live.progress,
+    documentData,
+    refresh,
+  ]);
 }

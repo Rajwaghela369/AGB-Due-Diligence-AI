@@ -52,7 +52,8 @@
       "valid": "{{count}} valid",
       "out": "{{count}} out of scope"
     },
-    "alreadyReviewed": "Already reviewed: results from the stored review, with no new AI requests."
+    "alreadyReviewed": "Already reviewed: results from the stored review, with no new AI requests.",
+    "views": "Views"
   },
   "findings": {
     "title": "Findings",
@@ -238,7 +239,24 @@
       "read": "Read",
       "split": "Split",
       "done": "done",
-      "check": "Checking {{done}}/{{total}}"
+      "check": "Checking {{done}}/{{total}}",
+      "waiting": {
+        "rate_limit": "waiting for rate limit",
+        "daily_budget": "daily budget reached"
+      }
     }
+  },
+  "hotkeys": {
+    "title": "Keyboard shortcuts",
+    "open": "Show keyboard shortcuts",
+    "close": "Close",
+    "description": "These shortcuts work in the review view while no input field is active.",
+    "next": "Next finding",
+    "previous": "Previous finding",
+    "search": "Focus search",
+    "escape": "Close details or clear search",
+    "help": "Show or hide this overview",
+    "keys": "Key",
+    "action": "Action"
   }
 }

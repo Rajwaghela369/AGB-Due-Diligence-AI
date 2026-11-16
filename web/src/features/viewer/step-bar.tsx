@@ -1,14 +1,15 @@
 // Upload ✓ → Lesen ✓ → Aufteilen ✓ → Prüfung n/N while a review runs. The first three are
 // done by the time a review exists (its clauses come from the split), so only the check
 // step moves, driven by the live review counts.
-import { Check, Loader2 } from "lucide-react";
+import { Check, Hourglass, Loader2 } from "lucide-react";
 import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
 
+import type { ReviewProgress } from "../../api/events";
 import type { Review } from "../../api/types.gen";
 import { reviewProgress } from "./layout";
 
-export function StepBar(props: { review: Review }) {
+export function StepBar(props: { review: Review; progress?: ReviewProgress | null }) {
   const { t } = useTranslation();
   const { done, total } = reviewProgress(props.review);
   const finished = ["upload", "read", "split"] as const;
@@ -39,6 +40,12 @@ export function StepBar(props: { review: Review }) {
           aria-label={t("viewer.steps.check", { done, total })}
         />
       </li>
+      {props.progress?.waiting_reason && (
+        <li role="status" className="flex items-center gap-1 text-muted-foreground">
+          <Hourglass aria-hidden="true" size={13} />
+          {t(`viewer.steps.waiting.${props.progress.waiting_reason}`)}
+        </li>
+      )}
     </ol>
   );
 }

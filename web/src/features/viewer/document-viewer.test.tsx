@@ -4,11 +4,11 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../api/client";
-import type { DocumentOut, ReviewOut } from "../../api/types.gen";
+import type { ReviewOut } from "../../api/types.gen";
 import "../../i18n";
 import { useReviewUi } from "../review/store";
 import { DocumentViewer } from "./document-viewer";
-import { finding, pdfFindings, review, reviewData } from "./fixtures";
+import { documentOut, finding, pdfFindings, review, reviewData } from "./fixtures";
 import type { PdfDocumentLike, PdfPageLike } from "./pdf";
 
 const pdf = vi.hoisted(() => ({ openPdf: vi.fn() }));
@@ -43,20 +43,6 @@ function fakePdf(pageCount = 2) {
   return { doc, render, textItems };
 }
 
-function documentOut(sourceType: "pdf" | "text"): DocumentOut {
-  return {
-    document: {
-      document_id: "d1",
-      filename: "AGB.pdf",
-      source_type: sourceType,
-      parser_version: "p",
-      splitter_version: "s",
-      text_hash: "t",
-    },
-    clauses: [],
-  };
-}
-
 function renderViewer(ui: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
@@ -69,7 +55,6 @@ beforeEach(() => {
   scrollIntoView.mockReset();
   Element.prototype.scrollIntoView = scrollIntoView;
   vi.spyOn(api.documents, "file").mockResolvedValue(new Blob(["%PDF-1.7"]));
-  vi.spyOn(api.documents, "get").mockResolvedValue(documentOut("pdf"));
 });
 
 afterEach(() => {
@@ -79,7 +64,12 @@ afterEach(() => {
 
 async function pdfViewer(findings = pdfFindings(), base = review()) {
   const fake = fakePdf();
-  const view = renderViewer(<DocumentViewer documentId="d1" review={reviewData(findings, base)} />);
+  const view = renderViewer(
+    <DocumentViewer
+      documentId="d1"
+      review={reviewData(findings, base, { document: documentOut("pdf") })}
+    />,
+  );
   await screen.findByRole("region", { name: "Seite 2 von 2" });
   return { ...fake, ...view };
 }
@@ -262,9 +252,10 @@ describe("toolbar", () => {
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "haftung" } });
     await waitFor(() => expect(document.querySelectorAll("[data-hit-index]")).toHaveLength(2));
     expect(textItems).toHaveBeenCalled();
-    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+    // The count reaches the toolbar one render after the hits are drawn.
+    expect(await screen.findByText("1 / 2")).toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Enter" });
-    expect(screen.getByText("2 / 2")).toBeInTheDocument();
+    expect(await screen.findByText("2 / 2")).toBeInTheDocument();
     expect(document.querySelector('[data-hit-index="1"]')?.hasAttribute("data-active")).toBe(true);
   });
 });
@@ -282,6 +273,24 @@ describe("step bar", () => {
   it("is hidden once the review is finished", async () => {
     await pdfViewer();
     expect(screen.queryByRole("list", { name: "Fortschritt der Prüfung" })).toBeNull();
+  });
+});
+
+describe("waiting reason", () => {
+  it("tells the lawyer why the check is paused", async () => {
+    const fake = fakePdf();
+    expect(fake.doc.numPages).toBe(2);
+    const progress = { waiting_reason: "daily_budget" as const, budget_left: 0 };
+    renderViewer(
+      <DocumentViewer
+        documentId="d1"
+        review={reviewData(pdfFindings(), review("running", { total: 6 }), {
+          document: documentOut("pdf"),
+          progress,
+        })}
+      />,
+    );
+    expect(await screen.findByText("Tagesbudget erreicht")).toBeVisible();
   });
 });
 
@@ -312,26 +321,43 @@ describe("pasted text", () => {
     }),
   ];
 
+  const SOURCE = [
+    "§ 6 Haftung\n",
+    "6.1 Unsere Haftung ist ausgeschlossen.\n",
+    "6.2 Die Gewährleistung richtet sich nach dem Gesetz.\n",
+    "7.1 Gerichtsstand ist Berlin.",
+  ].join("");
+  const textData = () => reviewData(textFindings(), review(), { document: documentOut("text") });
+
   beforeEach(() => {
-    vi.spyOn(api.documents, "get").mockResolvedValue(documentOut("text"));
+    vi.spyOn(api.documents, "text").mockResolvedValue(SOURCE);
   });
 
   it("renders the text in serif with the same highlight model, no PDF", async () => {
-    renderViewer(<DocumentViewer documentId="d1" review={reviewData(textFindings())} />);
+    renderViewer(<DocumentViewer documentId="d1" review={textData()} />);
     const clause = await screen.findByText("6.1 Unsere Haftung ist ausgeschlossen.");
     expect(clause.closest("article")?.className).toContain("font-contract");
     expect(clause.closest("[data-clause]")?.getAttribute("data-tone")).toBe("void");
     expect(clause.closest("p")?.style.background).toContain("var(--risk)");
     expect(document.querySelector('[data-clause="1"]')?.getAttribute("data-tone")).toBe("checking");
     expect(document.querySelector('[data-clause="2"]')?.getAttribute("data-tone")).toBe("out");
-    expect(screen.getByRole("heading", { name: "§ 6 Haftung" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "§ 7 Schluss" })).toBeInTheDocument();
+    // Text between clauses comes from the stored source, not from the clause headings.
+    expect(screen.getByText("§ 6 Haftung")).toBeInTheDocument();
+    expect(api.documents.text).toHaveBeenCalledWith("d1");
     expect(pdf.openPdf).not.toHaveBeenCalled();
     expect(api.documents.file).not.toHaveBeenCalled();
   });
 
+  it("falls back to the clause headings when the source cannot be fetched", async () => {
+    vi.spyOn(api.documents, "text").mockRejectedValue(new Error("offline"));
+    renderViewer(<DocumentViewer documentId="d1" review={textData()} />);
+    await screen.findByText("6.1 Unsere Haftung ist ausgeschlossen.");
+    expect(screen.getByRole("heading", { name: "§ 6 Haftung" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "§ 7 Schluss" })).toBeInTheDocument();
+  });
+
   it("scrolls to, hovers and selects clauses by offset blocks", async () => {
-    renderViewer(<DocumentViewer documentId="d1" review={reviewData(textFindings())} />);
+    renderViewer(<DocumentViewer documentId="d1" review={textData()} />);
     const clause = await screen.findByText("6.2 Die Gewährleistung richtet sich nach dem Gesetz.");
     act(() => useReviewUi.getState().select(1));
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
@@ -345,7 +371,7 @@ describe("pasted text", () => {
   });
 
   it("marks search hits in the text", async () => {
-    renderViewer(<DocumentViewer documentId="d1" review={reviewData(textFindings())} />);
+    renderViewer(<DocumentViewer documentId="d1" review={textData()} />);
     await screen.findByText("6.1 Unsere Haftung ist ausgeschlossen.");
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "ist" } });
     const marks = document.querySelectorAll("mark[data-hit-index]");

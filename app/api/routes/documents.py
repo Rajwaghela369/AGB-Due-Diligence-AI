@@ -104,17 +104,19 @@ def get_document(document_id: str, request: Request) -> DocumentOut:
 
 @router.get("/documents/{document_id}/file", response_class=Response)
 def get_document_file(document_id: str, request: Request) -> Response:
+    """The source as stored: the PDF, or the pasted text the clause offsets index into."""
     dependencies = state(request)
     document = dependencies.store.documents.get(document_id)
-    if document is None or document.source_type == "text":
-        raise ApiError(404, "not_found", "PDF nicht gefunden.")
+    if document is None:
+        raise ApiError(404, "not_found", "Dokument nicht gefunden.")
+    is_text = document.source_type == "text"
     try:
-        content = dependencies.store.files.get(f"{document_id}.pdf")
+        content = dependencies.store.files.get(f"{document_id}.{'txt' if is_text else 'pdf'}")
     except FileNotFoundError as exc:
-        raise ApiError(404, "not_found", "PDF nicht gefunden.") from exc
+        raise ApiError(404, "not_found", "Datei nicht gefunden.") from exc
     return Response(
         content=content,
-        media_type="application/pdf",
+        media_type="text/plain; charset=utf-8" if is_text else "application/pdf",
         headers={
             "Cache-Control": "public, max-age=31536000, immutable",
             "ETag": f'"{document_id}"',
