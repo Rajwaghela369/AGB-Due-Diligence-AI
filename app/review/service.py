@@ -13,15 +13,16 @@ verdict cache makes the resumed run pay only for clauses never judged.
 """
 
 import threading
+import time
 import uuid
 from collections.abc import Iterator
 from typing import Any
 
-from ag_ui.core import RunErrorEvent, StateSnapshotEvent
+from ag_ui.core import RunErrorEvent, RunFinishedEvent, StateSnapshotEvent
 from core.logging import get_logger
 
 from app.domain import Finding, Review, StoredEvent, Topic
-from app.review.events import EventBus, serialise
+from app.review.events import TERMINAL_TYPES, EventBus, serialise
 from app.review.limiter import DEFAULT_MAX_CONCURRENCY
 from app.review.runner import ReviewRun, RunContext, build_state, load_entries
 from app.store.interfaces import Store
@@ -64,6 +65,7 @@ class Service:
         )
         self._lock = threading.RLock()
         self._runs: dict[str, ReviewRun] = {}
+        self._stopped: dict[str, ReviewRun] = {}  # stopped by shutdown, for wait()
         self._closed = False
 
     @property
@@ -87,15 +89,18 @@ class Service:
             clauses = self.store.documents.clauses(document_id)
             if not clauses:
                 raise ValueError(f"document {document_id} has no clauses")
+            review_id = uuid.uuid4().hex
             review = self.store.reviews.create(
                 Review(
-                    review_id=uuid.uuid4().hex,
+                    review_id=review_id,
                     document_id=document_id,
                     agent_version=self.agent_version,
                     scope=list(scope),
                     status="queued",
                 )
             )
+            if review.review_id != review_id:
+                return review  # another process won the race (reviews_one_active_idx)
             self._launch(review, clauses, positions=None, reason="start")
             return self.store.reviews.get(review.review_id)  # type: ignore[return-value]
 
@@ -139,6 +144,9 @@ class Service:
                 raise ValueError(f"clause {position} is {status}, not failed")
             if review.agent_version != self.agent_version:
                 raise ValueError("the agent has changed since this review; start a new review")
+            active = self.store.reviews.active_for(review.document_id, review.agent_version)
+            if active is not None and active.review_id != review_id:
+                raise ValueError(f"review {active.review_id} of this document is running")
             clauses = self.store.documents.clauses(review.document_id)
             self._launch(review, clauses, positions=[position], reason="retry")
 
@@ -146,8 +154,41 @@ class Service:
         self, review_id: str, after_seq: int = 0, *, follow: bool = True
     ) -> Iterator[StoredEvent]:
         """See `ReviewService.events`. Raises KeyError at once for an unknown review."""
-        self._review(review_id)
+        self._reconcile(self._review(review_id))
         return self._events(review_id, after_seq, follow)
+
+    def _reconcile(self, review: Review) -> None:
+        """Append the terminal event a finished or failed review is missing.
+
+        Status and terminal event are two writes; a crash (or a failed append)
+        between them would leave followers waiting for an event that never
+        comes. Done when the review is read, which covers every review a client
+        can ask for, rather than by scanning the table at startup.
+        """
+        if review.status not in ("finished", "failed"):
+            return
+        with self._lock:
+            if review.review_id in self._runs:
+                return
+            events = list(self.store.events.since(review.review_id, 0))
+            if events and events[-1].type in TERMINAL_TYPES:
+                return
+            if review.status == "finished":
+                result = {
+                    "counts": review.counts.model_dump(mode="json"),
+                    "cost_usd": review.cost_usd,
+                }
+                event = RunFinishedEvent(
+                    thread_id=review.document_id, run_id=review.review_id, result=result
+                )
+            else:
+                event = RunErrorEvent(
+                    message=review.error or "the review failed", code="review_failed"
+                )
+            log.warning(
+                "review %s was %s without a terminal event", review.review_id, review.status
+            )
+            self.bus.emit(review.review_id, event)
 
     def _events(self, review_id: str, after_seq: int, follow: bool) -> Iterator[StoredEvent]:
         if after_seq > 0:
@@ -195,25 +236,46 @@ class Service:
     # --- lifecycle --------------------------------------------------------------
 
     def wait(self, review_id: str, timeout: float | None = None) -> bool:
-        """Block until this service has no run of the review; False on timeout."""
+        """Block until this service has no run of the review (nor a clause of a stopped
+        one still in flight); False on timeout."""
         with self._lock:
-            run = self._runs.get(review_id)
-        return run is None or run.join(timeout)
+            run = self._runs.get(review_id) or self._stopped.get(review_id)
+        if run is None:
+            return True
+        deadline = None if timeout is None else time.monotonic() + timeout
+        if not run.join(timeout):
+            return False
+        return run.drain(None if deadline is None else max(0.0, deadline - time.monotonic()))
 
     def shutdown(self, timeout: float | None = None) -> None:
-        """Stop every run after its in-flight clauses, then end every event stream.
+        """Stop every run, interrupt limiter waits, then end every event stream.
 
-        Reviews stay `running` so the next process resumes them. In-flight judge
-        calls cannot be interrupted; `timeout` bounds the wait for each run.
+        Reviews stay `running` so the next process resumes them. Closing the
+        limiter wakes clauses waiting on it (even until tomorrow) with
+        `LimiterClosed`; they stay `checking` and resume. A judge call already
+        talking to the provider runs to its own timeout. `timeout` bounds the
+        whole wait; whatever is still in flight then is left to finish alone.
         """
+        deadline = None if timeout is None else time.monotonic() + timeout
+
+        def left() -> float | None:
+            return None if deadline is None else max(0.0, deadline - time.monotonic())
+
         with self._lock:
             self._closed = True
             runs = list(self._runs.values())
             for run in runs:
                 run.stop()
+                self._stopped[run.review_id] = run
+        close = getattr(self.limiter, "close", None)
+        if close is not None:
+            try:
+                close()
+            except Exception:  # noqa: BLE001 - shutting down regardless
+                log.warning("could not close the limiter", exc_info=True)
         for run in runs:  # not under the lock: a stopping run takes it to deregister
-            if not run.join(timeout):
-                log.warning("review %s did not stop within %ss", run.review_id, timeout)
+            if not (run.join(left()) and run.drain(left())):
+                log.warning("review %s still had clauses in flight at shutdown", run.review_id)
         self.bus.shutdown()
 
     # --- internals ----------------------------------------------------------------
@@ -231,6 +293,7 @@ class Service:
         )
         try:
             run.open()
+            run.announce()  # in the log before anyone can see the review running
             self.store.reviews.set_status(review.review_id, "running")
         except Exception as exc:
             message = f"{type(exc).__name__}: {exc}"

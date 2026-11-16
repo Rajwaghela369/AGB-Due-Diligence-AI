@@ -9,6 +9,7 @@ Every blocking wait has a deadline, so a regression fails instead of hanging.
 
 import queue
 import threading
+import time
 from collections import Counter
 from datetime import UTC, datetime
 
@@ -27,6 +28,7 @@ from app.domain import (
     Review,
 )
 from app.review.limiter import build_limiter, review_settings
+from app.review.runner import ReviewRun
 from app.review.service import build_service
 from app.store.memory import memory_store
 
@@ -65,10 +67,14 @@ class FakeJudge:
         self.verdicts = verdicts or {}
         self.limiter = limiter
         self.gates = {text: threading.Event() for text in gated}
-        self.entered = {text: threading.Event() for text in gated}
+        self.entered: dict[str, threading.Event] = {}
         self.calls: list[str] = []
         self.parents: list = []
         self._lock = threading.Lock()
+
+    def _entered(self, text: str) -> threading.Event:
+        with self._lock:
+            return self.entered.setdefault(text, threading.Event())
 
     def __call__(self, clause: ClauseSpan, *, parent=None) -> ClauseVerdict:
         with self._lock:
@@ -77,11 +83,14 @@ class FakeJudge:
             failing = self.fail.get(clause.text, 0) > 0
             if failing:
                 self.fail[clause.text] -= 1
+        self._entered(clause.text).set()
         if clause.text in self.gates:
-            self.entered[clause.text].set()
             assert self.gates[clause.text].wait(DEADLINE), "gate never opened"
         if self.limiter is not None:
-            self.limiter.acquire()
+            try:
+                self.limiter.acquire()
+            except Exception as exc:  # like make_judge: every error becomes ClauseFailed
+                raise ClauseFailed(f"{type(exc).__name__}: {exc}") from exc
         if failing:
             if clause.text.startswith("boom"):
                 raise RuntimeError("provider exploded")
@@ -92,7 +101,7 @@ class FakeJudge:
         self.gates[text].set()
 
     def wait_entered(self, text: str) -> None:
-        assert self.entered[text].wait(DEADLINE), f"{text!r} was never judged"
+        assert self._entered(text).wait(DEADLINE), f"{text!r} was never judged"
 
 
 class FakeSpan:
@@ -718,6 +727,27 @@ def test_findings_carry_status_verdict_decision_feedback_and_scope():
 
 def test_an_error_outside_any_clause_fails_the_review_with_run_error():
     store = memory_store()
+    real_set_status = store.reviews.set_status
+
+    def set_status(review_id, status, error=None):
+        if status == "finished":
+            raise ConnectionError("database went away")
+        return real_set_status(review_id, status, error)
+
+    store.reviews.set_status = set_status
+    service = _service(store, FakeJudge())
+    review = service.start(_document(store, ["a"]), ["liability"])
+
+    events = _collect(service, review.review_id)
+    assert events[-1].type == "RUN_ERROR"
+    assert "RUN_FINISHED" not in [e.type for e in events]
+    assert events[-1].payload["code"] == "review_failed"
+    failed = _finish(service, review.review_id)
+    assert failed.status == "failed" and "database went away" in failed.error
+
+
+def test_a_start_that_cannot_write_its_first_event_raises_and_fails_the_review():
+    store = memory_store()
     real_append = store.events.append
 
     def append(review_id, type, payload):
@@ -727,13 +757,10 @@ def test_an_error_outside_any_clause_fails_the_review_with_run_error():
 
     store.events.append = append
     service = _service(store, FakeJudge())
-    review = service.start(_document(store, ["a"]), ["liability"])
-
-    events = _collect(service, review.review_id)
-    assert [e.type for e in events] == ["RUN_ERROR"]
-    assert events[0].payload["code"] == "review_failed"
-    failed = _finish(service, review.review_id)
-    assert failed.status == "failed" and "database went away" in failed.error
+    document_id = _document(store, ["a"])
+    with pytest.raises(ConnectionError):
+        service.start(document_id, ["liability"])
+    assert store.reviews.latest_for(document_id).status == "failed"
 
 
 def test_start_rejects_unknown_documents():
@@ -758,3 +785,162 @@ def test_limiter_and_settings_come_from_config():
         "prices": {"input": 0.5, "output": 0.0},
     }
     assert review_settings({}) == {"max_concurrency": 4, "prices": {"input": 0.0, "output": 0.0}}
+
+
+# --- review fixes: shutdown, retry race, terminal reconcile, single flight ----------
+
+
+def test_shutdown_interrupts_a_clause_waiting_for_tomorrows_budget():
+    # Real interruptible sleep, frozen clock: the second request waits ~a day.
+    limiter = SharedLimiter(daily_budget=1, clock=lambda: 1_800_000_000.0)
+    store = memory_store()
+    judge = FakeJudge(limiter=limiter)
+    service = _service(store, judge, limiter)
+    review = service.start(_document(store, ["today", "tomorrow"]), ["liability"])
+    judge.wait_entered("tomorrow")
+
+    started = time.monotonic()
+    service.shutdown(timeout=5)
+    assert time.monotonic() - started < 5
+    assert service.wait(review.review_id, 0)  # nothing of the run is left running
+
+    statuses = {p: s for p, (s, _) in store.reviews.clause_statuses(review.review_id).items()}
+    assert statuses == {0: "done", 1: "checking"}  # interrupted, not failed
+    assert store.reviews.get(review.review_id).status == "running"
+    assert "RUN_FINISHED" not in [e.type for e in store.events.since(review.review_id)]
+
+    fresh = FakeJudge()
+    restarted = _service(store, fresh)
+    assert restarted.resume_running() == 1
+    finished = _finish(restarted, review.review_id)
+    assert fresh.calls == ["tomorrow"]
+    assert (finished.counts.done, finished.counts.failed) == (2, 0)
+
+
+def test_a_replay_runs_through_a_retry_whose_thread_has_not_started(monkeypatch):
+    store = memory_store()
+    judge = FakeJudge(fail={"flaky": 1})
+    service = _service(store, judge)
+    review = service.start(_document(store, ["steady", "flaky"]), ["liability"])
+    first_finish = _collect(service, review.review_id)[-1].seq
+    _finish(service, review.review_id)
+
+    deferred: list[ReviewRun] = []
+    monkeypatch.setattr(ReviewRun, "start", lambda run: deferred.append(run))
+    service.retry_clause(review.review_id, 1)  # announced, marked running, not yet started
+    monkeypatch.undo()
+
+    out: queue.Queue = queue.Queue()
+
+    def follow() -> None:
+        for event in service.events(review.review_id):
+            out.put(event)
+        out.put(None)
+
+    threading.Thread(target=follow, daemon=True).start()
+    seen = []
+    while not seen or seen[-1].seq <= first_finish:
+        event = out.get(timeout=DEADLINE)
+        assert event is not None, "the stream stopped at the old RUN_FINISHED"
+        seen.append(event)
+    assert seen[-1].type == "RUN_STARTED"
+
+    deferred[0].start()
+    while (event := out.get(timeout=DEADLINE)) is not None:
+        seen.append(event)
+    assert [e.type for e in seen].count("RUN_FINISHED") == 2
+    assert _finish(service, review.review_id).counts.failed == 0
+
+
+def test_events_append_a_terminal_event_lost_to_a_crash():
+    store = memory_store()
+    document_id = _document(store, ["a"])
+    for review_id, status in (("rev-done", "finished"), ("rev-failed", "failed")):
+        store.reviews.create(
+            Review(
+                review_id=review_id,
+                document_id=document_id,
+                agent_version=VERSION,
+                scope=["liability"],
+                status="queued",
+            )
+        )
+        store.events.append(review_id, "RUN_STARTED", {"type": "RUN_STARTED"})
+        store.reviews.set_status(review_id, status, "boom" if status == "failed" else None)
+
+    service = _service(store, FakeJudge())
+    done = _collect(service, "rev-done")
+    assert [e.type for e in done] == ["RUN_STARTED", "RUN_FINISHED"]
+    failed = _collect(service, "rev-failed")
+    assert failed[-1].type == "RUN_ERROR" and failed[-1].payload["message"] == "boom"
+    # Reconciled once: reading again appends nothing.
+    assert len(_collect(service, "rev-done")) == 2
+
+
+def test_a_clause_repeated_in_a_document_is_judged_once():
+    store = memory_store()
+    judge = FakeJudge(gated=("same",))
+    service = _service(store, judge, max_concurrency=4, prices={"input": 1.0, "output": 0.0})
+    review = service.start(_document(store, ["same", "other", "same", "same"]), ["liability"])
+    judge.wait_entered("same")
+    judge.open("same")
+
+    finished = _finish(service, review.review_id)
+    assert judge.calls.count("same") == 1
+    assert (finished.counts.done, finished.counts.cache_hits) == (4, 2)
+    assert finished.cost_usd == pytest.approx(2 * 1000 / 1e6)  # two judge calls, not four
+
+
+def test_the_same_clause_in_two_concurrent_reviews_costs_one_call():
+    store = memory_store()
+    judge = FakeJudge(gated=("shared",))
+    service = _service(store, judge, max_concurrency=2)
+    first = service.start(_document(store, ["shared", "only in one"]), ["liability"])
+    judge.wait_entered("shared")
+    second = service.start(_document(store, ["shared", "only in two"]), ["liability"])
+    judge.wait_entered("only in two")  # the second review's "shared" is waiting on the key
+    judge.open("shared")
+
+    a, b = _finish(service, first.review_id), _finish(service, second.review_id)
+    assert judge.calls.count("shared") == 1
+    assert a.counts.cache_hits + b.counts.cache_hits == 1
+    assert a.counts.done == b.counts.done == 2
+
+
+def test_cost_is_charged_from_the_verdict_this_call_produced():
+    store = memory_store()
+
+    class SaveLoses:
+        """The verdict store already holds another row: save returns it, not ours."""
+
+        def __init__(self, inner) -> None:
+            self.inner = inner
+
+        def get(self, content_hash, agent_version):
+            return None  # a miss, so the judge runs
+
+        def save(self, verdict):
+            cheaper = verdict.model_copy(update={"input_tokens": 0, "output_tokens": 0})
+            return self.inner.save(cheaper)
+
+    store.verdicts = SaveLoses(store.verdicts)
+    service = _service(store, FakeJudge(), prices={"input": 1.0, "output": 10.0})
+    review = service.start(_document(store, ["x"]), ["liability"])
+    assert _finish(service, review.review_id).cost_usd == pytest.approx(0.002)
+
+
+def test_retry_is_refused_while_another_review_of_the_document_is_active():
+    store = memory_store()
+    judge = FakeJudge(fail={"flaky": 1}, gated=("slow",))
+    service = _service(store, judge)
+    document_id = _document(store, ["flaky"])
+    old = service.start(document_id, ["liability"])
+    _finish(service, old.review_id)
+
+    # Every verdict is cached except the failed clause; gate it so the new review stays active.
+    judge.gates["flaky"] = threading.Event()
+    new = service.start(document_id, ["liability"])
+    with pytest.raises(ValueError):
+        service.retry_clause(old.review_id, 0)
+    judge.open("flaky")
+    _finish(service, new.review_id)
