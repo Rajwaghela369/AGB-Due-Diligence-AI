@@ -11,6 +11,7 @@ from typing import Any
 from core import langfuse_client
 from core.budget import RequestBudget
 from core.config import index_config_hash, load_yaml
+from core.hashing import content_hash
 from core.llm import Completion, complete, decide
 from core.paths import CONFIGS
 from core.retrieval import Retrieved
@@ -145,8 +146,12 @@ def make_task(
             client=client,
         )
 
+    # The graph hands `persist` a record keyed by the eval clause id; the table is
+    # keyed by the hash of the text, so `run` notes each clause's hash on the way in.
+    hashes: dict[str, str] = {}
+
     def persist(record: Any) -> None:
-        verdicts.save(record, version)
+        verdicts.save(record, version, hashes[record.clause_id])
 
     # `retriever` is injectable for the same reason `client` is: build_graph
     # binds the real `retrieve` as a default argument, so patching the module
@@ -170,6 +175,7 @@ def make_task(
 
     def run(*, item: Any, **_: Any) -> dict[str, Any]:
         clause = item["input"] if isinstance(item, dict) else item.input
+        hashes[clause["clause_id"]] = content_hash(clause["text"])
         try:
             with _observe(
                 tracer,

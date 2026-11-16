@@ -57,7 +57,6 @@ class VerdictRecord(BaseModel):
     legal_basis: list[str] = Field(default_factory=list)  # chunk_ids
     reason_de: str
     confidence: float
-    lawyer_decision: Verdict | None = None
     langfuse_trace_id: str | None = None
 
 

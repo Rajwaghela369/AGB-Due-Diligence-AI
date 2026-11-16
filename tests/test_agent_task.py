@@ -167,3 +167,22 @@ def _ok_decision() -> DecisionResult:
         model="gemini-decision-1",
         error=None,
     )
+
+
+def test_persisted_verdicts_are_keyed_on_the_clause_text_hash(monkeypatch):
+    """Eval and service share one verdict cache, so the key is the text, not `agb-349`."""
+    from core.hashing import content_hash
+
+    saved = []
+    monkeypatch.setattr(task.verdicts, "ensure_table", lambda *a, **k: None)
+    monkeypatch.setattr(task.verdicts, "save", lambda *args: saved.append(args))
+    monkeypatch.setattr(task, "decide", lambda *a, **k: _ok_decision())
+    chunk = Retrieved("bgb-309-7-a", "§ 309", "text", 0.9, 1)
+
+    run = task.make_task(app_config=APP_CONFIG, retriever=lambda *a, **k: [chunk])
+    run(item={"input": CLAUSE})
+
+    assert len(saved) == 1
+    record, version, key = saved[0]
+    assert record.clause_id == "agb-349"
+    assert key == content_hash(CLAUSE["text"])
