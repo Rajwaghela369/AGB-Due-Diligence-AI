@@ -238,7 +238,24 @@
       "read": "Lesen",
       "split": "Aufteilen",
       "done": "erledigt",
-      "check": "Prüfung {{done}}/{{total}}"
+      "check": "Prüfung {{done}}/{{total}}",
+      "waiting": {
+        "rate_limit": "wartet auf Rate-Limit",
+        "daily_budget": "Tagesbudget erreicht"
+      }
     }
+  },
+  "hotkeys": {
+    "title": "Tastenkürzel",
+    "open": "Tastenkürzel anzeigen",
+    "close": "Schließen",
+    "description": "Diese Tastenkürzel gelten in der Prüfansicht, solange kein Eingabefeld aktiv ist.",
+    "next": "Nächste Fundstelle",
+    "previous": "Vorherige Fundstelle",
+    "search": "Suche fokussieren",
+    "escape": "Details schließen oder Suche leeren",
+    "help": "Diese Übersicht ein- und ausblenden",
+    "keys": "Taste",
+    "action": "Aktion"
   }
 }

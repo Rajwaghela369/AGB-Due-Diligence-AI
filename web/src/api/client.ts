@@ -74,6 +74,14 @@ export function createApiClient(options: ApiClientOptions = {}) {
         if (!response.ok) throw new ApiError(response.status, await errorBody(response));
         return response.blob();
       },
+      /** The pasted text of a text document; clause offsets index into this exact string. */
+      async text(documentId: string): Promise<string> {
+        const response = await (fetchImplementation ?? globalThis.fetch)(
+          `${baseUrl}/api/v1/documents/${encodeURIComponent(documentId)}/file`,
+        );
+        if (!response.ok) throw new ApiError(response.status, await errorBody(response));
+        return response.text();
+      },
     },
     reviews: {
       start(input: ReviewIn): Promise<ReviewOut> {

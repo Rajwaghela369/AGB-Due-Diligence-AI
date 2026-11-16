@@ -14,11 +14,14 @@ export interface ReviewUiState {
   view: WorkspaceView;
   /** Ordered positions the ◀ n / N ▶ control and J/K step through (set by the panel). */
   navigable: number[];
+  /** Counter bumped by the `/` hotkey; the visible search box focuses itself when it changes. */
+  focusSearch: number;
   select: (position: number | null) => void;
   hover: (position: number | null) => void;
   setFilter: (filter: FindingFilter) => void;
   setView: (view: WorkspaceView) => void;
   setNavigable: (positions: number[]) => void;
+  requestSearchFocus: () => void;
   next: () => void;
   previous: () => void;
   reset: () => void;
@@ -30,6 +33,7 @@ const initial = {
   filter: "all" as const,
   view: "document" as const,
   navigable: [],
+  focusSearch: 0,
 };
 
 function step(list: number[], current: number | null, delta: 1 | -1): number | null {
@@ -46,6 +50,7 @@ export const useReviewUi = create<ReviewUiState>((set) => ({
   setFilter: (filter) => set({ filter }),
   setView: (view) => set({ view }),
   setNavigable: (navigable) => set({ navigable }),
+  requestSearchFocus: () => set((s) => ({ focusSearch: s.focusSearch + 1 })),
   next: () => set((s) => ({ selected: step(s.navigable, s.selected, 1) })),
   previous: () => set((s) => ({ selected: step(s.navigable, s.selected, -1) })),
   reset: () => set(initial),

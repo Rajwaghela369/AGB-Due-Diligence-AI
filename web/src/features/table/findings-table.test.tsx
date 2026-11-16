@@ -44,6 +44,9 @@ function reviewData(findings: ReviewFinding[]): ReviewData {
     isLoading: false,
     error: null,
     isFinal: true,
+    progress: null,
+    document: null,
+    refresh: () => Promise.resolve(),
   };
 }
 

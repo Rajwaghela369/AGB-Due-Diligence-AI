@@ -12,6 +12,8 @@ import { findMatches, splitByMatches, textBlocks } from "./text-segments";
 
 export function TextView(props: {
   findings: ReviewFinding[];
+  /** The stored source text; without it blocks are rebuilt from the clause texts. */
+  source?: string | undefined;
   zoom: number;
   query: string;
   activeHit: number;
@@ -20,7 +22,15 @@ export function TextView(props: {
 }) {
   const { findings, interaction, onHitCount } = props;
   const byPosition = useMemo(() => new Map(findings.map((f) => [f.position, f])), [findings]);
-  const blocks = useMemo(() => textBlocks(findings.map((f) => f.clause)), [findings]);
+  const { source } = props;
+  const blocks = useMemo(
+    () =>
+      textBlocks(
+        findings.map((f) => f.clause),
+        source,
+      ),
+    [findings, source],
+  );
   const needle = props.query.trim().length >= 2 ? props.query : "";
   const matches = useMemo(
     () => blocks.map((block) => (needle ? findMatches(block.text, needle) : [])),

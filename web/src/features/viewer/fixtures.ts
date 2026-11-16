@@ -1,5 +1,5 @@
 // Test fixtures for the viewer: findings in every state, on two PDF pages or as pasted text.
-import type { ClauseSpan, ClauseVerdict, Review } from "../../api/types.gen";
+import type { ClauseSpan, ClauseVerdict, DocumentOut, Review } from "../../api/types.gen";
 import type { ReviewData, ReviewFinding } from "../review/use-review";
 
 export function verdict(kind: ClauseVerdict["verdict"]): ClauseVerdict {
@@ -52,7 +52,11 @@ export function review(
   };
 }
 
-export function reviewData(findings: ReviewFinding[], base: Review = review()): ReviewData {
+export function reviewData(
+  findings: ReviewFinding[],
+  base: Review = review(),
+  extra: Partial<ReviewData> = {},
+): ReviewData {
   return {
     review: base,
     findings,
@@ -60,6 +64,10 @@ export function reviewData(findings: ReviewFinding[], base: Review = review()): 
     isLoading: false,
     error: null,
     isFinal: ["finished", "failed"].includes(base.status),
+    progress: null,
+    document: null,
+    refresh: () => Promise.resolve(),
+    ...extra,
   };
 }
 
@@ -74,4 +82,18 @@ export function pdfFindings(): ReviewFinding[] {
     finding(5, "failed", { rects: [rect(2, 500)], page: 2 }),
     finding(6, "out_of_scope", { rects: [rect(2, 600)], page: 2, in_scope: false }),
   ];
+}
+
+export function documentOut(sourceType: "pdf" | "text"): DocumentOut {
+  return {
+    document: {
+      document_id: "d1",
+      filename: "AGB.pdf",
+      source_type: sourceType,
+      parser_version: "p",
+      splitter_version: "s",
+      text_hash: "t",
+    },
+    clauses: [],
+  };
 }

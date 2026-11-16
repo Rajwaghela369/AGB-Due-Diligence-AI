@@ -10,7 +10,7 @@ import {
   Plus,
   Search,
 } from "lucide-react";
-import type { KeyboardEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useReviewUi } from "../review/store";
@@ -35,6 +35,14 @@ export function ViewerToolbar(props: {
   const next = useReviewUi((s) => s.next);
   const previous = useReviewUi((s) => s.previous);
   const index = selected === null ? -1 : navigable.indexOf(selected);
+  const focusSearch = useReviewUi((s) => s.focusSearch);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (focusSearch > 0) {
+      input.current?.focus();
+      input.current?.select();
+    }
+  }, [focusSearch]);
   const searching = props.query.trim().length >= 2;
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -59,6 +67,7 @@ export function ViewerToolbar(props: {
           <Search aria-hidden="true" size={14} className="text-muted-foreground" />
           <span className="sr-only">{t("viewer.search.label")}</span>
           <input
+            ref={input}
             type="search"
             value={props.query}
             placeholder={t("viewer.search.placeholder")}

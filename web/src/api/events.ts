@@ -1,7 +1,7 @@
 /** Resumable AG-UI review events, kept independent from any component lifecycle. */
 
 import { applyPatch, type Operation } from "fast-json-patch";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { ClauseVerdict, Review, Status1, Type } from "./types.gen";
 
@@ -185,24 +185,52 @@ function abortableSleep(milliseconds: number, signal: AbortSignal): Promise<void
   });
 }
 
+/** The latest `CUSTOM progress` value: why clauses are waiting, and what budget is left. */
+export interface ReviewProgress {
+  waiting_reason: "rate_limit" | "daily_budget" | null;
+  budget_left: number | null;
+}
+
+interface StreamSnapshot {
+  reviewId: string;
+  generation: number;
+  state: ReviewState | null;
+  progress: ReviewProgress | null;
+}
+
 export function useReviewStream(reviewId: string | undefined) {
-  const [current, setCurrent] = useState<{ reviewId: string; state: ReviewState | null } | null>(
-    null,
-  );
+  const [current, setCurrent] = useState<StreamSnapshot | null>(null);
   const [failure, setFailure] = useState<{ reviewId: string; error: Error } | null>(null);
+  // Bumping it closes the stream and opens a fresh one (a retry on a finished review).
+  const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
     if (reviewId === undefined) return;
-    const stream = connectReviewStream(reviewId, ({ state }) => setCurrent({ reviewId, state }));
+    let progress: ReviewProgress | null = null;
+    const stream = connectReviewStream(reviewId, ({ state, event }) => {
+      if (event.type === "CUSTOM" && event.name === "progress") {
+        const value = (event.value ?? {}) as Partial<ReviewProgress>;
+        progress = {
+          waiting_reason: value.waiting_reason ?? null,
+          budget_left: value.budget_left ?? null,
+        };
+      }
+      setCurrent({ reviewId, generation, state, progress });
+    });
     void stream.done.catch((reason: unknown) => {
       const error = reason instanceof Error ? reason : new Error(String(reason));
       setFailure({ reviewId, error });
     });
     return stream.close;
-  }, [reviewId]);
+  }, [reviewId, generation]);
 
+  const reopen = useCallback(() => setGeneration((value) => value + 1), []);
+  const live =
+    current !== null && current.reviewId === reviewId && current.generation === generation;
   return {
-    state: current !== null && current.reviewId === reviewId ? current.state : null,
+    state: live ? current.state : null,
+    progress: live ? current.progress : null,
     error: failure !== null && failure.reviewId === reviewId ? failure.error : null,
+    reopen,
   };
 }

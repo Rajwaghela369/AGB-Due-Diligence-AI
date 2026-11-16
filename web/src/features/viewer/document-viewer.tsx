@@ -4,14 +4,14 @@
 // the contract serif. Both draw the same highlight model and share selection with the rest
 // of the workspace through `useReviewUi`: hover and click write to it, and a selection made
 // anywhere scrolls the clause into view here.
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { api } from "../../api/client";
 import type { SourceType } from "../../api/types.gen";
 import { useReviewUi } from "../review/store";
-import { reviewKeys, type ReviewData } from "../review/use-review";
+import type { ReviewData } from "../review/use-review";
 import { useDevicePixelRatio, useReducedMotion } from "./hooks";
 import { inferSourceType, type ClauseInteraction } from "./layout";
 import { PdfView } from "./pdf-view";
@@ -22,13 +22,15 @@ import { ViewerToolbar } from "./toolbar";
 export function DocumentViewer(props: { documentId: string; review: ReviewData }) {
   const { documentId, review } = props;
   const { t } = useTranslation();
-  const documentQuery = useQuery({
-    queryKey: reviewKeys.document(documentId),
-    queryFn: () => api.documents.get(documentId),
+  const sourceType: SourceType | null =
+    review.document?.document.source_type ?? inferSourceType(review.findings);
+  // Pasted text is sliced from the exact source so the gaps between clauses stay in place.
+  const source = useQuery({
+    queryKey: ["documents", documentId, "text"],
+    queryFn: () => api.documents.text(documentId),
+    enabled: sourceType === "text",
     staleTime: Infinity,
   });
-  const sourceType: SourceType | null =
-    documentQuery.data?.document.source_type ?? inferSourceType(review.findings);
 
   const selected = useReviewUi((s) => s.selected);
   const hovered = useReviewUi((s) => s.hovered);
@@ -46,7 +48,7 @@ export function DocumentViewer(props: { documentId: string; review: ReviewData }
   const zoomAnchor = useRef<number | null>(null);
 
   const reviewId = review.review?.review_id;
-  const queryClient = useQueryClient();
+  const refresh = review.refresh;
   const [retrying, setRetrying] = useState<ReadonlySet<number>>(new Set());
   const retryMutation = useMutation({
     mutationFn: (position: number) => api.reviews.retryClause(reviewId as string, position),
@@ -57,9 +59,8 @@ export function DocumentViewer(props: { documentId: string; review: ReviewData }
         remaining.delete(position);
         return remaining;
       });
-      // A finished review has no open stream; refetching flips it back to running, which
-      // makes useReview reconnect and deliver the retry's events.
-      if (reviewId) void queryClient.invalidateQueries({ queryKey: reviewKeys.findings(reviewId) });
+      // A finished review has no open stream; refreshing reconnects it for the retry's events.
+      void refresh();
     },
   });
   const retry = retryMutation.mutate;
@@ -143,14 +144,14 @@ export function DocumentViewer(props: { documentId: string; review: ReviewData }
         zoom={zoom}
         onZoom={changeZoom}
       />
-      {running && review.review && <StepBar review={review.review} />}
+      {running && review.review && <StepBar review={review.review} progress={review.progress} />}
       <div
         ref={scrollRoot}
         data-testid="viewer-scroll"
         className="h-[calc(100vh-16rem)] min-h-96 overflow-auto bg-muted/60"
       >
         {sourceType === null ? (
-          documentQuery.isError ? (
+          review.error ? (
             <p role="alert" className="p-6 text-sm">
               {t("viewer.loadError")}
             </p>
@@ -163,6 +164,7 @@ export function DocumentViewer(props: { documentId: string; review: ReviewData }
           <div className="p-6">
             <TextView
               findings={review.findings}
+              source={source.data}
               zoom={zoom}
               query={query}
               activeHit={activeHit}

@@ -229,6 +229,8 @@ def test_upload_reupload_paste_and_file_cache_headers(api):
         file_response = client.get(
             f"/api/v1/documents/{first.json()['document']['document_id']}/file"
         )
+        paste_file = client.get(f"/api/v1/documents/{paste.json()['document']['document_id']}/file")
+        missing_file = client.get("/api/v1/documents/nope/file")
 
     assert first.status_code == 200
     assert first.json()["clauses"]
@@ -237,6 +239,10 @@ def test_upload_reupload_paste_and_file_cache_headers(api):
     assert file_response.content.startswith(b"%PDF-")
     assert file_response.headers["cache-control"].endswith("immutable")
     assert file_response.headers["etag"].startswith('"')
+    assert paste_file.status_code == 200
+    assert paste_file.headers["content-type"] == "text/plain; charset=utf-8"
+    assert paste_file.content.decode() == "§ 1 Haftung gilt.\n§ 2 Gewährleistung gilt."
+    assert missing_file.status_code == 404
 
 
 @pytest.mark.parametrize(
