@@ -176,6 +176,10 @@ def build_app() -> FastAPI:
         caches=store.caches,
         checkpointer=checkpointer.saver,
     )
+    # Deletion (9.B) erases a review's checkpoint threads (`{review_id}:*`) on this saver
+    # through `judge.forget`; without it every checkpoint erasure would stay pending.
+    if not callable(getattr(judge, "forget", None)):
+        raise RuntimeError("the judge cannot erase checkpoints")
     feedback = FeedbackService(store, tracer)
     corrections = Corrections(tracer, CorrectionSettings.from_config(config))
     router_model = setting(config, "models.router.name", "jina-embeddings-v3")

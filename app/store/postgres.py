@@ -43,7 +43,7 @@ from app.domain import (
     agreement_rate,
     decided_verdict,
 )
-from app.store.deletion import PostgresDeletionRepo
+from app.store.deletion import CONTENT_LOCK, PostgresDeletionRepo
 from app.store.files import LocalFileStore
 from app.store.interfaces import FileStore
 
@@ -202,6 +202,10 @@ class PostgresDocumentRepo(_Repo):
 
     def save(self, document: Document, clauses: list[ClauseSpan], texts: dict[str, str]) -> None:
         with self._connect() as conn:
+            # Shared side of the deletion lock (9.B): saves run side by side, but a deletion
+            # or orphan sweep (exclusive) either sees this document's clauses committed or
+            # runs before any of its rows exist, never between its clause texts and clauses.
+            conn.execute("select pg_advisory_xact_lock_shared(%s)", (CONTENT_LOCK,))
             for clause in clauses:
                 conn.execute(
                     "insert into clause_texts (content_hash, text) values (%s, %s)"
@@ -462,12 +466,14 @@ class PostgresCacheRepo(_Repo):
             )
         return rows[0]["text"] if rows else None
 
-    def put_summary_text(self, decision_set_hash: str, model: str, text: str) -> None:
+    def put_summary_text(
+        self, decision_set_hash: str, model: str, text: str, *, review_id: str | None = None
+    ) -> None:
         with self._connect() as conn:
             conn.execute(
-                "insert into summary_texts (decision_set_hash, model, text) values (%s, %s, %s)"
-                " on conflict (decision_set_hash, model) do nothing",
-                (decision_set_hash, model, text),
+                "insert into summary_texts (decision_set_hash, model, text, review_id)"
+                " values (%s, %s, %s, %s) on conflict (decision_set_hash, model) do nothing",
+                (decision_set_hash, model, text, review_id),
             )
 
 
@@ -486,6 +492,21 @@ def _review(row: dict | None) -> Review | None:
 class PostgresReviewRepo(_Repo):
     def create(self, review: Review) -> Review:
         with self._connect() as conn:
+            # A deletion holds the document row `for update`: wait for it, and refuse a
+            # review of a document it just deleted (its tombstone says so) rather than
+            # leave a queued review with no document behind.
+            document = _row(
+                conn,
+                "select 1 as found from documents where document_id = %s for share",
+                (review.document_id,),
+            )
+            if document is None and _row(
+                conn,
+                "select 1 as found from deletion_tombstones"
+                " where kind = 'document' and subject_id = %s limit 1",
+                (review.document_id,),
+            ):
+                raise KeyError(review.document_id)
             conn.execute(
                 "insert into reviews (review_id, document_id, agent_version, scope, status,"
                 " counts, cost_usd, trace_id, error, created_at, started_at, finished_at,"

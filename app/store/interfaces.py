@@ -8,7 +8,7 @@ All methods are synchronous. The runner calls them from worker threads and the
 API from FastAPI's threadpool, so implementations must be thread-safe.
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime
 from typing import Protocol
 
@@ -62,6 +62,12 @@ class FileStore(Protocol):
         """A time-limited URL the browser can download the blob from directly, valid for
         `expires_in` seconds; None when the backend cannot sign (local disk), and the API
         then proxies the bytes itself. Does not check that the key exists."""
+        ...
+
+    def list_keys(self, prefix: str = "") -> list[tuple[str, datetime]]:
+        """Every stored key starting with `prefix`, with its last-modified time (UTC). The
+        orphan sweep (9.B) needs the age: ingest writes the blob before the document, so a
+        young unreferenced blob may be an upload in flight (S3: ListObjectsV2)."""
         ...
 
 
@@ -138,9 +144,12 @@ class CacheRepo(Protocol):
         """The LLM recommendation paragraph generated for this decision set (Phase 8, 8.A)."""
         ...
 
-    def put_summary_text(self, decision_set_hash: str, model: str, text: str) -> None:
+    def put_summary_text(
+        self, decision_set_hash: str, model: str, text: str, *, review_id: str | None = None
+    ) -> None:
         """Store a recommendation; insert-or-reuse per (decision_set_hash, model), so two
-        concurrent requests for one decision set keep the first text."""
+        concurrent requests for one decision set keep the first text. `review_id` (Phase 9)
+        is the review it was generated for, so deleting that review deletes the paragraph."""
         ...
 
 
@@ -253,7 +262,7 @@ class DeletionRepo(Protocol):
     `clauses` table) reference their content hash; whatever lives outside the database is
     queued in the same transaction as `ErasureTask`s and finished after the commit. Every
     deletion appends one `Tombstone`. Raises KeyError for an unknown id and ValueError while
-    a review of the document is queued or running.
+    a review of the document is queued or running (`app.domain.ActiveReviewError`).
     """
 
     def plan_document(self, document_id: str) -> DeletionReport:
@@ -273,10 +282,27 @@ class DeletionRepo(Protocol):
         its trace and checkpoints); the document and the shared caches stay."""
         ...
 
-    def sweep_orphans(self) -> dict[str, int]:
+    def sweep_orphans(
+        self,
+        *,
+        blobs: Iterable[tuple[str, datetime]] = (),
+        summaries_before: datetime | None = None,
+    ) -> dict[str, int]:
         """Remove content-addressed rows no document references any more (left by a crash
-        or by rows written before 9.B), and queue blobs no document's `blob_key` names.
-        Returns the counts by `DELETION_TABLES` key (plus "blobs")."""
+        or by rows written before 9.B), rows of a review that no longer exists (a write that
+        lost a race with the deletion), and queue the `blobs` (a `FileStore.list_keys`
+        listing) no document's `blob_key` names. Rows and blobs younger than an hour are
+        spared: they may belong to an upload in flight. `summaries_before` also removes
+        summary paragraphs with no `review_id` (written before Phase 9) older than it.
+        Returns the counts by `DELETION_TABLES` key (plus "blobs"); appends a "sweep"
+        tombstone when anything went."""
+        ...
+
+    def erase_blob(self, key: str, delete: Callable[[str], object]) -> bool:
+        """The blob erasure, re-checked at execution time: unless a document's `blob_key`
+        names `key` now, call `delete(key)` while holding the lock ingest takes to save a
+        document, so no upload can start using the key in between. Returns False when
+        the key is referenced again (the task is then done: the blob must stay)."""
         ...
 
     def expired(self, data_class: DataClass, before: datetime, limit: int = 100) -> list[str]:
@@ -285,12 +311,14 @@ class DeletionRepo(Protocol):
         of reviews and verdicts created before it and not yet erased. Oldest first."""
         ...
 
-    def pending_erasures(self, limit: int = 100) -> list[ErasureTask]:
-        """Erasure tasks not done yet, oldest first."""
+    def pending_erasures(self, limit: int = 100, *, due: bool = False) -> list[ErasureTask]:
+        """Erasure tasks not done yet, by `next_attempt_at` then id; with `due`, only those
+        whose backoff has passed."""
         ...
 
     def finish_erasure(self, task_id: int, error: str | None = None) -> None:
-        """Mark a task done (`error=None`) or count a failed attempt."""
+        """Mark a task done (`error=None`) or count a failed attempt and push its
+        `next_attempt_at` back (exponential backoff, `erasure_backoff`)."""
         ...
 
     def queue_erasures(self, tasks: list[tuple[ErasureTarget, str]]) -> list[ErasureTask]:

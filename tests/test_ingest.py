@@ -173,6 +173,9 @@ class _Files:
         self.data.setdefault(key, data)
         return key
 
+    def exists(self, key):
+        return key in self.data
+
 
 class _Documents:
     def __init__(self):

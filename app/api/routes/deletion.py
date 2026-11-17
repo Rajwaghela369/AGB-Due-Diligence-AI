@@ -1,8 +1,8 @@
 """Deleting a document and everything only it used (Phase 9, 9.B). Wave 1 slice: deletion.
 
-The route is final; the body is `Service.delete_document`, which raises
-NotImplementedError (501 `not_implemented`) until Wave 1 fills it in. docs/Phase 9 API.md,
-"Deletion", is the contract.
+The body is `Service.delete_document` (`app.review.deletion`): a reference-counted
+deletion in one transaction, then the external erasures. docs/Phase 9 API.md, "Deletion",
+is the contract.
 """
 
 from fastapi import APIRouter, Request

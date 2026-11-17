@@ -10,6 +10,7 @@ same protocol, chosen by `files.backend`; `delete` and `presign` are Phase 9 Wav
 import os
 import tempfile
 from contextlib import suppress
+from datetime import UTC, datetime
 from pathlib import Path
 
 DEFAULT_ROOT = Path("stores/files")
@@ -64,3 +65,20 @@ class LocalFileStore:
         if expires_in <= 0:
             raise ValueError("expires_in must be positive")
         return None
+
+    def list_keys(self, prefix: str = "") -> list[tuple[str, datetime]]:
+        """Every blob under the root (temp files of a write in progress excluded), with
+        its modification time; `put` never rewrites a file, so that is its creation."""
+        found: list[tuple[str, datetime]] = []
+        for directory, _dirs, names in os.walk(self.root):
+            for name in names:
+                if name.startswith(".tmp-"):
+                    continue
+                path = Path(directory) / name
+                key = path.relative_to(self.root).as_posix()
+                if not key.startswith(prefix):
+                    continue
+                with suppress(FileNotFoundError):  # deleted while listing
+                    modified = datetime.fromtimestamp(path.stat().st_mtime, UTC)
+                    found.append((key, modified))
+        return sorted(found)

@@ -210,3 +210,52 @@ def test_migration_skips_crash_leftover_temp_files_and_checks_encryption(tmp_pat
     destination = Destination()
     assert migrate(source, destination) == (1, 0)
     assert destination.blobs == {"a.pdf": b"alpha"}
+
+
+def test_list_keys_pages_through_list_objects_v2_inside_the_prefix():
+    from datetime import UTC, datetime
+
+    client = _client()
+    store = _store(client)
+    first = datetime(2026, 11, 1, tzinfo=UTC)
+    second = datetime(2026, 11, 2, tzinfo=UTC)
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "list_objects_v2",
+            {
+                "Contents": [{"Key": "source/a.pdf", "LastModified": first}],
+                "IsTruncated": True,
+                "NextContinuationToken": "page-2",
+            },
+            {"Bucket": "files", "Prefix": "source/"},
+        )
+        stubber.add_response(
+            "list_objects_v2",
+            {"Contents": [{"Key": "source/b.txt", "LastModified": second}], "IsTruncated": False},
+            {"Bucket": "files", "Prefix": "source/", "ContinuationToken": "page-2"},
+        )
+        assert store.list_keys() == [("a.pdf", first), ("b.txt", second)]
+        stubber.assert_no_pending_responses()
+
+
+def test_list_keys_of_an_empty_bucket_and_with_a_key_prefix():
+    client = _client()
+    store = _store(client)
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "list_objects_v2", {"IsTruncated": False}, {"Bucket": "files", "Prefix": "source/a"}
+        )
+        assert store.list_keys("a") == []
+
+
+def test_local_list_keys_skips_temp_files_and_reports_modification_times(tmp_path):
+    store = LocalFileStore(tmp_path)
+    store.put("a.pdf", b"a")
+    store.put("nested/b.txt", b"b")
+    (tmp_path / ".tmp-123").write_bytes(b"half")
+
+    listed = store.list_keys()
+
+    assert [key for key, _ in listed] == ["a.pdf", "nested/b.txt"]
+    assert all(modified.tzinfo is not None for _, modified in listed)
+    assert [key for key, _ in store.list_keys("nested/")] == ["nested/b.txt"]

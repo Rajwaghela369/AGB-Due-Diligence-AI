@@ -685,8 +685,25 @@ DeletionReason = Literal["user", "retention", "orphan_sweep"]
 #   trace         a Langfuse trace id (a review's trace, or an unshared verdict's)
 #   score         a Langfuse score id (feedback on a shared trace that itself stays)
 #   dataset_item  a Langfuse dataset item id (a lawyer correction, `corrections`)
-#   checkpoint    a LangGraph checkpoint thread id (`{review_id}:{position}`)
+#   checkpoint    every LangGraph checkpoint thread of one review: `checkpoint_key(review_id)`,
+#                 i.e. `{review_id}:*`, matching the threads `{review_id}:{position}`
 ErasureTarget = Literal["blob", "trace", "score", "dataset_item", "checkpoint"]
+
+
+def checkpoint_key(review_id: str) -> str:
+    """The erasure key that names all checkpoint threads of a review (`{review_id}:*`)."""
+    return f"{review_id}:*"
+
+
+class ActiveReviewError(ValueError):
+    """Raised by `DeletionRepo` while a review of the document (or the review itself) is
+    queued or running. A dedicated type, so a validation error inside the repository is
+    never mistaken for "blocked" (the API maps only this one to 409)."""
+
+    def __init__(self, review_ids: list[str]) -> None:
+        super().__init__(",".join(review_ids))
+        self.review_ids = list(review_ids)
+
 
 # The row counts of a deletion, by table, in this order. `kept_shared` uses the same keys
 # for content-addressed rows another document still references.
@@ -720,6 +737,9 @@ class ErasureTask(BaseModel):
     attempts: int = 0
     last_error: str | None = None
     done_at: datetime | None = None
+    # A failed task waits (exponential backoff) before it is due again, so failing tasks
+    # never block newer ones at the head of the queue. None: due at once.
+    next_attempt_at: datetime | None = None
 
 
 class Tombstone(BaseModel):
@@ -727,8 +747,8 @@ class Tombstone(BaseModel):
     many rows went; no content (no filename, no clause text, no note). Append-only."""
 
     tombstone_id: str
-    kind: Literal["document", "review"]
-    subject_id: str  # the document or review id (a hash, not content)
+    kind: Literal["document", "review", "sweep"]
+    subject_id: str  # the document or review id (a hash, not content); "orphans" for a sweep
     owner_id: str
     deleted_by: str | None = None  # Principal.owner_id; None for retention and sweeps
     authenticated: bool = False

@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -197,6 +198,22 @@ class S3FileStore:
             Params={"Bucket": self.settings.bucket, "Key": self._object_key(key)},
             ExpiresIn=expires_in,
         )
+
+    def list_keys(self, prefix: str = "") -> list[tuple[str, datetime]]:
+        """ListObjectsV2, paged, inside the configured namespace; keys come back without
+        `settings.prefix`, as the other methods take them."""
+        namespace = self.settings.prefix.strip("/")
+        root = f"{namespace}/" if namespace else ""
+        found: list[tuple[str, datetime]] = []
+        paginator = self._s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self.settings.bucket, Prefix=root + prefix):
+            for item in page.get("Contents", []):
+                key = str(item["Key"])[len(root) :]
+                modified = item["LastModified"]
+                if modified.tzinfo is None:
+                    modified = modified.replace(tzinfo=UTC)
+                found.append((key, modified))
+        return found
 
 
 def file_store_from_config(config: Mapping[str, Any], root: Path) -> FileStore:

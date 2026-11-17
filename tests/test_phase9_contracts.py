@@ -3,8 +3,9 @@
 Masking: the boundary marks what it masked, a strict provider client refuses anything else
 once masking is on, and the Presidio masker is a stub. Owners: documents and reviews carry
 one, ids are per owner, and the default owner keeps every pre-Phase 9 id. Deletion and
-storage: the protocols exist, the bodies raise NotImplementedError, the route answers 501,
-and its 200/404/409 mappings work with a stand-in service. Login: `GET /me` answers the
+storage: the protocols exist, the storage bodies raise NotImplementedError, the deletion
+bodies (Wave 1) refuse an unknown document, and the route's 200/404/409 mappings work with a
+stand-in service. Login: `GET /me` answers the
 default owner while login is off and fails closed (501) when it is turned on early.
 """
 
@@ -314,32 +315,45 @@ def test_deletion_models_round_trip():
     assert DeletionOut(report=report, pending_erasures=1).model_dump()["pending_erasures"] == 1
 
 
-def test_every_store_has_a_deletion_repo_and_its_bodies_are_wave_1():
+def test_every_store_has_a_deletion_repo_that_refuses_an_unknown_document():
+    # Wave 1 (deletion) replaced the Wave 0 NotImplementedError assertions with behaviour;
+    # the full deletion is covered by tests/test_deletion*.py.
     store = memory_store()
     assert isinstance(store.deletion, MemoryDeletionRepo) and store.deletion.store is store
     principal = default_principal()
-    for repo in (store.deletion, PostgresDeletionRepo(connect=None)):
-        with pytest.raises(NotImplementedError):
-            repo.delete_document("d", deleted_by=principal, reason="user")
-        with pytest.raises(NotImplementedError):
-            repo.plan_document("d")
-        with pytest.raises(NotImplementedError):
-            repo.expired("files", NOW)
+    with pytest.raises(KeyError):
+        store.deletion.delete_document("d", deleted_by=principal, reason="user")
+    with pytest.raises(KeyError):
+        store.deletion.plan_document("d")
+    assert store.deletion.expired("files", NOW) == []
+    assert store.deletion.tombstones() == [] and store.deletion.pending_erasures() == []
+    postgres = PostgresDeletionRepo(connect=None)
+    for name in (
+        "plan_document",
+        "delete_document",
+        "delete_review",
+        "sweep_orphans",
+        "expired",
+        "pending_erasures",
+        "finish_erasure",
+        "queue_erasures",
+        "tombstones",
+    ):
+        assert callable(getattr(postgres, name))
 
 
-def test_service_deletion_and_sweep_are_stubs():
+def test_service_deletion_and_sweep_work_on_an_empty_store():
     _application, _store, service = _app()
 
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(KeyError):
         service.delete_document("d", default_principal())
-    with pytest.raises(NotImplementedError):
-        service.sweep(NOW)
-    with pytest.raises(NotImplementedError):
-        process_erasures(service)
+    report = service.sweep(NOW)
+    assert report.expired_documents == report.expired_reviews == report.expired_traces == 0
+    assert process_erasures(service) == (0, 0)
     assert service.retention == RetentionSettings() and not service.retention.enabled
 
 
-def test_the_delete_route_answers_501_until_wave_1_and_cors_allows_delete():
+def test_the_delete_route_answers_404_for_an_unknown_document_and_cors_allows_delete():
     application, _store, _service = _app({"api": {"cors_origins": ["http://localhost:5173"]}})
     with TestClient(application) as client:
         deleted = client.delete("/api/v1/documents/d")
@@ -353,7 +367,7 @@ def test_the_delete_route_answers_501_until_wave_1_and_cors_allows_delete():
         )
 
     for response in (deleted, planned):
-        assert response.status_code == 501 and response.json()["code"] == "not_implemented"
+        assert response.status_code == 404 and response.json()["code"] == "not_found"
     assert "DELETE" in preflight.headers["access-control-allow-methods"]
 
 
