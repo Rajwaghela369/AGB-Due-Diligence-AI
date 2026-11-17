@@ -66,7 +66,6 @@ let headers: Array<string | null>;
 let bodies: DecisionIn[];
 let failWith: { status: number; code: string; message: string } | null;
 let audits: number;
-let agreementCalls: number;
 
 function review(): Review {
   const verdicts = findings.map((f) => f.verdict?.verdict);
@@ -141,7 +140,6 @@ function installApi() {
       } satisfies AuditOut);
     }),
     http.get(`${BASE}/metrics/agreement`, () => {
-      agreementCalls += 1;
       return HttpResponse.json({ agreement: { agent_version: "v1", decided: 0 }, current: true });
     }),
     http.put(`${BASE}/reviews/r1/clauses/:pos/decision`, async ({ params, request }) => {
@@ -204,7 +202,6 @@ beforeEach(() => {
   bodies = [];
   failWith = null;
   audits = 0;
-  agreementCalls = 0;
   useReviewUi.getState().reset();
   useReviewer.setState({ name: "", declined: false, dialogOpen: false });
   localStorage.clear();

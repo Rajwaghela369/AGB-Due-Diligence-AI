@@ -200,7 +200,8 @@ describe("FindingsTable", () => {
   it("shows the decision state in a column and filters by it", () => {
     const decided = makeFindings(8).map((finding, index) => ({
       ...finding,
-      findingStatus: (["open", "accepted", "overridden", "dismissed"] as const)[index % 4],
+      findingStatus:
+        (["open", "accepted", "overridden", "dismissed"] as const)[index % 4] ?? "open",
       status: index === 4 ? ("awaiting_decision" as const) : finding.status,
     }));
     render(<FindingsTable review={reviewData(decided)} />);
