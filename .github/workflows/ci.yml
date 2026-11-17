@@ -16,6 +16,20 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --all-extras
+      # `make check` runs the web checks and the Playwright end-to-end test, so it needs
+      # Node, pnpm (the version pinned in web/package.json) and Chromium.
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: web
+      - run: pnpm exec playwright install --with-deps chromium
+        working-directory: web
       - run: make check
 
 # Live evals run in .github/workflows/evals.yml, path-filtered to changes that can
