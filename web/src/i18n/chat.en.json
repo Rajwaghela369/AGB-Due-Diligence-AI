@@ -1,3 +1,33 @@
 {
-  "title": "Rewrite"
+  "title": "Rewrite",
+  "intro": "Ask for a compliant wording of this clause. Each question is one model call; the conversation is not stored.",
+  "log": "Rewrite conversation",
+  "you": "Your question",
+  "assistant": "Assistant's suggestion",
+  "inputLabel": "Your question about the clause",
+  "placeholder": "e.g. “Rewrite the clause so it is compliant”",
+  "quickPrompt": "Rewrite {{clause}} so it is compliant",
+  "send": "Send",
+  "stop": "Stop",
+  "streaming": "Writing the answer …",
+  "suggestion": "Suggested wording",
+  "copy": "Copy suggestion",
+  "copied": "Copied",
+  "legendRemoved": "removed",
+  "legendInserted": "inserted",
+  "removedSr": "removed: ",
+  "insertedSr": "inserted: ",
+  "truncated": "The answer was shortened because it reached the maximum length.",
+  "disclaimer": "AI-generated wording suggestion, not legal advice. Have a lawyer check it before use.",
+  "stopped": "Stopped.",
+  "retry": "Ask again",
+  "errors": {
+    "chat_failed": "The answer could not be generated. Please try again.",
+    "daily_budget": "The daily budget for model calls is used up.",
+    "rate_limited": "Too many requests. Please try again in a moment.",
+    "not_chattable": "This clause has no result yet.",
+    "service_unavailable": "Rewriting is not available right now.",
+    "not_implemented": "Rewriting is not available yet.",
+    "interrupted": "The connection was interrupted. Please ask again."
+  }
 }

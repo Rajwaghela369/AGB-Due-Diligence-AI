@@ -7,6 +7,7 @@ import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { RewriteChat } from "../chat/rewrite-chat";
 import { AuditList } from "../decisions/audit-list";
 import { DecisionPanel } from "../decisions/decision-panel";
 import { confidenceBand, riskStyle } from "../review/risk";
@@ -134,6 +135,10 @@ function DrawerBody({ finding, reviewId }: { finding: ReviewFinding; reviewId: s
           </section>
 
           <DecisionPanel reviewId={reviewId} finding={finding} />
+
+          {(finding.status === "done" || finding.status === "awaiting_decision") && (
+            <RewriteChat reviewId={reviewId} finding={finding} />
+          )}
 
           <AuditList reviewId={reviewId} position={finding.position} />
 
