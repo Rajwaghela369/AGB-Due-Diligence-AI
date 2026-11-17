@@ -134,7 +134,8 @@ export function DocumentViewer(props: { documentId: string; review: ReviewData }
   }, [zoom]);
 
   const onReady = useCallback(() => setReady(true), []);
-  const running = review.review !== null && !review.isFinal;
+  const showStepBar =
+    review.review !== null && (!review.isFinal || review.review.status === "awaiting_decisions");
 
   return (
     <div
@@ -150,7 +151,9 @@ export function DocumentViewer(props: { documentId: string; review: ReviewData }
         zoom={zoom}
         onZoom={changeZoom}
       />
-      {running && review.review && <StepBar review={review.review} progress={review.progress} />}
+      {showStepBar && review.review && (
+        <StepBar review={review.review} progress={review.progress} />
+      )}
       <div
         ref={scrollRoot}
         data-testid="viewer-scroll"

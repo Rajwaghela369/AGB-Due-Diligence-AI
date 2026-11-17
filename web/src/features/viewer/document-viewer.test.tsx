@@ -274,6 +274,14 @@ describe("step bar", () => {
     await pdfViewer();
     expect(screen.queryByRole("list", { name: "Fortschritt der Prüfung" })).toBeNull();
   });
+
+  it("marks judging done while the lawyer's decisions are still pending", async () => {
+    await pdfViewer(pdfFindings(), review("awaiting_decisions", { total: 3, done: 3 }));
+    const steps = screen.getByRole("list", { name: "Fortschritt der Prüfung" });
+    expect(steps).toHaveTextContent("Prüfung 3/3");
+    expect(steps).toHaveTextContent("wartet auf Entscheidungen");
+    expect(steps.querySelector("svg.animate-spin")).toBeNull();
+  });
 });
 
 describe("waiting reason", () => {
