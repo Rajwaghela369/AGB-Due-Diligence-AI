@@ -152,20 +152,17 @@ def test_settings_default_to_no_llm_summary_and_read_the_shipped_config():
 # --- Wave 1 stubs -------------------------------------------------------------------
 
 
-def test_service_stubs_raise_not_implemented():
-    _application, _store, service = _app()
-    with pytest.raises(NotImplementedError):
-        service.summary("r")
-    with pytest.raises(NotImplementedError):
-        service.export("r", "md", reviewer=Reviewer())
-    with pytest.raises(KeyError):  # chat is implemented (tests/test_chat.py)
-        service.chat("r", 0, ChatIn(message="x"), Reviewer())
+def test_unknown_review_is_404_and_bad_requests_are_422():
+    application, _store, service = _app()
+    for call in (
+        lambda: service.summary("r"),
+        lambda: service.export("r", "md", reviewer=Reviewer()),
+        lambda: service.chat("r", 0, ChatIn(message="x"), Reviewer()),
+    ):
+        with pytest.raises(KeyError):
+            call()
     assert service.summary_model is None and service.chat_model is None
     assert service.deliverable.summary.llm_enabled is False
-
-
-def test_stub_routes_answer_501():
-    application, _store, _service = _app()
     with TestClient(application) as client:
         summary = client.get("/api/v1/reviews/r/summary")
         export = client.get("/api/v1/reviews/r/export?format=docx&draft=true")
@@ -173,10 +170,7 @@ def test_stub_routes_answer_501():
         bad_format = client.get("/api/v1/reviews/r/export?format=pdf")
         bad_chat = client.post("/api/v1/reviews/r/clauses/0/chat", json={"message": ""})
 
-    assert chat.status_code == 404  # chat is implemented (tests/test_chat.py)
-    for response in (summary, export):
-        assert response.status_code == 501
-        assert response.json()["code"] == "not_implemented"
+    assert [summary.status_code, export.status_code, chat.status_code] == [404] * 3
     assert bad_format.status_code == 422 and bad_format.json()["code"] == "invalid_request"
     assert bad_chat.status_code == 422
 
