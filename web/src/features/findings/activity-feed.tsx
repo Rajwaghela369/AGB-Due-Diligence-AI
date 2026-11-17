@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { Status1 } from "../../api/types.gen";
+import type { ClauseStatus } from "../../api/aliases";
 import { clauseTitle } from "./helpers";
 import type { ReviewFinding } from "../review/use-review";
 
@@ -13,11 +13,11 @@ interface Entry {
   key: number;
   position: number;
   title: string;
-  status: Status1;
+  status: ClauseStatus;
 }
 
 interface Tracker {
-  seen: Map<number, Status1> | null;
+  seen: Map<number, ClauseStatus> | null;
   log: Entry[];
 }
 

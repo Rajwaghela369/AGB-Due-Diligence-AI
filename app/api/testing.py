@@ -116,12 +116,21 @@ def build_test_app() -> FastAPI:
     store.files = LocalFileStore(root)  # type: ignore[misc]  # real files, so the PDF is served
     judge = KeywordJudge(delay)
     langfuse = RecordingLangfuse()
-    service = build_service(store, judge, build_limiter({}), tracer=None, max_concurrency=2)
+    feedback = FeedbackService(store, langfuse)
+    service = build_service(
+        store,
+        judge,
+        build_limiter({}),
+        tracer=None,
+        max_concurrency=2,
+        statutes={_STATUTE.chunk_id: _STATUTE},
+        feedback=feedback,
+    )
     application = create_app(
         store=store,
         service=service,
         statutes={_STATUTE.chunk_id: _STATUTE},
-        feedback=FeedbackService(store, langfuse),
+        feedback=feedback,
         settings={"ingest": {"max_upload_mb": 20}, "api": {"rate_limit_per_minute": 100000}},
     )
 

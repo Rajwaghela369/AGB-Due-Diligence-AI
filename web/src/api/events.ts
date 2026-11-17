@@ -3,10 +3,11 @@
 import { applyPatch, type Operation } from "fast-json-patch";
 import { useCallback, useEffect, useState } from "react";
 
-import type { ClauseVerdict, Review, Status1, Type } from "./types.gen";
+import type { ClauseStatus } from "./aliases";
+import type { ClauseVerdict, Review, Type } from "./types.gen";
 
 export interface ReviewClauseState {
-  status: Status1;
+  status: ClauseStatus;
   error: string | null;
   verdict: ClauseVerdict | null;
 }

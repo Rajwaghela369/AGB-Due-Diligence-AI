@@ -38,8 +38,11 @@ Only an error outside a clause (the store failing at the start, say) ends the
 run with RUN_ERROR.
 
 Scope. A clause is out of scope when ingest marked it so, or when it carries a
-topic that is not in the review's scope. Ingest does not assign topics yet, so
-today every clause ingest keeps is judged.
+topic that is not in the review's scope. Topics are assigned per review when it
+starts (`app.review.topics`) and stored on its clause rows; `review_clauses`
+puts them back on the clauses, so every path that loads a review's clauses
+scopes them the same way. A clause without a topic (no router, or the router
+failed) is judged.
 """
 
 import threading
@@ -66,9 +69,11 @@ from core.logging import bind, get_logger, update
 from app.agent.run import ClauseFailed
 from app.domain import (
     CUSTOM_PROGRESS,
+    IDLE_REVIEW_STATUSES,
     ClauseSpan,
     ClauseStatus,
     ClauseVerdict,
+    Decision,
     Review,
     ReviewCounts,
 )
@@ -137,6 +142,20 @@ class RunContext:
 # --- state ------------------------------------------------------------------
 
 
+# Statuses in which a clause's stored verdict is shown (and, for the first two, counted).
+VERDICT_STATUSES: tuple[ClauseStatus, ...] = ("done", "awaiting_decision", "checking")
+
+
+def review_clauses(store: Store, review: Review) -> list[ClauseSpan]:
+    """The document's clauses with the topics this review tagged them with."""
+    clauses = store.documents.clauses(review.document_id)
+    topics = store.reviews.clause_topics(review.review_id)
+    for clause in clauses:
+        if clause.position in topics:
+            clause.topic = topics[clause.position]
+    return clauses
+
+
 def in_scope(clause: ClauseSpan, review: Review) -> bool:
     if not clause.in_scope:
         return False
@@ -158,19 +177,19 @@ def load_entries(
 ) -> dict[int, tuple[ClauseStatus, str | None, ClauseVerdict | None]]:
     """Each clause's status, error and verdict as the store has them right now."""
     statuses = store.reviews.clause_statuses(review.review_id)
-    done_hashes = [
+    judged_hashes = [
         clause.content_hash
         for clause in clauses
-        if statuses.get(clause.position, ("queued", None))[0] == "done"
+        if statuses.get(clause.position, ("queued", None))[0] in VERDICT_STATUSES
     ]
-    verdicts = store.verdicts.get_many(done_hashes, review.agent_version)
+    verdicts = store.verdicts.get_many(judged_hashes, review.agent_version)
     entries: dict[int, tuple[ClauseStatus, str | None, ClauseVerdict | None]] = {}
     for clause in clauses:
         if not in_scope(clause, review):
             entries[clause.position] = ("out_of_scope", None, None)
             continue
         status, error = statuses.get(clause.position, ("queued", None))
-        verdict = verdicts.get(clause.content_hash) if status == "done" else None
+        verdict = verdicts.get(clause.content_hash) if status in VERDICT_STATUSES else None
         entries[clause.position] = (status, error, verdict)
     return entries
 
@@ -186,19 +205,41 @@ def build_state(review: Review, entries: dict[int, tuple]) -> dict[str, Any]:
     }
 
 
-def count(entries: dict[int, tuple], cache_hits: int) -> ReviewCounts:
+def count(
+    entries: dict[int, tuple],
+    cache_hits: int,
+    decisions: dict[int, Decision] | None = None,
+) -> ReviewCounts:
+    """The review's `ReviewCounts` (see its docstring for what each field means).
+
+    The one place counts are computed: every writer of `reviews.counts` (a run, a decision)
+    passes the current decisions, so no writer can reset another's tallies.
+    """
+    decisions = decisions or {}
     counts = ReviewCounts(cache_hits=cache_hits)
-    for status, _error, verdict in entries.values():
+    for position, (status, _error, verdict) in entries.items():
         if status == "out_of_scope":
             counts.out_of_scope += 1
             continue
         counts.total += 1
         if status == "failed":
             counts.failed += 1
-        elif status == "done":
+            continue
+        if status == "done":
             counts.done += 1
-            if verdict is not None:
-                setattr(counts, verdict.verdict, getattr(counts, verdict.verdict) + 1)
+        elif status == "awaiting_decision":
+            counts.awaiting_decision += 1
+        else:
+            continue  # queued or checking: no verdict counted yet
+        if verdict is None:
+            continue
+        setattr(counts, verdict.verdict, getattr(counts, verdict.verdict) + 1)
+        if position in decisions:
+            counts.decided += 1
+        elif verdict.verdict == "potentially_void":
+            counts.open_void += 1
+        elif verdict.verdict == "uncertain":
+            counts.open_review += 1
     return counts
 
 
@@ -264,10 +305,10 @@ def regenerate_reason(
                 ]
             )
             events: list = [delta]
-            if not runs and review.status in ("finished", "failed"):
-                clauses = ctx.store.documents.clauses(review.document_id)
+            if not runs and review.status in IDLE_REVIEW_STATUSES:
+                clauses = review_clauses(ctx.store, review)
                 state = build_state(review, load_entries(ctx.store, review, clauses))
-                if review.status == "finished":
+                if review.status != "failed":
                     terminal: Any = RunFinishedEvent(
                         thread_id=review.document_id,
                         run_id=review_id,
@@ -327,6 +368,7 @@ class ReviewRun:
         self._cond = threading.Condition()
         self._entries: dict[int, tuple[ClauseStatus, str | None, ClauseVerdict | None]] = {}
         self._cached_verdicts: dict[str, ClauseVerdict] = {}
+        self._decisions: dict[int, Decision] = {}  # current decisions, for the counts
         self._pending: deque[int] = deque()
         self._cached_batch: list[int] = []  # known cache hits, settled before any judging
         self._inflight = 0
@@ -347,6 +389,7 @@ class ReviewRun:
         """Load the review's clause state and queue the positions this run judges."""
         store = self.ctx.store
         entries = load_entries(store, self.review, list(self._clauses.values()))
+        decisions = store.decisions.for_review(self.review_id)
         if self._requested is None:  # start or resume: everything not yet judged
             todo = [p for p, (s, _, _) in sorted(entries.items()) if s in ("queued", "checking")]
         else:
@@ -368,6 +411,7 @@ class ReviewRun:
             self._cached_verdicts = {}
         with self._cond:
             self._entries = entries
+            self._decisions = decisions
             statuses: dict[int, tuple[ClauseStatus, str | None]] = {
                 pos: ("out_of_scope", None)
                 for pos, (status, _, _) in entries.items()
@@ -406,6 +450,13 @@ class ReviewRun:
             for position, (status, error, held) in self._entries.items():
                 if held is not None and held.content_hash == verdict.content_hash:
                     self._entries[position] = (status, error, verdict)
+
+    def note_decision(self, decision: Decision) -> ReviewCounts:
+        """Take a decision stored while this run is going into its counts; persist and
+        return them. The caller emits the events (docs/Events.md, decisions)."""
+        with self._cond:
+            self._decisions[decision.position] = decision.model_copy(deep=True)
+            return self._save_counts()
 
     def stop(self) -> None:
         """Stop taking clauses; in-flight ones finish. The review stays `running` for resume."""
@@ -556,7 +607,7 @@ class ReviewRun:
                 if self._pending or self._inflight or self._stopping:
                     return False
                 self._closed = True
-                counts = count(self._entries, self._cache_hits)
+                counts = count(self._entries, self._cache_hits, self._decisions)
                 result = {"counts": counts.model_dump(mode="json"), "cost_usd": self._cost}
                 # Status first: a client that sees RUN_FINISHED and reloads must see it.
                 self.ctx.store.reviews.set_status(self.review_id, "finished")
@@ -712,7 +763,7 @@ class ReviewRun:
         self.ctx.bus.emit(self.review_id, StateDeltaEvent(delta=delta))
 
     def _save_counts(self) -> ReviewCounts:
-        counts = count(self._entries, self._cache_hits)
+        counts = count(self._entries, self._cache_hits, self._decisions)
         self.review.counts = counts
         self.review.cost_usd = self._cost
         self.ctx.store.reviews.update_counts(self.review_id, counts, self._cost)

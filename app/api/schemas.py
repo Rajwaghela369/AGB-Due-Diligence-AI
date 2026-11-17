@@ -8,9 +8,10 @@ from core.schemas import Verdict
 from pydantic import BaseModel, Field
 
 from app.domain import (
+    Agreement,
     ClauseSpan,
     Decision,
-    DecisionAction,
+    DecisionEvent,
     Document,
     FeedbackReason,
     FeedbackVote,
@@ -18,6 +19,7 @@ from app.domain import (
     Review,
     Topic,
 )
+from app.domain import DecisionIn as DecisionIn  # re-exported: the PUT …/decision body
 
 
 class ErrorBody(BaseModel):
@@ -60,6 +62,12 @@ class ReviewOut(BaseModel):
     cache_hit_rate: float = 0.0
     budget_left: int | None = None
     waiting_reason: Literal["rate_limit", "daily_budget"] | None = None
+    # Progress through the lawyer's checklist, derived from `review.counts`:
+    decidable: int = 0  # findings with a verdict: potentially_void + uncertain + valid
+    progress: float = 0.0  # counts.decided / decidable; 0.0 when nothing is decidable
+    # „Prüfung abschließen“: no run is going, the review did not fail, and every void and
+    # review finding is decided (open_void == open_review == 0).
+    can_complete: bool = False
 
 
 class FindingsOut(BaseModel):
@@ -82,15 +90,29 @@ class FeedbackOut(BaseModel):
     scored_steps: list[str]  # e.g. ["judge", "retrieval"]; "clause" for a 👍
 
 
-class DecisionIn(BaseModel):
-    action: DecisionAction
-    corrected_verdict: Verdict | None = None
-    corrected_basis: list[str] = Field(default_factory=list)
-    note: str = Field(default="", max_length=2000)
+# `DecisionIn` (the PUT …/decision body) lives in app.domain, since the review service takes
+# it too; it is re-exported above and added to the web types by scripts/export_api_schema.py.
 
 
 class DecisionOut(BaseModel):
-    decision: Decision
+    """`PUT /reviews/{id}/clauses/{pos}/decision`: everything the UI updates in place."""
+
+    decision: Decision  # = finding.decision, kept for existing clients
+    finding: Finding  # the clause as it now stands (never `checking`)
+    review: ReviewOut  # new counts and progress
+
+
+class AuditOut(BaseModel):
+    """`GET /reviews/{id}/audit`: the decision history, oldest first."""
+
+    events: list[DecisionEvent]
+
+
+class AgreementOut(BaseModel):
+    """`GET /metrics/agreement`: lawyer agreement for one agent version."""
+
+    agreement: Agreement
+    current: bool  # the version is the one the service judges with now
 
 
 class StatuteOut(BaseModel):

@@ -15,14 +15,16 @@ from pydantic import BaseModel
 from pydantic.json_schema import models_json_schema
 
 from app.api import schemas
-from app.domain import StoredEvent
+from app.domain import DecisionIn, Interrupt, StoredEvent
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "web" / "src" / "api" / "schema.json"
 
 
 def contract_models() -> list[type[BaseModel]]:
-    """Return API models declared in schemas.py plus the persisted event envelope."""
+    """Return API models declared in schemas.py, plus from app.domain the persisted event
+    envelope, the `interrupt` event value, and the decision body (the review service takes
+    it too)."""
     api_models = [
         value
         for value in vars(schemas).values()
@@ -30,7 +32,8 @@ def contract_models() -> list[type[BaseModel]]:
         and issubclass(value, BaseModel)
         and value.__module__ == schemas.__name__
     ]
-    return sorted([*api_models, StoredEvent], key=lambda model: model.__name__)
+    domain_models = [StoredEvent, Interrupt, DecisionIn]
+    return sorted([*api_models, *domain_models], key=lambda model: model.__name__)
 
 
 def render_schema() -> str:

@@ -3,7 +3,26 @@
 from collections.abc import Iterator
 from typing import Protocol
 
-from app.domain import Finding, Review, StoredEvent, Topic
+from app.domain import (
+    Agreement,
+    DecisionEvent,
+    DecisionIn,
+    Finding,
+    Review,
+    Reviewer,
+    StoredEvent,
+    Topic,
+)
+
+
+class InvalidDecision(ValueError):
+    """The decision itself is malformed (API: 422 `invalid_decision`), as opposed to a plain
+    ValueError, which means the clause's state forbids it (409)."""
+
+
+class NotDecidable(ValueError):
+    """The clause has no verdict in this review (`queued`, `checking`, `failed`,
+    `out_of_scope`), so there is nothing to decide (API: 409 `not_decidable`)."""
 
 
 class ReviewService(Protocol):
@@ -41,6 +60,46 @@ class ReviewService(Protocol):
     def explain_clause(self, review_id: str, position: int) -> Finding:
         """Regenerate a void verdict's missing reasoning (one model call); ValueError if not
         applicable."""
+        ...
+
+    def decide(
+        self,
+        review_id: str,
+        position: int,
+        decision: DecisionIn,
+        reviewer: Reviewer,
+        *,
+        request_id: str | None = None,
+    ) -> Finding:
+        """Record a lawyer's decision and return the clause's finding as it now stands.
+
+        In order: validate; if the clause is `awaiting_decision`, resume it (the live graph's
+        checkpoint, or explain-only for a cached verdict) so a decided `potentially_void`
+        gets its reasoning in `Decision.reason_de`; store the decision and its
+        `DecisionEvent` atomically (`DecisionRepo.put`); score the feedback (accept 👍,
+        override 👎 `verdict_wrong` plus `basis_wrong` if the § changed, dismiss a
+        `dismissed` score); set the clause `done` if it was awaiting; recompute and store
+        the counts; append the events docs/Events.md defines for a decision. Synchronous:
+        the returned finding is final (never `checking`). Decisions on one clause are
+        serialised, so a second one waits for the first's resume and is then an ordinary
+        re-decision.
+
+        KeyError: unknown review or position. NotDecidable: the clause has no verdict.
+        InvalidDecision: override without `corrected_verdict`, `corrected_*` on accept or
+        dismiss, an override identical to the model's verdict and basis, or an unknown
+        chunk_id in `corrected_basis`. RuntimeError: shutting down. A model failure while
+        resuming is not an error: the decision is kept with `reason_unavailable=True`.
+        """
+        ...
+
+    def audit(self, review_id: str, position: int | None = None) -> list[DecisionEvent]:
+        """The review's decision history (one position's, if given), oldest first.
+        KeyError for an unknown review."""
+        ...
+
+    def agreement(self, agent_version: str | None = None) -> Agreement:
+        """Lawyer agreement for `agent_version`, or for this service's agent version when
+        None. A version without decisions gives zeros and `rate=None`."""
         ...
 
     def resume_running(self) -> int:
