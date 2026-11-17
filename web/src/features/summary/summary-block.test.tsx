@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useReviewer } from "../decisions/reviewer";
 
@@ -128,5 +128,42 @@ describe("SummaryBlock", () => {
       within(screen.getByRole("dialog")).getByRole("button", { name: "Exportieren" }),
     );
     await waitFor(() => expect(header).toBe(encodeURIComponent("Anna Müller")));
+  });
+});
+
+describe("SummaryBlock collapsing", () => {
+  const withFindings = {
+    ...summary,
+    counts: { ...summary.counts, findings: 7 },
+  } as ReviewSummary;
+
+  beforeEach(() => localStorage.clear());
+
+  it("starts collapsed once there are findings, keeps export reachable, and remembers the choice", () => {
+    const { unmount } = render(<SummaryBlock reviewId="review-1" summary={withFindings} />);
+    const block = screen.getByTestId("review-summary");
+    expect(block).toHaveAttribute("data-collapsed", "true");
+    expect(screen.queryByText("Wichtigste Risiken")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Exportieren" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Zusammenfassung ausklappen" }));
+    expect(screen.getByTestId("review-summary")).toHaveAttribute("data-collapsed", "false");
+    expect(screen.getByText("Wichtigste Risiken")).toBeInTheDocument();
+    expect(localStorage.getItem("agb.summary.collapsed")).toBe("0");
+    unmount();
+
+    render(<SummaryBlock reviewId="review-1" summary={withFindings} />);
+    expect(screen.getByTestId("review-summary")).toHaveAttribute("data-collapsed", "false");
+  });
+
+  it("stays expanded without findings and survives blocked storage", () => {
+    render(<SummaryBlock reviewId="review-1" summary={summary} />);
+    expect(screen.getByTestId("review-summary")).toHaveAttribute("data-collapsed", "false");
+    const spy = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+    render(<SummaryBlock reviewId="review-1" summary={withFindings} />);
+    expect(screen.getAllByTestId("review-summary")[1]).toHaveAttribute("data-collapsed", "true");
+    spy.mockRestore();
   });
 });
