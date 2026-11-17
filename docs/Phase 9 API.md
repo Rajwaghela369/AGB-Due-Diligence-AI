@@ -61,9 +61,12 @@ Rules every caller keeps:
    sending**, like any provider error. `NotImplementedError` (the Wave 0 stub) propagates.
 4. **Cache keys stay on the unmasked text.** `content_hash` is computed before masking,
    so verdicts, embeddings and retrievals cached before 9.A are still found.
-5. **Unmask only for display.** A generated answer (the explain reasoning, a chat
-   suggestion) quoting placeholders is restored with `masked.unmask(answer)` before it is
-   stored or shown. It is stored unmasked, in our own database, like the clause itself.
+5. **Unmask only for display, inside the same function.** `core.llm.complete` (and
+   `complete_stream`, per chunk, holding back a partial `<KIND_` at a chunk's end) return
+   the answer already restored with `masked.unmask(answer)`, so callers never see
+   placeholders and never hold the map. The answer is stored unmasked, in our own
+   database, like the clause itself. The Langfuse observation of that call records the
+   masked prompt and the masked answer.
 6. **Tests use strict fakes.** Every fake provider client calls
    `boundary().require_masked(payload)` on what it receives;
    `tests/test_phase9_contracts.py` shows one (`StrictClient`).
