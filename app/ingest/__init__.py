@@ -66,9 +66,7 @@ def ingest_file(data: bytes, filename: str, *, store) -> IngestResult:
         splitter_version=SPLITTER_VERSION,
         text_hash=content_hash("\n".join(clause.text for clause in clauses)),
     )
-    store.files.put(f"{document_id}.pdf", pdf_data)
-    texts = {clause.content_hash: clause.text for clause in clauses}
-    store.documents.save(document, clauses, texts)
+    _save_with_blob(store, document, clauses, f"{document_id}.pdf", pdf_data)
     store.documents.record_upload(document_id, filename, source_type, len(data))
     return IngestResult(document=document, clauses=clauses)
 
@@ -102,11 +100,25 @@ def ingest_text(text: str, filename: str, *, store) -> IngestResult:
         splitter_version=SPLITTER_VERSION,
         text_hash=content_hash(text),
     )
-    store.files.put(f"{document_id}.txt", data)
-    texts = {clause.content_hash: clause.text for clause in clauses}
-    store.documents.save(document, clauses, texts)
+    _save_with_blob(store, document, clauses, f"{document_id}.txt", data)
     store.documents.record_upload(document_id, filename, "text", len(data))
     return IngestResult(document=document, clauses=clauses)
+
+
+def _save_with_blob(store, document: Document, clauses: list, key: str, data: bytes) -> None:
+    """Blob first, then the document; then make sure the blob is still there.
+
+    A blob erasure queued by an earlier deletion or the orphan sweep may run between the
+    two writes: `put` was a no-op because the key existed, and the erasure (which waits for
+    this save under the deletion lock, `DeletionRepo.erase_blob`) removed it just before
+    the document was committed. Once the document is saved, no erasure touches the key
+    again, so one check afterwards suffices.
+    """
+    store.files.put(key, data)
+    texts = {clause.content_hash: clause.text for clause in clauses}
+    store.documents.save(document, clauses, texts)
+    if not store.files.exists(key):
+        store.files.put(key, data)
 
 
 from app.ingest.split import split  # noqa: E402  (public contract re-export)

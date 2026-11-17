@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import threading
 import uuid
+from collections.abc import Callable, Iterable
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -20,6 +21,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from app.domain import (
+    ActiveReviewError,
     DataClass,
     DeletionReason,
     DeletionReport,
@@ -28,6 +30,7 @@ from app.domain import (
     Principal,
     Tombstone,
     blob_key,
+    checkpoint_key,
 )
 
 if TYPE_CHECKING:
@@ -42,6 +45,36 @@ ERASURE_SETTING = "agb.erasure"
 # before the document that references them (docs/Phase 9 API.md, "The orphan sweep").
 ORPHAN_MIN_AGE = timedelta(hours=1)
 _EPOCH = datetime.min.replace(tzinfo=UTC)
+
+# Postgres: the advisory lock that orders deletions against ingest (9.B). A deletion, the
+# orphan sweep and a blob erasure take it exclusively; `PostgresDocumentRepo.save` takes it
+# shared, so saves never wait for each other. Under it, the reference counts a deletion
+# reads stay true until it commits: two deletions sharing a clause or a source file run
+# one after the other (the second sees the first's deletes, so neither leaks the shared
+# row), and an ingest that reuses a clause hash either committed before (the row is
+# shared) or starts after (and writes the row again).
+CONTENT_LOCK = 7_315_002  # arbitrary, fixed: "agb-check content references"
+
+# A failed erasure is retried after 1, 2, 4 … minutes, at most a day apart, so a task that
+# keeps failing (Langfuse down, a misconfigured eraser) never blocks newer ones.
+ERASURE_BACKOFF = timedelta(minutes=1)
+ERASURE_BACKOFF_MAX = timedelta(hours=24)
+
+# The sweep's tombstone: its subject is no document or review.
+SWEEP_SUBJECT = "orphans"
+SYSTEM_OWNER = "system"
+
+
+def erasure_backoff(attempts: int) -> timedelta:
+    """How long a task waits after its `attempts`-th failure."""
+    if attempts >= 20:  # 2**19 minutes is far past the cap already
+        return ERASURE_BACKOFF_MAX
+    return min(ERASURE_BACKOFF * 2 ** max(0, attempts - 1), ERASURE_BACKOFF_MAX)
+
+
+def _stem(key: str) -> str:
+    """The source hash a blob key (`{source_hash}.pdf|txt`) names."""
+    return key.rsplit(".", 1)[0]
 
 
 def _now() -> datetime:
@@ -120,7 +153,7 @@ class MemoryDeletionRepo:
             if review is None:
                 raise KeyError(review_id)
             if review.status in ("queued", "running"):
-                raise ValueError(review_id)
+                raise ActiveReviewError([review_id])
             report = self._review_report(review_id, dry_run=False)
             self._remove_reviews({review_id})
             tombstone = self._add_tombstone(
@@ -135,7 +168,12 @@ class MemoryDeletionRepo:
             report.erasures = self._queue(report.erasures, tombstone.tombstone_id)
             return report
 
-    def sweep_orphans(self) -> dict[str, int]:
+    def sweep_orphans(
+        self,
+        *,
+        blobs: Iterable[tuple[str, datetime]] = (),
+        summaries_before: datetime | None = None,
+    ) -> dict[str, int]:
         with self._lock:
             # Like Postgres: rows younger than ORPHAN_MIN_AGE may belong to an upload that
             # has written its clause texts (or blob) but not yet its document.
@@ -160,22 +198,100 @@ class MemoryDeletionRepo:
                     if name == "verdicts" and row is not None and row.trace_id:
                         traces.append(("trace", row.trace_id))
 
-            files = self.store.files
-            listed = getattr(files, "keys", None)
-            orphan_blobs: list[str] = []
-            if listed is not None:  # the FileStore protocol cannot list; see the report
-                live_blobs = {
-                    blob_key(document) for document in self.store.documents._documents.values()
-                }
-                born = getattr(files, "_created", {})
-                orphan_blobs = [
-                    key
-                    for key in listed()
-                    if key not in live_blobs and born.get(key, _EPOCH) < cutoff
-                ]
+            self._sweep_review_orphans(cutoff, summaries_before, removed)
+
+            live_blobs = {
+                blob_key(document) for document in self.store.documents._documents.values()
+            }
+            orphan_blobs = sorted(
+                {key for key, modified in blobs if key not in live_blobs and modified < cutoff}
+            )
             removed["blobs"] = len(orphan_blobs)
-            self.queue_erasures(traces + [("blob", key) for key in orphan_blobs])
+            tombstone_id = None
+            if any(removed.values()):
+                tombstone_id = self._add_tombstone(
+                    kind="sweep",
+                    subject_id=SWEEP_SUBJECT,
+                    owner_id=SYSTEM_OWNER,
+                    deleted_by=None,
+                    reason="orphan_sweep",
+                    removed=removed,
+                ).tombstone_id
+            planned = [
+                self._planned(target, key)
+                for target, key in traces + [("blob", key) for key in orphan_blobs]
+            ]
+            self._queue(planned, tombstone_id)
             return removed
+
+    def _sweep_review_orphans(
+        self, cutoff: datetime, summaries_before: datetime | None, removed: dict[str, int]
+    ) -> None:
+        """Rows of a review that no longer exists: written while its deletion ran."""
+        live = set(self.store.reviews._reviews)
+        reviews, events, decisions, feedback = (
+            self.store.reviews,
+            self.store.events,
+            self.store.decisions,
+            self.store.feedback,
+        )
+        for review_id in [key for key in reviews._clauses if key not in live]:
+            removed["review_clauses"] += len(reviews._clauses.pop(review_id))
+        for review_id in [key for key in reviews._topics if key not in live]:
+            reviews._topics.pop(review_id)
+        for review_id in [
+            key
+            for key, rows in events._events.items()
+            if key not in live and all((row.created_at or _now()) < cutoff for row in rows)
+        ]:
+            removed["run_events"] += len(events._events.pop(review_id))
+        doomed = [
+            key
+            for key, row in decisions._rows.items()
+            if key[0] not in live and (row.decided_at or _now()) < cutoff
+        ]
+        for key in doomed:
+            decisions._rows.pop(key)
+        removed["decisions"] += len(doomed)
+        kept = [row for row in decisions._events if row.review_id in live or row.at >= cutoff]
+        removed["decision_events"] += len(decisions._events) - len(kept)
+        decisions._events = kept
+        doomed_feedback = [
+            key
+            for key, row in feedback._rows.items()
+            if row.review_id not in live and (row.created_at or _now()) < cutoff
+        ]
+        for key in doomed_feedback:
+            feedback._rows.pop(key)
+        removed["feedback"] += len(doomed_feedback)
+
+        caches = self.store.caches
+        doomed_summaries = []
+        for key, review_id in caches._summary_reviews.items():
+            created = caches._summary_created.get(key, _now())
+            if review_id is None:
+                if summaries_before is not None and created < summaries_before:
+                    doomed_summaries.append(key)
+            elif review_id not in live and created < cutoff:
+                doomed_summaries.append(key)
+        for key in doomed_summaries:
+            self._drop_summary(key)
+        removed["summary_texts"] += len(doomed_summaries)
+
+    def _drop_summary(self, key: tuple[str, str]) -> None:
+        caches = self.store.caches
+        caches._summaries.pop(key, None)
+        caches._summary_reviews.pop(key, None)
+        caches._summary_created.pop(key, None)
+
+    def erase_blob(self, key: str, delete: Callable[[str], object]) -> bool:
+        with self._lock, self.store.documents._lock:
+            if any(
+                blob_key(document) == key for document in self.store.documents._documents.values()
+            ):
+                return False
+            delete(key)
+            return True
 
     def expired(self, data_class: DataClass, before: datetime, limit: int = 100) -> list[str]:
         with self._lock:
@@ -191,12 +307,12 @@ class MemoryDeletionRepo:
                         row["document_id"] == document_id for row in self.store.documents.uploads
                     )
                 }
+                # No timestamp at all (never in practice: save stamps created_at) is not
+                # "expired since the epoch": such a document is kept.
                 candidates = [
-                    (
-                        uploaded.get(document_id) or document.created_at or _EPOCH,
-                        document_id,
-                    )
+                    (at, document_id)
                     for document_id, document in self.store.documents._documents.items()
+                    if (at := uploaded.get(document_id) or document.created_at) is not None
                 ]
             elif data_class == "reviews":
                 candidates = [
@@ -223,9 +339,18 @@ class MemoryDeletionRepo:
                 candidates = [(at, key) for key, at in first.items()]
             return [key for at, key in sorted(candidates) if at < before][:limit]
 
-    def pending_erasures(self, limit: int = 100) -> list[ErasureTask]:
+    def pending_erasures(self, limit: int = 100, *, due: bool = False) -> list[ErasureTask]:
         with self._lock:
-            rows = [task for task in self._tasks if task.done_at is None]
+            now = _now()
+            rows = sorted(
+                (
+                    task
+                    for task in self._tasks
+                    if task.done_at is None
+                    and not (due and (task.next_attempt_at or task.requested_at) > now)
+                ),
+                key=lambda task: (task.next_attempt_at or task.requested_at, task.task_id),
+            )
             return [task.model_copy(deep=True) for task in rows[:limit]]
 
     def finish_erasure(self, task_id: int, error: str | None = None) -> None:
@@ -239,6 +364,8 @@ class MemoryDeletionRepo:
             task.last_error = error
             if error is None:
                 task.done_at = _now()
+            else:
+                task.next_attempt_at = _now() + erasure_backoff(task.attempts)
 
     def queue_erasures(self, tasks: list[tuple[ErasureTarget, str]]) -> list[ErasureTask]:
         with self._lock:
@@ -266,7 +393,7 @@ class MemoryDeletionRepo:
             if review.document_id == document_id and review.status in ("queued", "running")
         )
         if active:
-            raise ValueError(",".join(active))
+            raise ActiveReviewError(active)
         review_ids = sorted(
             review.review_id
             for review in self.store.reviews._reviews.values()
@@ -342,6 +469,11 @@ class MemoryDeletionRepo:
         removed["feedback"] = sum(
             row.review_id in review_ids for row in self.store.feedback._rows.values()
         )
+        removed["summary_texts"] = sum(
+            review_id in review_ids
+            for review_id in self.store.caches._summary_reviews.values()
+            if review_id is not None
+        )
         return removed
 
     def _external_tasks(self, review_ids: set[str], orphaned_hashes: set[str]) -> list[ErasureTask]:
@@ -351,12 +483,7 @@ class MemoryDeletionRepo:
             if review.trace_id:
                 tasks.append(self._planned("trace", review.trace_id))
                 tasks.append(self._planned("score", _stable_id("lawyer_agreement", review_id)))
-            positions = set(self.store.reviews._clauses.get(review_id, {}))
-            positions.update(pos for rid, pos in self.store.decisions._rows if rid == review_id)
-            tasks.extend(
-                self._planned("checkpoint", f"{review_id}:{position}")
-                for position in sorted(positions)
-            )
+            tasks.append(self._planned("checkpoint", checkpoint_key(review_id)))
             for (rid, position), decision in self.store.decisions._rows.items():
                 if rid == review_id and decision.action == "dismiss":
                     feedback_id = _stable_id(review_id, position, "decision")
@@ -442,6 +569,12 @@ class MemoryDeletionRepo:
             for key, row in self.store.feedback._rows.items()
             if row.review_id not in review_ids
         }
+        for key in [
+            key
+            for key, review_id in self.store.caches._summary_reviews.items()
+            if review_id in review_ids
+        ]:
+            self._drop_summary(key)
 
     def _add_tombstone(
         self,
@@ -481,7 +614,11 @@ class MemoryDeletionRepo:
             )
             if existing is None:
                 existing = planned.model_copy(
-                    update={"task_id": self._next_task_id, "tombstone_id": tombstone_id}
+                    update={
+                        "task_id": self._next_task_id,
+                        "tombstone_id": tombstone_id,
+                        "next_attempt_at": planned.requested_at,
+                    }
                 )
                 self._next_task_id += 1
                 self._tasks.append(existing)
@@ -508,30 +645,23 @@ class PostgresDeletionRepo:
 
     def plan_document(self, document_id: str) -> DeletionReport:
         with self._connect() as conn:
-            return self._document_report(conn, document_id, dry_run=True, lock=False)
+            report, _orphaned, _document = self._document_report(
+                conn, document_id, dry_run=True, lock=False
+            )
+            return report
 
     def delete_document(
         self, document_id: str, *, deleted_by: Principal | None, reason: DeletionReason
     ) -> DeletionReport:
         with self._connect() as conn:
-            report = self._document_report(conn, document_id, dry_run=False, lock=True)
-            document = _pg_row(
-                conn,
-                "select owner_id, source_hash, source_type from documents where document_id = %s",
-                (document_id,),
+            # Lock order: the content lock, then the document row, then its review rows
+            # (inside `_document_report`); ingest takes the content lock first as well.
+            conn.execute("select pg_advisory_xact_lock(%s)", (CONTENT_LOCK,))
+            report, orphaned, document = self._document_report(
+                conn, document_id, dry_run=False, lock=True
             )
-            if document is None:  # the locked report already checked; defensive for fake DBs
-                raise KeyError(document_id)
-            review_ids = report.review_ids
-            hashes = _pg_column(
-                conn,
-                "select distinct content_hash from document_clauses where document_id = %s",
-                (document_id,),
-            )
-            orphaned, _shared = self._partition_hashes(conn, document_id, hashes)
-
             conn.execute(f"set local {ERASURE_SETTING} = 'on'")
-            self._delete_review_rows(conn, review_ids)
+            self._delete_review_rows(conn, report.review_ids, report.removed)
             report.removed["uploads"] = _delete_count(
                 conn, "delete from uploads where document_id = %s", (document_id,)
             )
@@ -571,7 +701,7 @@ class PostgresDeletionRepo:
             if review is None:
                 raise KeyError(review_id)
             if review["status"] in ("queued", "running"):
-                raise ValueError(review_id)
+                raise ActiveReviewError([review_id])
             report = self._review_report(conn, review_id)
             conn.execute(f"set local {ERASURE_SETTING} = 'on'")
             self._delete_review_rows(conn, [review_id], report.removed)
@@ -592,36 +722,110 @@ class PostgresDeletionRepo:
             )
             return report
 
-    def sweep_orphans(self) -> dict[str, int]:
+    def sweep_orphans(
+        self,
+        *,
+        blobs: Iterable[tuple[str, datetime]] = (),
+        summaries_before: datetime | None = None,
+    ) -> dict[str, int]:
         removed = _counts()
+        listed = list(blobs)
         with self._connect() as conn:
-            eval_guard = self._eval_guard(conn, "candidate.content_hash")
+            # Exclusive, like a deletion: no ingest is between its clause texts and its
+            # clauses while the sweep decides what nothing references.
+            conn.execute("select pg_advisory_xact_lock(%s)", (CONTENT_LOCK,))
+            conn.execute(f"set local {ERASURE_SETTING} = 'on'")
+            unreferenced = (
+                " candidate.created_at < clock_timestamp() - interval '1 hour'"
+                " and not exists (select 1 from document_clauses d"
+                " where d.content_hash = candidate.content_hash)"
+                + self._eval_guard(conn, "candidate.content_hash")
+            )
             verdict_traces = _pg_column(
                 conn,
-                "select trace_id from verdicts candidate where trace_id is not null"
-                " and created_at < clock_timestamp() - interval '1 hour'"
-                " and not exists (select 1 from document_clauses d"
-                " where d.content_hash = candidate.content_hash)" + eval_guard,
+                "select distinct trace_id from verdicts candidate where trace_id is not null"
+                " and" + unreferenced,
             )
-            for table in ("verdicts", "embeddings", "retrievals", "topics"):
-                guard = self._eval_guard(conn, "candidate.content_hash")
+            for table in ("verdicts", "embeddings", "retrievals", "topics", "clause_texts"):
                 removed[table] = _delete_count(
-                    conn,
-                    f"delete from {table} candidate"
-                    " where candidate.created_at < clock_timestamp() - interval '1 hour'"
-                    " and not exists (select 1 from document_clauses d"
-                    " where d.content_hash = candidate.content_hash)" + guard,
+                    conn, f"delete from {table} candidate where" + unreferenced
                 )
-            guard = self._eval_guard(conn, "candidate.content_hash")
-            removed["clause_texts"] = _delete_count(
-                conn,
-                "delete from clause_texts candidate"
-                " where candidate.created_at < clock_timestamp() - interval '1 hour'"
-                " and not exists (select 1 from document_clauses d"
-                " where d.content_hash = candidate.content_hash)" + guard,
+            self._sweep_review_orphans(conn, summaries_before, removed)
+
+            cutoff = _now() - ORPHAN_MIN_AGE
+            old = sorted({key for key, modified in listed if modified < cutoff})
+            used = set(
+                _pg_column(
+                    conn,
+                    "select distinct source_hash from documents where source_hash = any(%s)",
+                    ([_stem(key) for key in old],),
+                )
+                if old
+                else []
             )
-            self._queue_conn(conn, [("trace", key) for key in verdict_traces], None)
+            orphan_blobs = [key for key in old if _stem(key) not in used]
+            removed["blobs"] = len(orphan_blobs)
+            tombstone_id = None
+            if any(removed.values()):
+                tombstone_id = self._insert_tombstone(
+                    conn,
+                    kind="sweep",
+                    subject_id=SWEEP_SUBJECT,
+                    owner_id=SYSTEM_OWNER,
+                    deleted_by=None,
+                    reason="orphan_sweep",
+                    removed=removed,
+                ).tombstone_id
+            self._queue_conn(
+                conn,
+                [("trace", key) for key in verdict_traces]
+                + [("blob", key) for key in orphan_blobs],
+                tombstone_id,
+            )
         return removed
+
+    @staticmethod
+    def _sweep_review_orphans(
+        conn: Any, summaries_before: datetime | None, removed: dict[str, int]
+    ) -> None:
+        """Rows of a review that no longer exists: a decision, feedback or event written
+        while its review was being deleted (these tables have no foreign key to reviews)."""
+        gone = " and not exists (select 1 from reviews r where r.review_id = candidate.review_id)"
+        old = " < clock_timestamp() - interval '1 hour'"
+        for table, stamp in (
+            ("decision_events", "at"),
+            ("decisions", "decided_at"),
+            ("feedback", "created_at"),
+            ("run_events", "created_at"),
+        ):
+            removed[table] += _delete_count(
+                conn, f"delete from {table} candidate where candidate.{stamp}" + old + gone
+            )
+        removed["summary_texts"] += _delete_count(
+            conn,
+            "delete from summary_texts candidate where candidate.review_id is not null"
+            " and candidate.created_at" + old + gone,
+        )
+        if summaries_before is not None:
+            removed["summary_texts"] += _delete_count(
+                conn,
+                "delete from summary_texts where review_id is null and created_at < %s",
+                (summaries_before,),
+            )
+
+    def erase_blob(self, key: str, delete: Callable[[str], object]) -> bool:
+        with self._connect() as conn:
+            # Held across the delete: an ingest cannot commit a document naming the key
+            # until the blob is gone, and then re-puts it (`app.ingest`).
+            conn.execute("select pg_advisory_xact_lock(%s)", (CONTENT_LOCK,))
+            if _pg_row(
+                conn,
+                "select 1 as found from documents where source_hash = %s limit 1",
+                (_stem(key),),
+            ):
+                return False
+            delete(key)
+            return True
 
     def expired(self, data_class: DataClass, before: datetime, limit: int = 100) -> list[str]:
         if limit < 1:
@@ -654,14 +858,14 @@ class PostgresDeletionRepo:
                 )
             return _pg_column(conn, sql, (before, limit))
 
-    def pending_erasures(self, limit: int = 100) -> list[ErasureTask]:
+    def pending_erasures(self, limit: int = 100, *, due: bool = False) -> list[ErasureTask]:
         with self._connect() as conn:
             rows = _pg_rows(
                 conn,
-                "select task_id, target, key, tombstone_id, requested_at, attempts,"
-                " last_error, done_at from erasure_tasks where done_at is null"
-                " order by requested_at, task_id limit %s",
-                (limit,),
+                f"select {_TASK_COLUMNS} from erasure_tasks where done_at is null"
+                " and (not %s or next_attempt_at <= clock_timestamp())"
+                " order by next_attempt_at, task_id limit %s",
+                (due, limit),
             )
         return [ErasureTask(**row) for row in rows]
 
@@ -674,8 +878,11 @@ class PostgresDeletionRepo:
                     (task_id,),
                 )
             else:
+                # `attempts` on the right is the value before this failure: 1, 2, 4 … minutes.
                 cursor = conn.execute(
-                    "update erasure_tasks set attempts = attempts + 1, last_error = %s"
+                    "update erasure_tasks set attempts = attempts + 1, last_error = %s,"
+                    " next_attempt_at = clock_timestamp() + least("
+                    "interval '1 minute' * power(2, least(attempts, 20)), interval '24 hours')"
                     " where task_id = %s and done_at is null",
                     (error, task_id),
                 )
@@ -703,7 +910,9 @@ class PostgresDeletionRepo:
 
     def _document_report(
         self, conn: Any, document_id: str, *, dry_run: bool, lock: bool
-    ) -> DeletionReport:
+    ) -> tuple[DeletionReport, list[str], dict]:
+        """The report, the orphaned hashes (computed once: the delete reuses them), and
+        the document row. With `lock`, the document and its review rows are locked."""
         suffix = " for update" if lock else ""
         document = _pg_row(
             conn,
@@ -713,19 +922,17 @@ class PostgresDeletionRepo:
         )
         if document is None:
             raise KeyError(document_id)
-        active = _pg_column(
+        # Locked: a decision or status change of one of them waits for this transaction.
+        reviews = _pg_rows(
             conn,
-            "select review_id from reviews where document_id = %s"
-            " and status in ('queued', 'running') order by review_id",
+            "select review_id, status from reviews where document_id = %s order by review_id"
+            + suffix,
             (document_id,),
         )
+        active = [row["review_id"] for row in reviews if row["status"] in ("queued", "running")]
         if active:
-            raise ValueError(",".join(active))
-        review_ids = _pg_column(
-            conn,
-            "select review_id from reviews where document_id = %s order by review_id",
-            (document_id,),
-        )
+            raise ActiveReviewError(active)
+        review_ids = [row["review_id"] for row in reviews]
         hashes = _pg_column(
             conn,
             "select distinct content_hash from document_clauses where document_id = %s",
@@ -754,7 +961,7 @@ class PostgresDeletionRepo:
         if not other_blob_users:
             suffix = "txt" if document["source_type"] == "text" else "pdf"
             tasks.append(("blob", f"{document['source_hash']}.{suffix}"))
-        return DeletionReport(
+        report = DeletionReport(
             document_id=document_id,
             review_ids=review_ids,
             dry_run=dry_run,
@@ -765,6 +972,7 @@ class PostgresDeletionRepo:
                 for target, key in _dedupe_pairs(tasks)
             ],
         )
+        return report, orphaned, document
 
     def _review_report(self, conn: Any, review_id: str) -> DeletionReport:
         tasks = self._external_tasks(conn, [review_id], [])
@@ -813,15 +1021,7 @@ class PostgresDeletionRepo:
                     (review_id,),
                 )
             )
-            positions = _pg_rows(
-                conn,
-                "select review_id, position from review_clauses where review_id = any(%s)"
-                " union select review_id, position from decisions where review_id = any(%s)",
-                (review_ids, review_ids),
-            )
-            tasks.extend(
-                ("checkpoint", f"{row['review_id']}:{row['position']}") for row in positions
-            )
+            tasks.extend(("checkpoint", checkpoint_key(review_id)) for review_id in review_ids)
             feedback_rows = _pg_rows(
                 conn,
                 "select feedback_id, observations from feedback where review_id = any(%s)",
@@ -919,13 +1119,22 @@ class PostgresDeletionRepo:
             if target is not None:
                 target[table] = count
 
-    @staticmethod
-    def _delete_content_rows(conn: Any, hashes: list[str], removed: dict[str, int]) -> None:
+    def _delete_content_rows(self, conn: Any, hashes: list[str], removed: dict[str, int]) -> None:
         if not hashes:
             return
+        # Re-checked in the statement itself (the document's own clauses are gone by now):
+        # the content lock already keeps ingest out, this keeps a missed lock harmless.
+        unreferenced = (
+            " and not exists (select 1 from document_clauses d"
+            " where d.content_hash = candidate.content_hash)"
+            + self._eval_guard(conn, "candidate.content_hash")
+        )
         for table in ("verdicts", "embeddings", "retrievals", "topics", "clause_texts"):
             removed[table] = _delete_count(
-                conn, f"delete from {table} where content_hash = any(%s)", (hashes,)
+                conn,
+                f"delete from {table} candidate where candidate.content_hash = any(%s)"
+                + unreferenced,
+                (hashes,),
             )
 
     @staticmethod
@@ -972,15 +1181,13 @@ class PostgresDeletionRepo:
                 conn,
                 "insert into erasure_tasks (target, key, tombstone_id) values (%s, %s, %s)"
                 " on conflict (target, key) where done_at is null do nothing"
-                " returning task_id, target, key, tombstone_id, requested_at, attempts,"
-                " last_error, done_at",
+                f" returning {_TASK_COLUMNS}",
                 (target, key, tombstone_id),
             )
             if row is None:
                 row = _pg_row(
                     conn,
-                    "select task_id, target, key, tombstone_id, requested_at, attempts,"
-                    " last_error, done_at from erasure_tasks"
+                    f"select {_TASK_COLUMNS} from erasure_tasks"
                     " where target = %s and key = %s and done_at is null",
                     (target, key),
                 )
@@ -1004,6 +1211,10 @@ class PostgresDeletionRepo:
 
 
 _CONTENT_TABLES = ("clause_texts", "verdicts", "embeddings", "retrievals", "topics")
+_TASK_COLUMNS = (
+    "task_id, target, key, tombstone_id, requested_at, attempts, last_error, done_at,"
+    " next_attempt_at"
+)
 _REVIEW_TABLES = (
     "review_clauses",
     "run_events",

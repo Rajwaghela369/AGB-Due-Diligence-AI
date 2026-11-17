@@ -723,7 +723,7 @@ def test_build_app_wires_the_real_service_contract(monkeypatch, with_langfuse):
     config = {"review": {"max_concurrency": 2}}
     langfuse = object()
     limiter = object()
-    judge = SimpleNamespace(agent_version="agent-wired")
+    judge = SimpleNamespace(agent_version="agent-wired", forget=lambda key: 0)
     service = SimpleNamespace(
         limiter=limiter,
         resume_running=lambda: 0,

@@ -79,6 +79,14 @@ class MemoryFileStore:
         with self._lock:
             return sorted(self._blobs)
 
+    def list_keys(self, prefix: str = "") -> list[tuple[str, datetime]]:
+        with self._lock:
+            return sorted(
+                (key, self._created.get(key) or _now())
+                for key in self._blobs
+                if key.startswith(prefix)
+            )
+
 
 class MemoryDocumentRepo:
     def __init__(self) -> None:
@@ -219,6 +227,9 @@ class MemoryCacheRepo:
         self._retrieval_created: dict[tuple[str, str, str], datetime] = {}
         self._topic_created: dict[tuple[str, str], datetime] = {}
         self._summaries: dict[tuple[str, str], str] = {}
+        # Phase 9: the review each paragraph was written for (None: before Phase 9).
+        self._summary_reviews: dict[tuple[str, str], str | None] = {}
+        self._summary_created: dict[tuple[str, str], datetime] = {}
 
     def get_embedding(self, content_hash: str, model: str) -> list[float] | None:
         with self._lock:
@@ -263,9 +274,15 @@ class MemoryCacheRepo:
         with self._lock:
             return self._summaries.get((decision_set_hash, model))
 
-    def put_summary_text(self, decision_set_hash: str, model: str, text: str) -> None:
+    def put_summary_text(
+        self, decision_set_hash: str, model: str, text: str, *, review_id: str | None = None
+    ) -> None:
         with self._lock:
-            self._summaries.setdefault((decision_set_hash, model), text)
+            key = (decision_set_hash, model)
+            if key not in self._summaries:
+                self._summaries[key] = text
+                self._summary_reviews[key] = review_id
+                self._summary_created[key] = _now()
 
 
 class MemoryReviewRepo:

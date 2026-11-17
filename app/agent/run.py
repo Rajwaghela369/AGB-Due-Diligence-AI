@@ -103,6 +103,12 @@ class Judge(Protocol):
         """
         ...
 
+    def forget(self, key: str) -> int:
+        """Erase checkpoint threads for a deletion (Phase 9, 9.B): one thread id, or every
+        thread of a review with `"{review_id}:*"`. Returns how many threads went; raises
+        on any checkpointer failure, so the erasure task stays pending and is retried."""
+        ...
+
 
 def make_judge(
     app_config: dict[str, Any] | None = None,
@@ -322,5 +328,62 @@ def make_judge(
     judge_clause.agent_version = version  # type: ignore[attr-defined]
     judge_clause.interrupts = checkpointer is not None  # type: ignore[attr-defined]
     judge_clause.explain_only = explain_only  # type: ignore[attr-defined]
+
+    def erase(key: str) -> int:
+        """Strict, unlike `forget` above: a deletion must learn that a thread survived."""
+        if checkpointer is None:
+            return 0  # nothing was ever checkpointed
+        return erase_threads(checkpointer, key)
+
     judge_clause.resume = resume  # type: ignore[attr-defined]
+    judge_clause.forget = erase  # type: ignore[attr-defined]
     return judge_clause  # type: ignore[return-value]
+
+
+_CHECKPOINT_TABLES = ("checkpoint_writes", "checkpoint_blobs", "checkpoints")
+
+
+def erase_threads(saver: Any, key: str) -> int:
+    """Delete the LangGraph threads `key` names: a thread id, or a prefix ending in `*`
+    (`"{review_id}:*"`: every clause thread of a review). Returns the number of threads.
+
+    The Postgres saver deletes by prefix in SQL, over LangGraph's three checkpoint tables,
+    on its own connection handling (the same as its `delete_thread`). Any other saver is
+    enumerated (the in-memory one directly, others through `list`) and each thread is
+    deleted with the public `delete_thread`. Errors propagate.
+    """
+    if not key.endswith("*"):
+        saver.delete_thread(key)
+        return 1
+    prefix = key[:-1]
+    if type(saver).__module__.startswith("langgraph.checkpoint.postgres"):
+        pattern = _like_prefix(prefix)
+        with saver._cursor() as cursor:
+            threads: set[str] = set()
+            for table in _CHECKPOINT_TABLES:
+                cursor.execute(
+                    f"delete from {table} where thread_id like %s escape '\\' returning thread_id",
+                    (pattern,),
+                )
+                threads.update(row["thread_id"] for row in cursor.fetchall())
+        return len(threads)
+    found = _saver_threads(saver)
+    doomed = sorted(thread for thread in found if thread.startswith(prefix))
+    for thread in doomed:
+        saver.delete_thread(thread)
+    return len(doomed)
+
+
+def _like_prefix(prefix: str) -> str:
+    escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return escaped + "%"
+
+
+def _saver_threads(saver: Any) -> set[str]:
+    storage = getattr(saver, "storage", None)
+    if isinstance(storage, dict):  # InMemorySaver: thread -> namespaces
+        threads = set(storage)
+        threads.update(key[0] for key in getattr(saver, "writes", {}))
+        threads.update(key[0] for key in getattr(saver, "blobs", {}))
+        return {str(thread) for thread in threads}
+    return {str(item.config["configurable"]["thread_id"]) for item in saver.list(None)}

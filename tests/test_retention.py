@@ -168,8 +168,50 @@ def test_tasks_past_the_attempt_limit_are_reported_and_stay_pending(caplog) -> N
 
     run_sweep(service, settings, NOW)
     assert "has failed" not in caplog.text
+    # The next run comes after the backoff (a night later in production).
+    task = service.store.deletion._tasks[0]
+    assert task.next_attempt_at > task.requested_at
+    task.next_attempt_at = task.requested_at
     report = run_sweep(service, settings, NOW)
 
     assert report.erasures_failed == 1
     assert service.store.deletion.pending_erasures()[0].attempts == 2
     assert "has failed 2 times" in caplog.text
+
+
+def test_the_sweep_lists_the_file_store_and_erases_old_orphan_blobs() -> None:
+    service = seeded_service()
+    store = service.store
+    store.files.put("crashed-upload.pdf", b"pdf")
+    store.files._created["crashed-upload.pdf"] = datetime.now(UTC) - timedelta(hours=2)
+
+    report = run_sweep(service, RetentionSettings(), NOW)
+
+    assert report.orphans_removed["blobs"] == 1
+    assert not store.files.exists("crashed-upload.pdf")
+    assert store.files.exists("old-document.pdf")  # still referenced
+
+
+def test_the_sweep_pages_through_more_due_tasks_than_one_batch() -> None:
+    service = seeded_service()
+    deleted: list[str] = []
+    service.tracer = SimpleNamespace(
+        api=SimpleNamespace(trace=SimpleNamespace(delete=deleted.append))
+    )
+    service.store.deletion.queue_erasures([("trace", f"t{n}") for n in range(25)])
+
+    report = run_sweep(service, RetentionSettings(batch=10), NOW)
+
+    assert report.erasures_done == 25 and len(deleted) == 25
+
+
+def test_legacy_summaries_expire_with_the_reviews_period() -> None:
+    service = seeded_service()
+    store = service.store
+    store.caches.put_summary_text("legacy", "model", "Alt.")
+    store.caches._summary_created[("legacy", "model")] = NOW - timedelta(days=40)
+
+    run_sweep(service, RetentionSettings(enabled=False, reviews_days=30), NOW)
+    assert store.caches.get_summary_text("legacy", "model") == "Alt."  # retention off
+    report = run_sweep(service, RetentionSettings(enabled=True, reviews_days=30), NOW)
+    assert report.orphans_removed["summary_texts"] == 1

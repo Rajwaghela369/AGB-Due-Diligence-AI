@@ -18,12 +18,15 @@ from typing import TYPE_CHECKING, Any
 
 from core.logging import get_logger
 
-from app.domain import SweepReport
+from app.domain import ActiveReviewError, SweepReport
 
 if TYPE_CHECKING:
     from app.review.service import Service
 
 log = get_logger("review.retention")
+
+_MAX_PAGES = 1_000  # a bound, not a quota: a night's erasures fit many times over
+_ALL = 1_000_000
 
 
 @dataclass(frozen=True)
@@ -76,7 +79,7 @@ def run_sweep(
                 service.store.deletion.delete_document(
                     document_id, deleted_by=None, reason="retention"
                 )
-            except (KeyError, ValueError):
+            except (KeyError, ActiveReviewError):
                 continue  # another sweep won, or a review became active after the query
             expired_documents += 1
 
@@ -85,7 +88,7 @@ def run_sweep(
         for review_id in service.store.deletion.expired("reviews", before, settings.batch):
             try:
                 service.store.deletion.delete_review(review_id, deleted_by=None, reason="retention")
-            except (KeyError, ValueError):
+            except (KeyError, ActiveReviewError):
                 continue
             expired_reviews += 1
 
@@ -95,11 +98,26 @@ def run_sweep(
         service.store.deletion.queue_erasures([("trace", trace_id) for trace_id in trace_ids])
         expired_traces = len(trace_ids)
 
-    orphans_removed = service.store.deletion.sweep_orphans()
-    erasures_done, erasures_failed = service.process_erasures(settings.batch)
-    # A task past the attempt limit stays pending (it is retried every night), but each
-    # run names it, so an operator learns that a trace or blob still exists.
-    for task in service.store.deletion.pending_erasures(settings.batch):
+    # Summary paragraphs written before Phase 9 carry no review id; they live as long as
+    # a review would (docs/Phase 9 API.md, "Open points").
+    summaries_before = None
+    if settings.enabled and settings.reviews_days is not None:
+        summaries_before = instant - timedelta(days=settings.reviews_days)
+    orphans_removed = service.store.deletion.sweep_orphans(
+        blobs=service.store.files.list_keys(), summaries_before=summaries_before
+    )
+    # Every due task, page by page: a failure moves its task behind the backoff, so the
+    # pages advance and a run cannot loop on the same task.
+    erasures_done = erasures_failed = 0
+    for _page in range(_MAX_PAGES):
+        done, failed = service.process_erasures(settings.batch)
+        erasures_done += done
+        erasures_failed += failed
+        if done + failed < settings.batch:
+            break
+    # A task past the attempt limit stays pending (it is retried after its backoff), but
+    # each run names it, so an operator learns that a trace or blob still exists.
+    for task in service.store.deletion.pending_erasures(_ALL):
         if task.attempts >= settings.erasure_max_attempts:
             log.error(
                 "erasure task %s (%s %s) has failed %s times: %s",
@@ -170,6 +188,10 @@ def _production_service():
         caches=store.caches,
         checkpointer=checkpoint.saver,
     )
+    # Deletion (9.B) erases a review's checkpoint threads (`{review_id}:*`) on this saver
+    # through `judge.forget`; without it every checkpoint erasure would stay pending.
+    if not callable(getattr(judge, "forget", None)):
+        raise RuntimeError("the judge cannot erase checkpoints")
     service = build_service(
         store,
         judge,

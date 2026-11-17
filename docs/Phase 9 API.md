@@ -167,16 +167,25 @@ call.
      `Feedback.observations`): the scores sit on verdict traces that may be shared and stay;
    - `dataset_item`: `correction_id(content_hash, review_id)` for every decision of a
      deleted review that produced a lawyer correction;
-   - `checkpoint`: `"{review_id}:{position}"` for every clause of a deleted review that
-     was ever `awaiting_decision`.
+   - `checkpoint`: `"{review_id}:*"` (`checkpoint_key`) once per deleted review: the
+     judge's `forget` deletes every LangGraph thread `{review_id}:{position}` by prefix.
 6. **Append the tombstone** (`deletion_tombstones`): kind, subject id, owner, who
    (`Principal.owner_id`, or null for retention), authenticated, reason, the `removed`
    counts, and the time. No filename, no clause text, no note.
 
-After the commit, `Service.delete_document` runs `process_erasures` once. Each task is
-idempotent: `FileStore.delete` returns False for a missing key, and Langfuse's 404 counts
-as done. A failure increments `attempts` and stays pending; after
-`retention.erasure_max_attempts` it is still pending and reported by the sweep.
+After the commit, `Service.delete_document` runs the deletion's own tasks at once. Each
+task is idempotent: `FileStore.delete` returns False for a missing key, and Langfuse's 404
+counts as done. A blob task re-checks under the content lock that no document names the
+key again (`DeletionRepo.erase_blob`). A failure increments `attempts`, stays pending and
+waits for `next_attempt_at` (1, 2, 4 … minutes, at most a day); the worker reads due tasks
+by `next_attempt_at`, so failing tasks never block newer ones. After
+`retention.erasure_max_attempts` a task is still pending and reported by the sweep.
+
+Concurrency (Postgres): a deletion, the orphan sweep and a blob erasure take the advisory
+lock `CONTENT_LOCK` exclusively, `DocumentRepo.save` takes it shared. Two deletions sharing
+a clause or a source file therefore run one after the other, and an ingest that reuses a
+clause hash either committed before the deletion read its reference counts or starts
+after it. A review created for a document whose deletion just committed is refused.
 
 `delete_review` is the same without steps 1's document lock (the review must be idle), the
 document's own rows, or step 3 (verdicts belong to documents, not reviews).
@@ -251,10 +260,14 @@ presign(key, expires_in) -> str | None   # None: cannot sign (local); the API pr
 
 ## Open points
 
-- **Summary paragraphs and `review_id`.** `CacheRepo.put_summary_text` (Phase 8) has no
-  `review_id`. Migration 006 adds the nullable column; once Phase 8 Wave 1 is merged, the
-  summary should pass it (a one-line contract change), so step 4 can find every paragraph.
-  Until then the sweep deletes `summary_texts` rows with a null `review_id` older than
-  `reviews_days`.
+- **Summary paragraphs and `review_id`.** `CacheRepo.put_summary_text` takes the
+  `review_id` (review fixes), so step 4 finds every new paragraph. Rows written before
+  have a null `review_id`; the sweep deletes those older than `reviews_days`.
+- **Shared verdicts and their trace.** A verdict's `trace_id` is the trace of the review
+  that first judged the clause. Deleting that review erases the whole trace, also when
+  the verdict is kept for another document: its spans hold the deleted document's other
+  clauses, and erasure wins over debugging. The kept verdict's `trace_id` then points at
+  nothing, and feedback scores other reviews put on it are gone in Langfuse (the
+  database rows stay).
 - **`uploads.owner_id`** is added and backfilled, but `DocumentRepo.record_upload` does not
   take an owner yet; Wave 2 adds the parameter.

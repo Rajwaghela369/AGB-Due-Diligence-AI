@@ -169,7 +169,7 @@ def _model_lock(key: tuple[str, str]) -> threading.Lock:
 
 
 def _cached_or_generate(
-    service: Service, decision_hash: str, model_name: str, canonical: str
+    service: Service, decision_hash: str, model_name: str, canonical: str, review_id: str
 ) -> str | None:
     """Single-flight one decision set and briefly suppress repeated failed calls."""
     key = (decision_hash, model_name)
@@ -189,7 +189,10 @@ def _cached_or_generate(
             _failure_until[key] = now + _FAILURE_TTL_SECONDS
             return None
         _failure_until.pop(key, None)
-        service.store.caches.put_summary_text(decision_hash, model_name, generated)
+        # The review id makes the paragraph deletable with its review (Phase 9, 9.B).
+        service.store.caches.put_summary_text(
+            decision_hash, model_name, generated, review_id=review_id
+        )
         return service.store.caches.get_summary_text(decision_hash, model_name)
 
 
@@ -282,7 +285,9 @@ def _build_summary(service: Service, review_id: str, *, allow_model_call: bool) 
     if settings.llm_enabled and service.summary_model is not None:
         cached = service.store.caches.get_summary_text(decision_hash, model_name)
         if cached is None and allow_model_call:
-            cached = _cached_or_generate(service, decision_hash, model_name, canonical)
+            cached = _cached_or_generate(
+                service, decision_hash, model_name, canonical, review.review_id
+            )
         if cached:
             recommendation = cached
             from_llm = True
