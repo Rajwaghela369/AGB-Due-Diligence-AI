@@ -1,15 +1,25 @@
 """What the API asks of the review layer. The runner implements it; the API depends only on this."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 from typing import Protocol
+
+from core.llm import Completion
 
 from app.domain import (
     Agreement,
+    ChatEvent,
+    ChatIn,
     DecisionEvent,
     DecisionIn,
+    ExportBlocker,
+    ExportBlockReason,
+    ExportFile,
+    ExportFormat,
     Finding,
     Review,
     Reviewer,
+    ReviewSummary,
     StoredEvent,
     Topic,
 )
@@ -23,6 +33,54 @@ class InvalidDecision(ValueError):
 class NotDecidable(ValueError):
     """The clause has no verdict in this review (`queued`, `checking`, `failed`,
     `out_of_scope`), so there is nothing to decide (API: 409 `not_decidable`)."""
+
+
+class ExportBlocked(ValueError):
+    """A final (non-draft) export is not allowed yet (API: 409 `export_blocked`).
+
+    `reason="undecided"`: `blocking` lists every void or review finding without a decision,
+    in document order. `reason="not_finished"`: the review is queued, running or failed;
+    `blocking` is empty. A draft export (`draft=True`) is never blocked.
+    """
+
+    def __init__(self, reason: ExportBlockReason, blocking: list[ExportBlocker]) -> None:
+        self.reason: ExportBlockReason = reason
+        self.blocking = list(blocking)
+        super().__init__(
+            f"export blocked ({reason}): {len(self.blocking)} undecided finding(s)"
+            if reason == "undecided"
+            else f"export blocked ({reason})"
+        )
+
+
+class NotChattable(ValueError):
+    """The clause has no verdict in this review, so there is no finding to discuss
+    (API: 409 `not_chattable`)."""
+
+
+@dataclass(frozen=True)
+class ChatChunk:
+    """One piece of a streamed model answer (Phase 8, 8.C).
+
+    `text` is the next piece of the answer (may be empty). The last chunk carries the
+    usage. A chunk with `error` ends the stream: the provider failed, which is data, not an
+    exception, as in `core.llm`. Only `core.budget.BudgetExceeded` propagates.
+    """
+
+    text: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    model: str = ""
+    error: str | None = None
+
+
+# One generating call for the summary's recommendation paragraph: (system, user) → the
+# completion, the shape of `core.llm.complete`; never raises on a provider error.
+SummaryModel = Callable[[str, str], Completion]
+
+# One streamed generating call for the rewrite chat: (system, user) → chunks, the last of
+# which carries the usage (or an error).
+ChatModel = Callable[[str, str], Iterator[ChatChunk]]
 
 
 class ReviewService(Protocol):
@@ -100,6 +158,73 @@ class ReviewService(Protocol):
     def agreement(self, agent_version: str | None = None) -> Agreement:
         """Lawyer agreement for `agent_version`, or for this service's agent version when
         None. A version without decisions gives zeros and `rate=None`."""
+        ...
+
+    def summary(self, review_id: str) -> ReviewSummary:
+        """The review's summary block (Phase 8, 8.A), deterministic from its findings and
+        current decisions (`app.domain.ReviewSummary` defines every field).
+
+        With `summary.llm_enabled` the recommendation paragraph comes from one model call,
+        cached by (`decision_set_hash`, model) in `CacheRepo.get_summary_text`, so asking
+        again for the same decision set costs nothing. A model failure is not an error: the
+        rule-based text is returned with `recommendation_from_llm=False` and nothing is
+        cached. Works in every review status (a running review gives a draft summary).
+
+        KeyError: unknown review.
+        """
+        ...
+
+    def export(
+        self,
+        review_id: str,
+        fmt: ExportFormat,
+        *,
+        draft: bool = False,
+        reviewer: Reviewer,
+    ) -> ExportFile:
+        """Render the DD export (Phase 8, 8.B) in `fmt`: the memo as DOCX (from the template
+        in `export.template_dir`) or Markdown, or the findings as CSV (docs/Phase 8 API.md
+        has the layouts). Built only from the summary, the findings, the decisions and the
+        statute texts; no model call (the summary's cached LLM paragraph is reused if there
+        is one, never generated here). `reviewer` is who exports, named on the cover.
+
+        Without `draft`: raises ExportBlocked while the review is not finished or
+        awaiting_decisions, or while a void or review finding is undecided. With `draft`:
+        never blocked; every format is marked `DRAFT_WATERMARK` and `ExportFile.draft` is
+        True. The output is deterministic for a given review, decisions, reviewer and date
+        (golden files), apart from the DOCX's own zip timestamps, which are fixed.
+
+        KeyError: unknown review.
+        """
+        ...
+
+    def chat(
+        self,
+        review_id: str,
+        position: int,
+        message: ChatIn,
+        reviewer: Reviewer,
+        *,
+        request_id: str | None = None,
+    ) -> Iterator[ChatEvent]:
+        """Ask for a rewrite of one finding's clause (Phase 8, 8.C): one streamed model call.
+
+        Validates when called, before anything is streamed: KeyError for an unknown review
+        or position, NotChattable for a clause without a verdict, RuntimeError when no chat
+        model is configured or the service is shutting down, `core.budget.BudgetExceeded`
+        when the daily budget is spent. Then returns an iterator of the events
+        docs/Events.md defines under "Rewrite chat": RUN_STARTED, TEXT_MESSAGE_START,
+        TEXT_MESSAGE_CONTENT…, TEXT_MESSAGE_END, CUSTOM chat_result (`ChatResult`),
+        RUN_FINISHED. A model failure after the start is a RUN_ERROR event, never an
+        exception.
+
+        The prompt's context is the clause (quoted as data between the explain step's
+        `<klausel>` delimiters, defanged the same way), the cited statute texts, the
+        decision and the reasoning; `message.history` is quoted as data too. The answer is
+        capped at `chat.max_output_tokens` and `chat.max_answer_chars`; its suggestion is
+        diffed word by word against the original clause. Nothing is stored and the review's
+        cost is unchanged; the result carries its own tokens and cost.
+        """
         ...
 
     def resume_running(self) -> int:

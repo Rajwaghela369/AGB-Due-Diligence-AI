@@ -5,3 +5,4 @@ import type { Finding, Review } from "./types.gen";
 
 export type ClauseStatus = Finding["status"];
 export type ReviewStatus = Review["status"];
+export type FindingStatus = Finding["finding_status"];

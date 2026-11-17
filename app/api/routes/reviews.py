@@ -4,6 +4,7 @@ from fastapi import APIRouter, Header, Request
 from fastapi.responses import StreamingResponse
 
 from app.agent.run import ExplainFailed
+from app.api.costs import cache_hit_rate, cost_eur, pricing, wall_time_ms
 from app.api.deps import state
 from app.api.errors import ApiError
 from app.api.schemas import Finding, FindingsOut, ReviewIn, ReviewOut
@@ -14,15 +15,16 @@ router = APIRouter()
 
 
 def review_out(request: Request, review: Review) -> ReviewOut:
-    """A review with the limiter's state and the lawyer's progress (see `ReviewOut`)."""
+    """A review with the limiter's state, the lawyer's progress, and cost and time (see
+    `ReviewOut`)."""
     dependencies = state(request)
     counts = review.counts
-    cache_hit_rate = counts.cache_hits / counts.total if counts.total else 0.0
+    prices = pricing(dependencies.settings)
     decidable = counts.potentially_void + counts.uncertain + counts.valid
     limiter = getattr(dependencies, "limiter", None)
     return ReviewOut(
         review=review,
-        cache_hit_rate=cache_hit_rate,
+        cache_hit_rate=cache_hit_rate(review),
         budget_left=limiter.remaining_today() if limiter is not None else None,
         waiting_reason=limiter.waiting_reason() if limiter is not None else None,
         decidable=decidable,
@@ -30,6 +32,9 @@ def review_out(request: Request, review: Review) -> ReviewOut:
         can_complete=review.status in ("finished", "awaiting_decisions")
         and counts.open_void == 0
         and counts.open_review == 0,
+        pricing=prices,
+        cost_eur=cost_eur(review, prices),
+        wall_time_ms=wall_time_ms(review),
     )
 
 
