@@ -157,6 +157,24 @@ class MemoryVerdictRepo:
             )
             return row.model_copy(deep=True)
 
+    def set_reason(
+        self,
+        content_hash: str,
+        agent_version: str,
+        reason_de: str,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> ClauseVerdict | None:
+        """Fill in a missing reasoning; None if the verdict is gone or already has one."""
+        with self._lock:
+            row = self._rows.get((content_hash, agent_version))
+            if row is None or not row.reason_unavailable:
+                return None
+            row.reason_de, row.reason_unavailable = reason_de, False
+            row.input_tokens += input_tokens
+            row.output_tokens += output_tokens
+            return row.model_copy(deep=True)
+
 
 class MemoryCacheRepo:
     def __init__(self) -> None:

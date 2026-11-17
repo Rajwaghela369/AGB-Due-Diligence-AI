@@ -354,6 +354,26 @@ class PostgresVerdictRepo(_Repo):
             )
         return _verdict(row)
 
+    def set_reason(
+        self,
+        content_hash: str,
+        agent_version: str,
+        reason_de: str,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> ClauseVerdict | None:
+        """Fill in a missing reasoning; None if the verdict is gone or already has one."""
+        with self._connect() as conn:
+            row = _row(
+                conn,
+                "update verdicts set reason_de = %s, reason_unavailable = false,"
+                " input_tokens = input_tokens + %s, output_tokens = output_tokens + %s"
+                " where content_hash = %s and agent_version = %s and reason_unavailable"
+                f" returning {_VERDICT_COLUMNS}",
+                (reason_de, input_tokens, output_tokens, content_hash, agent_version),
+            )
+        return _verdict(row) if row else None
+
 
 class PostgresCacheRepo(_Repo):
     def get_embedding(self, content_hash: str, model: str) -> list[float] | None:

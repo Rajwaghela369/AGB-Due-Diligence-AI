@@ -43,10 +43,22 @@ class ClauseFailed(RuntimeError):
     """The clause could not be judged. The message is shown to the lawyer."""
 
 
+class ExplainFailed(ClauseFailed):
+    """The explanation could not be regenerated; the stored verdict is untouched."""
+
+
 class Judge(Protocol):
     agent_version: str
 
     def __call__(self, clause: ClauseSpan, *, parent: Any = None) -> ClauseVerdict: ...
+
+    def explain_only(self, clause: ClauseSpan, verdict: ClauseVerdict) -> ClauseVerdict:
+        """Re-run only the explanation of a void verdict whose reasoning is missing.
+
+        One Gemini call through the limiter, retried on 429/5xx by `core.llm`. Returns
+        the verdict with `reason_de` set and the extra tokens added; raises `ExplainFailed`.
+        """
+        ...
 
 
 def make_judge(
@@ -64,6 +76,7 @@ def make_judge(
     The compiled LangGraph is immutable; per-clause tracing is supplied in its
     invocation state, so worker threads do not share trace context.
     """
+    from core.budget import BudgetExceeded
     from core.config import load_yaml
     from core.llm import complete, decide
     from core.paths import CONFIGS
@@ -180,5 +193,46 @@ def make_judge(
         except Exception as exc:  # noqa: BLE001 - runner needs a clause-scoped failure
             raise ClauseFailed(f"{type(exc).__name__}: {exc}") from exc
 
+    def explain_only(clause: ClauseSpan, verdict: ClauseVerdict) -> ClauseVerdict:
+        """The explain step alone: find the cited norms again (cached, no Gemini), then explain."""
+        from app.agent.graph import AGB_CONTROL_PARAGRAPHS
+
+        retrieval = app_config.get("retrieval", {})
+        top_k = int(retrieval.get("top_k", 10))
+        depth = int(retrieval.get("search_depth", 20))
+        wanted = set(verdict.legal_basis)
+        try:
+            found = retrieve_clause(clause.text, route_clause(clause.text), retrieval, depth=depth)
+            cited = [c for c in found[:top_k] if c.chunk_id in wanted]
+            if len(cited) < len(wanted):  # the judge may have found it on the wider retry
+                wider = {
+                    **retrieval,
+                    "always_include_paragraphs": list(AGB_CONTROL_PARAGRAPHS),
+                    "search_depth": depth * 2,
+                }
+                found = retrieve_clause(clause.text, "", wider, depth=wider["search_depth"])
+                cited = [c for c in found[: int(top_k * 1.5)] if c.chunk_id in wanted]
+            if not cited:
+                raise ExplainFailed("Die Rechtsgrundlage wurde nicht mehr gefunden.")
+            completion = explain_clause({"title": clause.heading, "text": clause.text}, cited)
+        except (ExplainFailed, BudgetExceeded):
+            raise  # a closed limiter (shutdown) is not a provider failure
+        except Exception as exc:  # noqa: BLE001 - retrieval or routing broke
+            raise ExplainFailed(f"{type(exc).__name__}: {exc}") from exc
+        if completion.error:
+            raise ExplainFailed(str(completion.error))
+        reason = prompts.read_reason(completion.text)
+        if not reason:
+            raise ExplainFailed("Das Modell lieferte keine Begründung.")
+        return verdict.model_copy(
+            update={
+                "reason_de": reason,
+                "reason_unavailable": False,
+                "input_tokens": verdict.input_tokens + completion.input_tokens,
+                "output_tokens": verdict.output_tokens + completion.output_tokens,
+            }
+        )
+
     judge_clause.agent_version = version  # type: ignore[attr-defined]
+    judge_clause.explain_only = explain_only  # type: ignore[attr-defined]
     return judge_clause  # type: ignore[return-value]

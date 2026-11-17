@@ -202,6 +202,67 @@ def count(entries: dict[int, tuple], cache_hits: int) -> ReviewCounts:
     return counts
 
 
+def regenerate_reason(
+    ctx: RunContext, review: Review, clause: ClauseSpan, verdict: ClauseVerdict
+) -> ClauseVerdict:
+    """Re-run the explanation of one void verdict and store it on the shared verdict row.
+
+    Under the verdict's single-flight lock, so two clicks cost one Gemini call: the
+    second finds the reason in place and gets ValueError (409). The new state is
+    emitted as a STATE_DELTA; for a finished review the terminal event is appended
+    again so a follower that reconnects still ends on RUN_FINISHED/RUN_ERROR.
+    """
+    key = (verdict.content_hash, verdict.agent_version)
+    with ctx.flights.hold(key):
+        current = ctx.store.verdicts.get(*key)
+        if current is None or current.verdict != "potentially_void":
+            raise ValueError("Nur bei als unwirksam eingestuften Klauseln möglich.")
+        if not current.reason_unavailable:
+            raise ValueError("Für diese Klausel liegt bereits eine Begründung vor.")
+        explained = ctx.judge.explain_only(clause, current)  # raises ExplainFailed
+        stored = ctx.store.verdicts.set_reason(
+            key[0],
+            key[1],
+            explained.reason_de,
+            explained.input_tokens - current.input_tokens,
+            explained.output_tokens - current.output_tokens,
+        )
+        if stored is None:
+            raise ValueError("Für diese Klausel liegt bereits eine Begründung vor.")
+        with ctx.verdict_cache_lock:
+            ctx.verdict_cache[key] = stored
+        statuses = ctx.store.reviews.clause_statuses(review.review_id)
+        status, error = statuses.get(clause.position, ("done", None))
+        events: list = [
+            StateDeltaEvent(
+                delta=[
+                    {
+                        "op": "replace",
+                        "path": f"/clauses/{clause.position}",
+                        "value": clause_entry(status, error, stored),
+                    }
+                ]
+            )
+        ]
+        if review.status == "finished":
+            events.append(
+                RunFinishedEvent(
+                    thread_id=review.document_id,
+                    run_id=review.review_id,
+                    result={
+                        "counts": review.counts.model_dump(mode="json"),
+                        "cost_usd": review.cost_usd,
+                    },
+                )
+            )
+        elif review.status == "failed":
+            events.append(
+                RunErrorEvent(message=review.error or "the review failed", code="review_failed")
+            )
+        ctx.bus.emit_many(review.review_id, events)
+        return stored
+
+
 # --- the run ------------------------------------------------------------------
 
 
