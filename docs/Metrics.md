@@ -117,6 +117,12 @@ their counts; a high rate from a handful of decisions is not yet evidence of qua
 Re-deciding a finding replaces its current contribution rather than adding another sample.
 No figures are recorded until the Phase 7 gate supplies reviewed decisions.
 
+| Agent version | Kept | Overridden | Dismissed | Agreement |
+| --- | ---: | ---: | ---: | ---: |
+| _Recorded after the Phase 7 gate_ | — | — | — | — |
+
+Run `make agreement` with `DATABASE_URL` set to print the live table for recording here.
+
 Known properties of the inherited answer key, each with consequences for how a number
 reads — see `docs/Phase 2 Results.md`:
 

@@ -12,6 +12,7 @@ import { reviewProgress } from "./layout";
 export function StepBar(props: { review: Review; progress?: ReviewProgress | null }) {
   const { t } = useTranslation();
   const { done, total } = reviewProgress(props.review);
+  const awaitingDecisions = props.review.status === "awaiting_decisions";
   const finished = ["upload", "read", "split"] as const;
   return (
     <ol
@@ -31,7 +32,15 @@ export function StepBar(props: { review: Review; progress?: ReviewProgress | nul
         </Fragment>
       ))}
       <li className="flex items-center gap-2 font-medium" aria-current="step">
-        <Loader2 aria-hidden="true" size={13} className="animate-spin motion-reduce:animate-none" />
+        {awaitingDecisions ? (
+          <Check aria-hidden="true" size={13} className="text-valid" />
+        ) : (
+          <Loader2
+            aria-hidden="true"
+            size={13}
+            className="animate-spin motion-reduce:animate-none"
+          />
+        )}
         {t("viewer.steps.check", { done, total })}
         <progress
           className="h-1.5 w-24 overflow-hidden rounded-full accent-[var(--accent)]"
@@ -40,6 +49,11 @@ export function StepBar(props: { review: Review; progress?: ReviewProgress | nul
           aria-label={t("viewer.steps.check", { done, total })}
         />
       </li>
+      {awaitingDecisions && (
+        <li role="status" className="text-muted-foreground">
+          {t("viewer.steps.awaitingDecisions")}
+        </li>
+      )}
       {props.progress?.waiting_reason && (
         <li role="status" className="flex items-center gap-1 text-muted-foreground">
           <Hourglass aria-hidden="true" size={13} />
