@@ -29,6 +29,7 @@ from app.ingest import IngestError
 from app.review.deliverable import deliverable_settings
 from app.review.feedback import FeedbackService
 from app.review.limiter import build_limiter
+from app.review.retention import RetentionSettings
 from app.review.service import build_service
 from app.store.memory import memory_store
 
@@ -698,7 +699,7 @@ def test_build_app_wires_the_real_service_contract(monkeypatch, with_langfuse):
             langfuse_secret_key="sk" if with_langfuse else "",
         ),
     )
-    monkeypatch.setattr("app.store.migrate.apply_pending", lambda: None)
+    monkeypatch.setattr("app.store.migrate.apply_pending", lambda **_: None)
 
     def fake_file_store(root=None):
         calls["files_root"] = root
@@ -775,6 +776,7 @@ def test_build_app_wires_the_real_service_contract(monkeypatch, with_langfuse):
             "deliverable": deliverable_settings(config),
             "summary_model": summary_model,
             "chat_model": chat_model,
+            "retention_policy": RetentionSettings(),
             "max_concurrency": 2,
             "prices": {"input": 0.0, "output": 0.0},
         },

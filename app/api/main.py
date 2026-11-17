@@ -18,10 +18,21 @@ from app.api.errors import install_error_handlers
 from app.api.middleware import BodyLimitMiddleware, RequestLogMiddleware
 from app.api.rate_limit import IpRateLimiter
 from app.api.readiness import Probe, Readiness
-from app.api.routes import chat, decisions, documents, export, health, metrics, reviews
+from app.api.routes import (
+    auth,
+    chat,
+    decisions,
+    deletion,
+    documents,
+    export,
+    health,
+    metrics,
+    reviews,
+)
 from app.api.routes import feedback as feedback_routes
 from app.api.routes import statutes as statute_routes
 from app.api.routes.export import EXPORT_DRAFT_HEADER
+from app.domain import DEFAULT_OWNER_ID
 from app.review.interfaces import ReviewService
 from app.store.interfaces import Store
 
@@ -75,7 +86,7 @@ def create_app(
     application.add_middleware(
         CORSMiddleware,
         allow_origins=list(setting(settings, "api.cors_origins", [])),
-        allow_methods=["GET", "POST", "PUT"],
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["Content-Type", "Last-Event-ID", REVIEWER_HEADER],
         expose_headers=["X-Request-Id", "Content-Disposition", EXPORT_DRAFT_HEADER],
         max_age=600,
@@ -94,6 +105,8 @@ def create_app(
         decisions,
         export,
         chat,
+        deletion,
+        auth,
         metrics,
         statute_routes,
         health,
@@ -119,6 +132,8 @@ def build_app() -> FastAPI:
 
     from core import langfuse_client
     from core.config import load_yaml
+    from core.masking import configure as configure_masking
+    from core.masking import masker_from_config
     from core.paths import CONFIGS, PROCESSED, ROOT
     from core.routing import classify_topics
     from core.settings import load_settings
@@ -131,17 +146,21 @@ def build_app() -> FastAPI:
     from app.review.deliverable import deliverable_settings
     from app.review.feedback import FeedbackService
     from app.review.limiter import build_limiter, review_settings
+    from app.review.retention import retention_settings
     from app.review.service import build_service
     from app.review.summary import make_summary_model
-    from app.store.files import LocalFileStore
     from app.store.migrate import apply_pending
     from app.store.postgres import postgres_store
+    from app.store.s3 import file_store_from_config
 
     config = load_yaml(CONFIGS / "app.yaml")
     configure_logging(json_logs=True)
     environment = load_settings()
-    apply_pending()
-    store = postgres_store(LocalFileStore(ROOT / setting(config, "files.root", "stores/files")))
+    # Phase 9 (9.A): the masking boundary every model and trace payload passes through;
+    # None (masking off) until `privacy.masking.enabled`.
+    configure_masking(masker_from_config(config))
+    apply_pending(default_owner=setting(config, "auth.default_owner", DEFAULT_OWNER_ID))
+    store = postgres_store(file_store_from_config(config, ROOT))
     statutes = load_statutes(PROCESSED / "bgb_chunks.jsonl")
     limiter = build_limiter(config)
     tracer = None
@@ -172,6 +191,7 @@ def build_app() -> FastAPI:
         deliverable=deliverable_settings(config),
         summary_model=make_summary_model(config, limiter=limiter),
         chat_model=make_chat_model(config, limiter=limiter),
+        retention_policy=retention_settings(config),
         **review_settings(config),
     )
     service.corrections = corrections

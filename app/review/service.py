@@ -17,6 +17,7 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator
+from datetime import datetime
 from typing import Any
 
 from ag_ui.core import (
@@ -41,17 +42,21 @@ from app.domain import (
     Decision,
     DecisionEvent,
     DecisionIn,
+    DeletionReport,
     ExportFile,
     ExportFormat,
     Finding,
+    Principal,
     Review,
     Reviewer,
     ReviewSummary,
     StoredEvent,
+    SweepReport,
     Topic,
     decided_verdict,
     kept_model_verdict,
 )
+from app.review import deletion, retention
 from app.review.chat import start_chat
 from app.review.corrections import Corrections
 from app.review.deliverable import DeliverableSettings
@@ -59,6 +64,7 @@ from app.review.events import TERMINAL_TYPES, EventBus, Subscription, serialise
 from app.review.export import build_export
 from app.review.interfaces import ChatModel, InvalidDecision, NotDecidable, SummaryModel
 from app.review.limiter import DEFAULT_MAX_CONCURRENCY
+from app.review.retention import RetentionSettings
 from app.review.runner import (
     KeyedLocks,
     ReviewRun,
@@ -103,6 +109,7 @@ class Service:
         deliverable: DeliverableSettings | None = None,
         summary_model: SummaryModel | None = None,
         chat_model: ChatModel | None = None,
+        retention_policy: RetentionSettings | None = None,
     ) -> None:
         if max_concurrency < 1:
             raise ValueError("max_concurrency must be at least 1")
@@ -119,6 +126,10 @@ class Service:
         self.deliverable = deliverable or DeliverableSettings()
         self.summary_model = summary_model
         self.chat_model = chat_model
+        # Phase 9 (9.C): the retention periods `sweep` applies; the Langfuse client
+        # (`tracer`) is also what deletion erases traces, scores and dataset items with.
+        self.retention = retention_policy or RetentionSettings()
+        self.tracer = tracer
         self.bus = EventBus(store, recheck_seconds=recheck_seconds)
         self._ctx = RunContext(
             store=store,
@@ -675,6 +686,22 @@ class Service:
         """See `ReviewService.chat`; implemented in `app.review.chat`."""
         return start_chat(self, review_id, position, message, reviewer, request_id=request_id)
 
+    # --- Phase 9: deletion and retention, implemented in their slice's modules ----
+
+    def delete_document(
+        self, document_id: str, principal: Principal, *, dry_run: bool = False
+    ) -> DeletionReport:
+        """See `ReviewService.delete_document`; implemented in `app.review.deletion`."""
+        return deletion.delete_document(self, document_id, principal, dry_run=dry_run)
+
+    def process_erasures(self, limit: int = 100) -> tuple[int, int]:
+        """See `ReviewService.process_erasures`; implemented in `app.review.deletion`."""
+        return deletion.process_erasures(self, limit)
+
+    def sweep(self, now: datetime | None = None) -> SweepReport:
+        """See `ReviewService.sweep`; implemented in `app.review.retention`."""
+        return retention.run_sweep(self, self.retention, now)
+
     def resume_running(self) -> int:
         """Resume reviews left `running` by a restart; returns how many were resumed.
 
@@ -813,6 +840,7 @@ def build_service(
     deliverable: DeliverableSettings | None = None,
     summary_model: SummaryModel | None = None,
     chat_model: ChatModel | None = None,
+    retention_policy: RetentionSettings | None = None,
 ) -> Service:
     """The one review service of a process; see `app.review.limiter.review_settings`."""
     return Service(
@@ -832,4 +860,5 @@ def build_service(
         deliverable=deliverable,
         summary_model=summary_model,
         chat_model=chat_model,
+        retention_policy=retention_policy,
     )

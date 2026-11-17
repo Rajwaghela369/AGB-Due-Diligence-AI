@@ -9,6 +9,7 @@ API from FastAPI's threadpool, so implementations must be thread-safe.
 """
 
 from collections.abc import Iterator
+from datetime import datetime
 from typing import Protocol
 
 from app.domain import (
@@ -16,23 +17,52 @@ from app.domain import (
     ClauseSpan,
     ClauseStatus,
     ClauseVerdict,
+    DataClass,
     Decision,
     DecisionEvent,
+    DeletionReason,
+    DeletionReport,
     Document,
+    ErasureTarget,
+    ErasureTask,
     Feedback,
+    Principal,
     Review,
     ReviewCounts,
     ReviewStatus,
     StoredEvent,
+    Tombstone,
 )
 
 
 class FileStore(Protocol):
-    """Immutable blobs addressed by key. Local disk now, EU object storage in Phase 9."""
+    """Immutable blobs addressed by key: local disk (`app.store.files.LocalFileStore`) or
+    S3-compatible EU object storage (`app.store.s3.S3FileStore`, Phase 9, 9.D), chosen by
+    `files.backend`. docs/Phase 9 Design.md, "Storage", explains the choice.
+    """
 
-    def put(self, key: str, data: bytes) -> str: ...  # returns key; no-op if present
-    def get(self, key: str) -> bytes: ...
+    def put(self, key: str, data: bytes) -> str:
+        """Store `data` under `key`; returns key. A no-op if the key exists: the first
+        writer's blob stands (S3: a conditional `If-None-Match: *` put)."""
+        ...
+
+    def get(self, key: str) -> bytes:
+        """The blob; FileNotFoundError if absent."""
+        ...
+
     def exists(self, key: str) -> bool: ...
+
+    def delete(self, key: str) -> bool:
+        """Remove the blob (Phase 9, 9.B); True if it existed, False if it was already
+        gone, so a retried erasure task is harmless. Only the deletion worker calls it,
+        after its database transaction committed and no document references the key."""
+        ...
+
+    def presign(self, key: str, expires_in: int) -> str | None:
+        """A time-limited URL the browser can download the blob from directly, valid for
+        `expires_in` seconds; None when the backend cannot sign (local disk), and the API
+        then proxies the bytes itself. Does not check that the key exists."""
+        ...
 
 
 class DocumentRepo(Protocol):
@@ -54,7 +84,9 @@ class DocumentRepo(Protocol):
 
     def clauses(self, document_id: str) -> list[ClauseSpan]: ...
 
-    def list(self, limit: int = 100) -> list[Document]: ...
+    def list(self, limit: int = 100, *, owner_id: str | None = None) -> list[Document]:
+        """Newest first; only `owner_id`'s documents if given (Phase 9, 9.E)."""
+        ...
 
 
 class VerdictRepo(Protocol):
@@ -212,6 +244,65 @@ class FeedbackRepo(Protocol):
     def for_review(self, review_id: str) -> dict[int, Feedback]: ...  # latest per position
 
 
+class DeletionRepo(Protocol):
+    """Reference-counted deletion (Phase 9, 9.B) and the retention queries (9.C).
+
+    docs/Phase 9 API.md, "Deletion", is the exact contract; in short: a document's own rows
+    go in one transaction; content-addressed rows (clause texts, verdicts, embeddings,
+    retrievals, topics) go only when no other document's clauses (nor the evaluation
+    `clauses` table) reference their content hash; whatever lives outside the database is
+    queued in the same transaction as `ErasureTask`s and finished after the commit. Every
+    deletion appends one `Tombstone`. Raises KeyError for an unknown id and ValueError while
+    a review of the document is queued or running.
+    """
+
+    def plan_document(self, document_id: str) -> DeletionReport:
+        """What `delete_document` would remove now (`dry_run=True`); changes nothing."""
+        ...
+
+    def delete_document(
+        self, document_id: str, *, deleted_by: Principal | None, reason: DeletionReason
+    ) -> DeletionReport:
+        """Delete the document and everything only it used, in one transaction."""
+        ...
+
+    def delete_review(
+        self, review_id: str, *, deleted_by: Principal | None, reason: DeletionReason
+    ) -> DeletionReport:
+        """Delete one review (events, clause rows, decisions and their events, feedback,
+        its trace and checkpoints); the document and the shared caches stay."""
+        ...
+
+    def sweep_orphans(self) -> dict[str, int]:
+        """Remove content-addressed rows no document references any more (left by a crash
+        or by rows written before 9.B), and queue blobs no document's `blob_key` names.
+        Returns the counts by `DELETION_TABLES` key (plus "blobs")."""
+        ...
+
+    def expired(self, data_class: DataClass, before: datetime, limit: int = 100) -> list[str]:
+        """Ids past retention: "files" → document ids whose last upload is before `before`;
+        "reviews" → idle review ids that finished before it; "traces" → Langfuse trace ids
+        of reviews and verdicts created before it and not yet erased. Oldest first."""
+        ...
+
+    def pending_erasures(self, limit: int = 100) -> list[ErasureTask]:
+        """Erasure tasks not done yet, oldest first."""
+        ...
+
+    def finish_erasure(self, task_id: int, error: str | None = None) -> None:
+        """Mark a task done (`error=None`) or count a failed attempt."""
+        ...
+
+    def queue_erasures(self, tasks: list[tuple[ErasureTarget, str]]) -> list[ErasureTask]:
+        """Queue erasures outside a deletion (expired traces); an already pending
+        (target, key) is reused."""
+        ...
+
+    def tombstones(self, subject_id: str | None = None) -> list[Tombstone]:
+        """The deletion trail, oldest first; one subject's if given."""
+        ...
+
+
 class Store(Protocol):
     """Everything the service needs, bundled so it can be injected as one dependency."""
 
@@ -224,3 +315,4 @@ class Store(Protocol):
     decisions: DecisionRepo
     feedback: FeedbackRepo
     metrics: MetricsRepo
+    deletion: DeletionRepo

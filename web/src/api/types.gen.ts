@@ -349,6 +349,7 @@ export type CreatedAt1 = string | null;
 export type DocumentId = string;
 export type Error1 = string | null;
 export type FinishedAt = string | null;
+export type OwnerId = string;
 export type ReviewId3 = string;
 export type Scope = ("liability" | "warranty")[];
 export type StartedAt = string | null;
@@ -356,13 +357,39 @@ export type Status1 = "queued" | "running" | "finished" | "awaiting_decisions" |
 export type TraceId1 = string | null;
 export type WaitingReason = ("rate_limit" | "daily_budget") | null;
 export type WallTimeMs = number | null;
+export type Code = string;
+export type Message1 = string;
+export type ReviewIds = string[];
+export type PendingErasures = number;
+export type DocumentId1 = string | null;
+export type DryRun = boolean;
+export type Attempts = number;
+export type DoneAt = string | null;
+export type Key = string;
+export type LastError = string | null;
+export type RequestedAt = string;
+export type Target = "blob" | "trace" | "score" | "dataset_item" | "checkpoint";
+export type TaskId = number;
+export type TombstoneId = string | null;
+export type Erasures = ErasureTask[];
+export type ReviewIds1 = string[];
+export type At1 = string;
+export type Authenticated1 = boolean;
+export type DeletedBy = string | null;
+export type Kind = "document" | "review";
+export type OwnerId1 = string;
+export type Reason = "user" | "retention" | "orphan_sweep";
+export type SubjectId = string;
+export type TombstoneId1 = string;
 export type CacheHitRate1 = number;
 export type CostEur1 = number | null;
 export type CreatedAt2 = string | null;
-export type DocumentId1 = string;
+export type DocumentId2 = string;
 export type Filename = string;
+export type OwnerId2 = string;
 export type PageCount = number | null;
 export type ParserVersion = string;
+export type SourceHash = string | null;
 export type SourceType = "pdf" | "docx" | "text";
 export type SplitterVersion = string;
 export type TextHash = string;
@@ -370,16 +397,16 @@ export type WallTimeMs1 = number | null;
 export type Items = DocumentListItem[];
 export type Clauses = ClauseSpan[];
 export type Reused = boolean;
-export type Code = string;
-export type Message1 = string;
+export type Code1 = string;
+export type Message2 = string;
 export type Heading1 = string | null;
 export type Number1 = string | null;
 export type Position5 = number;
 export type Verdict1 = "valid" | "potentially_void" | "uncertain";
 export type Blocking = ExportBlocker[];
-export type Code1 = string;
-export type Message2 = string;
-export type Reason = "undecided" | "not_finished";
+export type Code2 = string;
+export type Message3 = string;
+export type Reason1 = "undecided" | "not_finished";
 export type Comment1 = string;
 export type CorrectedBasis3 = string[];
 export type CorrectedVerdict3 = ("valid" | "potentially_void" | "uncertain") | null;
@@ -397,8 +424,13 @@ export type Question = string;
 export type Verdict2 = "valid" | "potentially_void" | "uncertain";
 export type Filename1 = string;
 export type Text3 = string;
+export type AuthEnabled = boolean;
+export type Authenticated2 = boolean;
+export type Name = string | null;
+export type OwnerId3 = string;
+export type Roles = string[];
 export type Ready1 = boolean;
-export type DocumentId2 = string;
+export type DocumentId3 = string;
 export type Scope1 = ("liability" | "warranty")[];
 export type AgentVersion5 = string;
 export type Accepted = number;
@@ -414,7 +446,7 @@ export type PotentiallyVoid1 = number;
 export type Uncertain1 = number;
 export type Valid1 = number;
 export type DecisionSetHash = string;
-export type DocumentId3 = string;
+export type DocumentId4 = string;
 export type Draft = boolean;
 export type Filename2 = string;
 export type GeneratedAt = string;
@@ -439,7 +471,7 @@ export type Position8 = number;
 export type Verdict3 = "valid" | "potentially_void" | "uncertain";
 export type TopRisks = SummaryFinding[];
 export type Findings2 = SummaryFinding[];
-export type Key = string;
+export type Key1 = string;
 export type Label = string;
 export type VoidGroups = SummaryGroup[];
 export type ChunkId = string;
@@ -470,6 +502,8 @@ export interface AGBCheckAPIContracts {
   ChatResult?: ChatResult;
   DecisionIn?: DecisionIn;
   DecisionOut?: DecisionOut;
+  DeletionBlockedBody?: DeletionBlockedBody;
+  DeletionOut?: DeletionOut;
   DocumentList?: DocumentList;
   DocumentListItem?: DocumentListItem;
   DocumentOut?: DocumentOut;
@@ -482,6 +516,7 @@ export interface AGBCheckAPIContracts {
   Interrupt?: Interrupt;
   PasteIn?: PasteIn;
   Pricing?: Pricing;
+  PrincipalOut?: PrincipalOut;
   Ready?: Ready;
   ReviewIn?: ReviewIn;
   ReviewOut?: ReviewOut;
@@ -844,6 +879,7 @@ export interface Review {
   document_id: DocumentId;
   error?: Error1;
   finished_at?: FinishedAt;
+  owner_id?: OwnerId;
   review_id: ReviewId3;
   scope: Scope;
   started_at?: StartedAt;
@@ -878,6 +914,90 @@ export interface ReviewCounts {
   [k: string]: unknown;
 }
 /**
+ * 409 `deletion_blocked` from `DELETE /documents/{id}`: a review is still running.
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "DeletionBlockedBody".
+ */
+export interface DeletionBlockedBody {
+  code: Code;
+  message: Message1;
+  review_ids?: ReviewIds;
+  [k: string]: unknown;
+}
+/**
+ * `DELETE /documents/{id}`: what went (or, with `dry_run=true`, would go).
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "DeletionOut".
+ */
+export interface DeletionOut {
+  pending_erasures?: PendingErasures;
+  report: DeletionReport;
+  [k: string]: unknown;
+}
+/**
+ * What a deletion removed (or, with `dry_run`, would remove).
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "DeletionReport".
+ */
+export interface DeletionReport {
+  document_id?: DocumentId1;
+  dry_run?: DryRun;
+  erasures?: Erasures;
+  kept_shared?: KeptShared;
+  removed?: Removed;
+  review_ids?: ReviewIds1;
+  tombstone?: Tombstone | null;
+  [k: string]: unknown;
+}
+/**
+ * One outbox row: something outside the database to delete after the commit.
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "ErasureTask".
+ */
+export interface ErasureTask {
+  attempts?: Attempts;
+  done_at?: DoneAt;
+  key: Key;
+  last_error?: LastError;
+  requested_at: RequestedAt;
+  target: Target;
+  task_id: TaskId;
+  tombstone_id?: TombstoneId;
+  [k: string]: unknown;
+}
+export interface KeptShared {
+  [k: string]: number;
+}
+export interface Removed {
+  [k: string]: number;
+}
+/**
+ * What the audit trail keeps of a deletion: who deleted what, when and why, and how
+ * many rows went; no content (no filename, no clause text, no note). Append-only.
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "Tombstone".
+ */
+export interface Tombstone {
+  at: At1;
+  authenticated?: Authenticated1;
+  deleted_by?: DeletedBy;
+  kind: Kind;
+  owner_id: OwnerId1;
+  reason: Reason;
+  removed?: Removed1;
+  subject_id: SubjectId;
+  tombstone_id: TombstoneId1;
+  [k: string]: unknown;
+}
+export interface Removed1 {
+  [k: string]: number;
+}
+/**
  * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
  * via the `definition` "DocumentList".
  */
@@ -904,10 +1024,12 @@ export interface DocumentListItem {
  */
 export interface Document {
   created_at?: CreatedAt2;
-  document_id: DocumentId1;
+  document_id: DocumentId2;
   filename: Filename;
+  owner_id?: OwnerId2;
   page_count?: PageCount;
   parser_version: ParserVersion;
+  source_hash?: SourceHash;
   source_type: SourceType;
   splitter_version: SplitterVersion;
   text_hash: TextHash;
@@ -931,8 +1053,8 @@ export interface DocumentOut {
  * via the `definition` "ErrorBody".
  */
 export interface ErrorBody {
-  code: Code;
-  message: Message1;
+  code: Code1;
+  message: Message2;
   [k: string]: unknown;
 }
 /**
@@ -943,9 +1065,9 @@ export interface ErrorBody {
  */
 export interface ExportBlockedBody {
   blocking?: Blocking;
-  code: Code1;
-  message: Message2;
-  reason: Reason;
+  code: Code2;
+  message: Message3;
+  reason: Reason1;
   [k: string]: unknown;
 }
 /**
@@ -1026,6 +1148,20 @@ export interface PasteIn {
   [k: string]: unknown;
 }
 /**
+ * `GET /me`: who the server takes the caller to be.
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "PrincipalOut".
+ */
+export interface PrincipalOut {
+  auth_enabled: AuthEnabled;
+  authenticated: Authenticated2;
+  name?: Name;
+  owner_id: OwnerId3;
+  roles?: Roles;
+  [k: string]: unknown;
+}
+/**
  * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
  * via the `definition` "Ready".
  */
@@ -1042,7 +1178,7 @@ export interface Checks {
  * via the `definition` "ReviewIn".
  */
 export interface ReviewIn {
-  document_id: DocumentId2;
+  document_id: DocumentId3;
   scope?: Scope1;
   [k: string]: unknown;
 }
@@ -1061,7 +1197,7 @@ export interface ReviewSummary {
   agent_version: AgentVersion5;
   counts: SummaryCounts;
   decision_set_hash: DecisionSetHash;
-  document_id: DocumentId3;
+  document_id: DocumentId4;
   draft: Draft;
   filename: Filename2;
   generated_at: GeneratedAt;
@@ -1134,7 +1270,7 @@ export interface SummaryFinding {
  */
 export interface SummaryGroup {
   findings: Findings2;
-  key: Key;
+  key: Key1;
   label: Label;
   [k: string]: unknown;
 }

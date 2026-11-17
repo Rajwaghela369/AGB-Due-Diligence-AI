@@ -5,6 +5,7 @@ nothing of ours but `core`. These shapes are the contract the parallel Phase 5
 work streams meet at, so a field changes here first and everywhere else after.
 """
 
+import hashlib
 from datetime import datetime
 from typing import Any, Literal
 
@@ -12,6 +13,10 @@ from core.schemas import Verdict
 from pydantic import BaseModel, Field, model_validator
 
 # --- documents and clauses --------------------------------------------------
+
+# Phase 9 (9.E): the owner of every row written without a login, and of every row that
+# existed before migration 006. `auth.default_owner` in configs/app.yaml overrides it.
+DEFAULT_OWNER_ID = "local"
 
 SourceType = Literal["pdf", "docx", "text"]
 Topic = Literal["liability", "warranty"]
@@ -56,6 +61,21 @@ class Document(BaseModel):
     splitter_version: str
     text_hash: str
     created_at: datetime | None = None
+    # Phase 9 (9.E): who owns it. Before login every document belongs to the configured
+    # default owner (`auth.default_owner`, DEFAULT_OWNER_ID); migration 006 gives existing
+    # rows that owner.
+    owner_id: str = Field(default_factory=lambda: DEFAULT_OWNER_ID)
+    # sha256 of the uploaded bytes: the stem of the stored file's key (`blob_key`). Equal
+    # to `document_id` for the default owner; another owner's document of the same bytes
+    # has its own id (`document_id_for`) but shares the blob, which deletion therefore
+    # reference-counts. None on construction means "same as document_id".
+    source_hash: str | None = None
+
+    @model_validator(mode="after")
+    def _default_source_hash(self) -> "Document":
+        if self.source_hash is None:
+            self.source_hash = self.document_id
+        return self
 
 
 class IngestResult(BaseModel):
@@ -152,6 +172,8 @@ class Review(BaseModel):
     created_at: datetime | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    # Phase 9 (9.E): who started it; the document's owner in v1 (docs/Phase 9 Design.md).
+    owner_id: str = Field(default_factory=lambda: DEFAULT_OWNER_ID)
 
 
 # --- decisions ------------------------------------------------------------------
@@ -597,3 +619,148 @@ class ChatEvent(BaseModel):
 
     type: ChatEventType
     payload: dict[str, Any]
+
+
+# --- Phase 9: owners, deletion and retention ------------------------------------
+#
+# docs/Phase 9 API.md is the prose contract, docs/Phase 9 Design.md the reasoning.
+
+
+class Principal(BaseModel):
+    """Who is calling: the OIDC subject of the session (9.E), or the default owner while
+    login is off (`auth.enabled: false`).
+
+    Provider-agnostic: only standard OIDC claims are read (`sub`, `iss`, `name`, and the
+    configured roles claim), so Keycloak in development and any production provider fill it
+    the same way. The e-mail address is deliberately not kept: nothing needs it.
+    """
+
+    subject: str  # the `sub` claim; stable per issuer, never reassigned
+    issuer: str | None = None  # the `iss` claim; None for the default owner
+    name: str | None = None  # the `name` claim, shown in the audit trail
+    roles: list[str] = Field(default_factory=list)
+    authenticated: bool = False  # False: login is off, the caller is the default owner
+
+    @property
+    def owner_id(self) -> str:
+        """The `owner_id` written on documents and reviews: the subject. One issuer per
+        deployment (decision #2), so the subject alone is unique."""
+        return self.subject
+
+    def reviewer(self) -> Reviewer:
+        """The audit trail's "who", from the session instead of the `X-Reviewer` header."""
+        return Reviewer(name=self.name or self.subject, authenticated=self.authenticated)
+
+
+def default_principal(owner_id: str = DEFAULT_OWNER_ID) -> Principal:
+    """The caller while login is off: the default owner, unauthenticated."""
+    return Principal(subject=owner_id, authenticated=False)
+
+
+def document_id_for(source_hash: str, owner_id: str = DEFAULT_OWNER_ID) -> str:
+    """A document's id: per owner, so two users uploading the same file get two documents
+    and never see each other's reviews. The default owner keeps the plain source hash, so
+    every id (and URL) from before Phase 9 stays valid."""
+    if owner_id == DEFAULT_OWNER_ID:
+        return source_hash
+    return hashlib.sha256(f"{owner_id}\x00{source_hash}".encode()).hexdigest()
+
+
+def blob_key(document: Document) -> str:
+    """The FileStore key of a document's stored file: the PDF (also for DOCX, converted) or
+    the pasted text. Keyed by the bytes, so documents of the same file share one blob."""
+    suffix = "txt" if document.source_type == "text" else "pdf"
+    return f"{document.source_hash or document.document_id}.{suffix}"
+
+
+# Retention classes (9.C): each has its own period in `retention.*_days`.
+DataClass = Literal["files", "reviews", "traces"]
+
+# Why something was deleted; recorded on its tombstone.
+DeletionReason = Literal["user", "retention", "orphan_sweep"]
+
+# What cannot be deleted inside the database transaction, so the transaction queues it
+# (`erasure_tasks`, an outbox) and a worker finishes it afterwards, retrying until done:
+#   blob          a FileStore key (`blob_key`)
+#   trace         a Langfuse trace id (a review's trace, or an unshared verdict's)
+#   score         a Langfuse score id (feedback on a shared trace that itself stays)
+#   dataset_item  a Langfuse dataset item id (a lawyer correction, `corrections`)
+#   checkpoint    a LangGraph checkpoint thread id (`{review_id}:{position}`)
+ErasureTarget = Literal["blob", "trace", "score", "dataset_item", "checkpoint"]
+
+# The row counts of a deletion, by table, in this order. `kept_shared` uses the same keys
+# for content-addressed rows another document still references.
+DELETION_TABLES: tuple[str, ...] = (
+    "documents",
+    "uploads",
+    "document_clauses",
+    "reviews",
+    "review_clauses",
+    "run_events",
+    "decisions",
+    "decision_events",
+    "feedback",
+    "clause_texts",
+    "verdicts",
+    "embeddings",
+    "retrievals",
+    "topics",
+    "summary_texts",
+)
+
+
+class ErasureTask(BaseModel):
+    """One outbox row: something outside the database to delete after the commit."""
+
+    task_id: int  # assigned by the store
+    target: ErasureTarget
+    key: str
+    tombstone_id: str | None = None  # the deletion that queued it; None for a sweep
+    requested_at: datetime
+    attempts: int = 0
+    last_error: str | None = None
+    done_at: datetime | None = None
+
+
+class Tombstone(BaseModel):
+    """What the audit trail keeps of a deletion: who deleted what, when and why, and how
+    many rows went; no content (no filename, no clause text, no note). Append-only."""
+
+    tombstone_id: str
+    kind: Literal["document", "review"]
+    subject_id: str  # the document or review id (a hash, not content)
+    owner_id: str
+    deleted_by: str | None = None  # Principal.owner_id; None for retention and sweeps
+    authenticated: bool = False
+    reason: DeletionReason
+    removed: dict[str, int] = Field(default_factory=dict)  # DELETION_TABLES keys
+    at: datetime
+
+
+class DeletionReport(BaseModel):
+    """What a deletion removed (or, with `dry_run`, would remove)."""
+
+    document_id: str | None = None  # None when a single review was deleted
+    review_ids: list[str] = Field(default_factory=list)
+    dry_run: bool = False
+    removed: dict[str, int] = Field(default_factory=dict)  # DELETION_TABLES keys
+    # Content-addressed rows the document used that stay, because another document (or the
+    # evaluation `clauses` table) still references them.
+    kept_shared: dict[str, int] = Field(default_factory=dict)
+    # Queued for after the commit (blobs, traces, scores, dataset items, checkpoints);
+    # `done_at` is set on those the request itself already finished.
+    erasures: list[ErasureTask] = Field(default_factory=list)
+    tombstone: Tombstone | None = None  # None on a dry run
+
+
+class SweepReport(BaseModel):
+    """One run of the nightly job (9.B orphan sweep and 9.C retention)."""
+
+    started_at: datetime
+    finished_at: datetime
+    expired_documents: int = 0  # deleted through 9.B because `files_days` passed
+    expired_reviews: int = 0  # deleted because `reviews_days` passed
+    expired_traces: int = 0  # Langfuse traces queued because `traces_days` passed
+    orphans_removed: dict[str, int] = Field(default_factory=dict)  # DELETION_TABLES keys
+    erasures_done: int = 0
+    erasures_failed: int = 0  # still pending; retried next run

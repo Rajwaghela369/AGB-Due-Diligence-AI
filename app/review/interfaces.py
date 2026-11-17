@@ -2,6 +2,7 @@
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 
 from core.llm import Completion
@@ -12,15 +13,18 @@ from app.domain import (
     ChatIn,
     DecisionEvent,
     DecisionIn,
+    DeletionReport,
     ExportBlocker,
     ExportBlockReason,
     ExportFile,
     ExportFormat,
     Finding,
+    Principal,
     Review,
     Reviewer,
     ReviewSummary,
     StoredEvent,
+    SweepReport,
     Topic,
 )
 
@@ -56,6 +60,16 @@ class ExportBlocked(ValueError):
 class NotChattable(ValueError):
     """The clause has no verdict in this review, so there is no finding to discuss
     (API: 409 `not_chattable`)."""
+
+
+class DeletionBlocked(ValueError):
+    """A review of the document is queued or running, so it cannot be deleted yet (API:
+    409 `deletion_blocked`). Deleting under a live run would race its writes; wait for it
+    to end (or fail it) and delete then. `review_ids` are the active reviews."""
+
+    def __init__(self, review_ids: list[str]) -> None:
+        self.review_ids = list(review_ids)
+        super().__init__(f"a review is still running: {', '.join(self.review_ids)}")
 
 
 @dataclass(frozen=True)
@@ -225,6 +239,37 @@ class ReviewService(Protocol):
         diffed word by word against the original clause. Nothing is stored and the review's
         cost is unchanged; the result carries its own tokens and cost.
         """
+        ...
+
+    def delete_document(
+        self, document_id: str, principal: Principal, *, dry_run: bool = False
+    ) -> DeletionReport:
+        """Delete a document and everything only it used (Phase 9, 9.B; docs/Phase 9 API.md,
+        "Deletion").
+
+        With `dry_run`: the plan (`DeletionRepo.plan_document`), nothing changes. Otherwise
+        `DeletionRepo.delete_document` in one transaction, then the queued erasures are
+        attempted at once (`process_erasures`): blobs, Langfuse traces, scores and dataset
+        items, checkpoints. One that fails stays pending for the nightly sweep and is
+        reported without `done_at`; the request still succeeds, since the database part, the
+        part the user sees, is gone.
+
+        KeyError: unknown document (or, with login, one `principal` does not own: never
+        reveal that it exists). DeletionBlocked: a review of it is queued or running.
+        """
+        ...
+
+    def process_erasures(self, limit: int = 100) -> tuple[int, int]:
+        """Attempt the pending erasure tasks, oldest first; returns (done, failed). Each is
+        idempotent, so a retry after a crash is harmless."""
+        ...
+
+    def sweep(self, now: datetime | None = None) -> SweepReport:
+        """The nightly job (9.B orphan sweep, 9.C retention): delete documents and reviews
+        past `retention.files_days` / `reviews_days` through the same deletion, queue
+        Langfuse traces past `traces_days`, remove orphans, then `process_erasures`. A no-op
+        for every class whose period is null, and entirely while `retention.enabled` is
+        false (the orphan sweep and the erasures still run)."""
         ...
 
     def resume_running(self) -> int:

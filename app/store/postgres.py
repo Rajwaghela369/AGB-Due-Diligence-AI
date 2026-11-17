@@ -43,6 +43,7 @@ from app.domain import (
     agreement_rate,
     decided_verdict,
 )
+from app.store.deletion import PostgresDeletionRepo
 from app.store.files import LocalFileStore
 from app.store.interfaces import FileStore
 
@@ -179,7 +180,7 @@ class PostgresDocumentRepo(_Repo):
 
     _DOC_COLUMNS = (
         "document_id, filename, source_type, page_count, parser_version, splitter_version,"
-        " text_hash, created_at"
+        " text_hash, created_at, owner_id, source_hash"
     )
 
     def get(self, document_id: str) -> Document | None:
@@ -221,11 +222,13 @@ class PostgresDocumentRepo(_Repo):
                 and existing["splitter_version"] == document.splitter_version
             ):
                 return  # same bytes under the same versions: reuse
-            # A new parser or splitter version replaces the earlier parse of the same bytes.
+            # A new parser or splitter version replaces the earlier parse of the same bytes;
+            # the owner and the source hash are part of the id and never change.
             conn.execute(
                 "insert into documents (document_id, filename, source_type, page_count,"
-                " parser_version, splitter_version, text_hash, created_at)"
-                " values (%s, %s, %s, %s, %s, %s, %s, coalesce(%s, clock_timestamp()))"
+                " parser_version, splitter_version, text_hash, created_at, owner_id,"
+                " source_hash)"
+                " values (%s, %s, %s, %s, %s, %s, %s, coalesce(%s, clock_timestamp()), %s, %s)"
                 " on conflict (document_id) do update set"
                 " filename = excluded.filename, source_type = excluded.source_type,"
                 " page_count = excluded.page_count, parser_version = excluded.parser_version,"
@@ -239,6 +242,8 @@ class PostgresDocumentRepo(_Repo):
                     document.splitter_version,
                     document.text_hash,
                     document.created_at,
+                    document.owner_id,
+                    document.source_hash or document.document_id,
                 ),
             )
             conn.execute(
@@ -279,12 +284,14 @@ class PostgresDocumentRepo(_Repo):
             )
         return [ClauseSpan(**row) for row in rows]
 
-    def list(self, limit: int = 100) -> list[Document]:
+    def list(self, limit: int = 100, *, owner_id: str | None = None) -> list[Document]:
         with self._connect() as conn:
             rows = _rows(
                 conn,
-                f"select {self._DOC_COLUMNS} from documents order by created_at desc limit %s",
-                (limit,),
+                f"select {self._DOC_COLUMNS} from documents"
+                " where %s::text is null or owner_id = %s::text"
+                " order by created_at desc limit %s",
+                (owner_id, owner_id, limit),
             )
         return [self._document(r) for r in rows]
 
@@ -466,7 +473,7 @@ class PostgresCacheRepo(_Repo):
 
 _REVIEW_COLUMNS = (
     "review_id, document_id, agent_version, scope, status, counts, cost_usd, trace_id, error,"
-    " created_at, started_at, finished_at"
+    " created_at, started_at, finished_at, owner_id"
 )
 
 
@@ -481,9 +488,10 @@ class PostgresReviewRepo(_Repo):
         with self._connect() as conn:
             conn.execute(
                 "insert into reviews (review_id, document_id, agent_version, scope, status,"
-                " counts, cost_usd, trace_id, error, created_at, started_at, finished_at)"
+                " counts, cost_usd, trace_id, error, created_at, started_at, finished_at,"
+                " owner_id)"
                 " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, coalesce(%s, clock_timestamp()),"
-                " %s, %s) on conflict do nothing",
+                " %s, %s, %s) on conflict do nothing",
                 (
                     review.review_id,
                     review.document_id,
@@ -497,6 +505,7 @@ class PostgresReviewRepo(_Repo):
                     review.created_at,
                     review.started_at,
                     review.finished_at,
+                    review.owner_id,
                 ),
             )
             row = _row(
@@ -921,6 +930,7 @@ class PostgresStore:
     decisions: PostgresDecisionRepo
     feedback: PostgresFeedbackRepo
     metrics: PostgresMetricsRepo
+    deletion: PostgresDeletionRepo
     _pool: _ConnectionPool | None = None
 
     def close(self) -> None:
@@ -945,5 +955,6 @@ def postgres_store(files: FileStore | None = None, connect: Connect | None = Non
         decisions=PostgresDecisionRepo(connect),
         feedback=PostgresFeedbackRepo(connect),
         metrics=PostgresMetricsRepo(connect),
+        deletion=PostgresDeletionRepo(connect),
         _pool=pool,
     )

@@ -838,6 +838,113 @@
       "title": "DecisionOut",
       "type": "object"
     },
+    "DeletionBlockedBody": {
+      "description": "409 `deletion_blocked` from `DELETE /documents/{id}`: a review is still running.",
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "review_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Review Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "DeletionBlockedBody",
+      "type": "object"
+    },
+    "DeletionOut": {
+      "description": "`DELETE /documents/{id}`: what went (or, with `dry_run=true`, would go).",
+      "properties": {
+        "pending_erasures": {
+          "default": 0,
+          "title": "Pending Erasures",
+          "type": "integer"
+        },
+        "report": {
+          "$ref": "#/$defs/DeletionReport"
+        }
+      },
+      "required": [
+        "report"
+      ],
+      "title": "DeletionOut",
+      "type": "object"
+    },
+    "DeletionReport": {
+      "description": "What a deletion removed (or, with `dry_run`, would remove).",
+      "properties": {
+        "document_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Document Id"
+        },
+        "dry_run": {
+          "default": false,
+          "title": "Dry Run",
+          "type": "boolean"
+        },
+        "erasures": {
+          "items": {
+            "$ref": "#/$defs/ErasureTask"
+          },
+          "title": "Erasures",
+          "type": "array"
+        },
+        "kept_shared": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Kept Shared",
+          "type": "object"
+        },
+        "removed": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Removed",
+          "type": "object"
+        },
+        "review_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Review Ids",
+          "type": "array"
+        },
+        "tombstone": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Tombstone"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "DeletionReport",
+      "type": "object"
+    },
     "DiffSegment": {
       "description": "One run of a word-level diff from the original clause to the suggestion.\nConcatenating the `equal` and `delete` texts gives the original, `equal` and `insert`\nthe suggestion; whitespace belongs to the segment it follows.",
       "properties": {
@@ -885,6 +992,10 @@
           "title": "Filename",
           "type": "string"
         },
+        "owner_id": {
+          "title": "Owner Id",
+          "type": "string"
+        },
         "page_count": {
           "anyOf": [
             {
@@ -900,6 +1011,18 @@
         "parser_version": {
           "title": "Parser Version",
           "type": "string"
+        },
+        "source_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Hash"
         },
         "source_type": {
           "enum": [
@@ -1035,6 +1158,85 @@
         "clauses"
       ],
       "title": "DocumentOut",
+      "type": "object"
+    },
+    "ErasureTask": {
+      "description": "One outbox row: something outside the database to delete after the commit.",
+      "properties": {
+        "attempts": {
+          "default": 0,
+          "title": "Attempts",
+          "type": "integer"
+        },
+        "done_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Done At"
+        },
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "last_error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Error"
+        },
+        "requested_at": {
+          "format": "date-time",
+          "title": "Requested At",
+          "type": "string"
+        },
+        "target": {
+          "enum": [
+            "blob",
+            "trace",
+            "score",
+            "dataset_item",
+            "checkpoint"
+          ],
+          "title": "Target",
+          "type": "string"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "integer"
+        },
+        "tombstone_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tombstone Id"
+        }
+      },
+      "required": [
+        "task_id",
+        "target",
+        "key",
+        "requested_at"
+      ],
+      "title": "ErasureTask",
       "type": "object"
     },
     "ErrorBody": {
@@ -1552,6 +1754,49 @@
       "title": "Pricing",
       "type": "object"
     },
+    "PrincipalOut": {
+      "description": "`GET /me`: who the server takes the caller to be.",
+      "properties": {
+        "auth_enabled": {
+          "title": "Auth Enabled",
+          "type": "boolean"
+        },
+        "authenticated": {
+          "title": "Authenticated",
+          "type": "boolean"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "owner_id": {
+          "title": "Owner Id",
+          "type": "string"
+        },
+        "roles": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Roles",
+          "type": "array"
+        }
+      },
+      "required": [
+        "owner_id",
+        "authenticated",
+        "auth_enabled"
+      ],
+      "title": "PrincipalOut",
+      "type": "object"
+    },
     "Ready": {
       "properties": {
         "checks": {
@@ -1662,6 +1907,10 @@
           ],
           "default": null,
           "title": "Finished At"
+        },
+        "owner_id": {
+          "title": "Owner Id",
+          "type": "string"
         },
         "review_id": {
           "title": "Review Id",
@@ -2364,6 +2613,79 @@
       ],
       "title": "SummaryGroup",
       "type": "object"
+    },
+    "Tombstone": {
+      "description": "What the audit trail keeps of a deletion: who deleted what, when and why, and how\nmany rows went; no content (no filename, no clause text, no note). Append-only.",
+      "properties": {
+        "at": {
+          "format": "date-time",
+          "title": "At",
+          "type": "string"
+        },
+        "authenticated": {
+          "default": false,
+          "title": "Authenticated",
+          "type": "boolean"
+        },
+        "deleted_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deleted By"
+        },
+        "kind": {
+          "enum": [
+            "document",
+            "review"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "owner_id": {
+          "title": "Owner Id",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "user",
+            "retention",
+            "orphan_sweep"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "removed": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Removed",
+          "type": "object"
+        },
+        "subject_id": {
+          "title": "Subject Id",
+          "type": "string"
+        },
+        "tombstone_id": {
+          "title": "Tombstone Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tombstone_id",
+        "kind",
+        "subject_id",
+        "owner_id",
+        "reason",
+        "at"
+      ],
+      "title": "Tombstone",
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2387,6 +2709,12 @@
     },
     "DecisionOut": {
       "$ref": "#/$defs/DecisionOut"
+    },
+    "DeletionBlockedBody": {
+      "$ref": "#/$defs/DeletionBlockedBody"
+    },
+    "DeletionOut": {
+      "$ref": "#/$defs/DeletionOut"
     },
     "DocumentList": {
       "$ref": "#/$defs/DocumentList"
@@ -2423,6 +2751,9 @@
     },
     "Pricing": {
       "$ref": "#/$defs/Pricing"
+    },
+    "PrincipalOut": {
+      "$ref": "#/$defs/PrincipalOut"
     },
     "Ready": {
       "$ref": "#/$defs/Ready"
