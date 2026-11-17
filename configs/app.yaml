@@ -123,5 +123,62 @@ api:
   rate_limit_burst: 10
 
 files:
-  # Immutable source PDFs, one file per document. Docker mounts this as a volume.
+  # Immutable source PDFs, one file per document (Phase 9, 9.D: per source hash, shared by
+  # documents of the same bytes). "local" keeps them under `root`; "s3" uses an
+  # S3-compatible bucket (app.store.s3): MinIO in Docker Compose, an EU provider in
+  # production. Credentials come from S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY, never here.
+  backend: local
+  # Docker mounts this as a volume.
   root: stores/files
+  s3:
+    endpoint_url: http://localhost:9000  # MinIO; e.g. https://fsn1.your-objectstorage.com
+    region: eu-central-1
+    bucket: agb-check-files
+    prefix: ""
+    server_side_encryption: AES256
+    presign_seconds: 300
+    # proxy: the API streams the file; redirect: 307 to a presigned URL.
+    download: proxy
+
+# Phase 9 (DSGVO hardening); docs/Phase 9 Design.md explains every block below.
+privacy:
+  masking:
+    # 9.A: personal data is replaced by placeholders before every model call and every
+    # Langfuse payload (core.masking). Off until Wave 1's masker passes the PII corpus.
+    enabled: false
+    # true: the API refuses to start when masking is enabled but the masker cannot load,
+    # instead of running without it.
+    required: false
+    language: de
+    spacy_model: de_core_news_lg
+    entities: [PERSON, ADDRESS, EMAIL, PHONE, IBAN, REGISTER_NUMBER]
+    score_threshold: 0.5
+    # Words the German NER model tends to mistake for names in AGB; never masked.
+    allow_list: [BGB, HGB, AGB, Verwender, Kunde, Käufer, Verkäufer, Auftraggeber,
+      Auftragnehmer]
+
+retention:
+  # 9.C: the nightly job (python -m app.review.retention) deletes each data class once its
+  # period has passed, through the same deletion as a user's (9.B). null keeps a class until
+  # a user deletes it. Off until the periods are agreed with the client (see the design doc).
+  enabled: false
+  files_days: null  # a document and everything only it used, from its last upload
+  reviews_days: null  # a finished review with its events, decisions and feedback
+  traces_days: 30  # Langfuse traces, from the review's or verdict's creation
+  erasure_max_attempts: 10
+  batch: 100
+
+auth:
+  # 9.E: OIDC login, provider-agnostic (decision #2): Keycloak in Docker Compose for
+  # development and tests, the production provider by configuration only.
+  enabled: false
+  # The owner of everything written while login is off, and of every row that existed
+  # before migration 006.
+  default_owner: local
+  oidc:
+    issuer: http://localhost:8080/realms/agb-check
+    audience: agb-check-api
+    client_id: agb-check-web  # the public SPA client (authorization code + PKCE)
+    roles_claim: realm_access.roles
+    name_claim: name
+    admin_role: agb-admin  # may delete any owner's documents and run the sweep

@@ -23,6 +23,7 @@ from app.domain import (
 )
 from app.domain import ChatIn as ChatIn  # re-exported: the POST …/chat body
 from app.domain import DecisionIn as DecisionIn  # re-exported: the PUT …/decision body
+from app.domain import DeletionReport as DeletionReport  # re-exported: DELETE /documents/{id}
 from app.domain import ReviewSummary as ReviewSummary  # re-exported: GET …/summary
 
 
@@ -166,3 +167,31 @@ class Health(BaseModel):
 class Ready(BaseModel):
     ready: bool
     checks: dict[str, bool]  # neon, qdrant, gemini, jina
+
+
+# --- Phase 9 (docs/Phase 9 API.md) ------------------------------------------------------
+
+
+class DeletionBlockedBody(ErrorBody):
+    """409 `deletion_blocked` from `DELETE /documents/{id}`: a review is still running."""
+
+    review_ids: list[str] = Field(default_factory=list)
+
+
+class DeletionOut(BaseModel):
+    """`DELETE /documents/{id}`: what went (or, with `dry_run=true`, would go)."""
+
+    report: DeletionReport
+    # Erasures (blobs, traces, …) not finished within the request; the nightly sweep
+    # retries them. 0 means nothing of the document is left anywhere.
+    pending_erasures: int = 0
+
+
+class PrincipalOut(BaseModel):
+    """`GET /me`: who the server takes the caller to be."""
+
+    owner_id: str
+    name: str | None = None
+    roles: list[str] = Field(default_factory=list)
+    authenticated: bool  # False while login is off (`auth.enabled: false`)
+    auth_enabled: bool

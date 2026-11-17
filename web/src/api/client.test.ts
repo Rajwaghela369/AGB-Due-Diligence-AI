@@ -150,3 +150,43 @@ describe("Phase 8 client", () => {
     expect(JSON.parse(init?.body as string)).toEqual({ message: "Formuliere um" });
   });
 });
+
+describe("Phase 9 client", () => {
+  it("deletes a document, optionally as a dry run, and reads the caller", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({}), { headers: { "Content-Type": "application/json" } }),
+        ),
+      );
+    const client = createApiClient({ baseUrl: "", fetch: fetchMock });
+
+    await client.documents.delete("doc/1", { dryRun: true });
+    await client.documents.delete("doc/1");
+    await client.me();
+
+    expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method])).toEqual([
+      ["/api/v1/documents/doc%2F1?dry_run=true", "DELETE"],
+      ["/api/v1/documents/doc%2F1", "DELETE"],
+      ["/api/v1/me", undefined],
+    ]);
+  });
+
+  it("keeps the running reviews of a 409 deletion_blocked", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ code: "deletion_blocked", message: "läuft", review_ids: ["r1"] }),
+          { status: 409, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    const client = createApiClient({ baseUrl: "", fetch: fetchMock });
+
+    await expect(client.documents.delete("d")).rejects.toMatchObject({
+      status: 409,
+      body: { code: "deletion_blocked", review_ids: ["r1"] },
+    });
+  });
+});

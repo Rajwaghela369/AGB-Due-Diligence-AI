@@ -6,6 +6,7 @@ import type {
   ChatIn,
   DecisionIn,
   DecisionOut,
+  DeletionOut,
   DocumentList,
   DocumentOut,
   ErrorBody,
@@ -15,6 +16,7 @@ import type {
   FindingsOut,
   Health,
   PasteIn,
+  PrincipalOut,
   Ready,
   ReviewIn,
   ReviewOut,
@@ -94,6 +96,16 @@ export function createApiClient(options: ApiClientOptions = {}) {
         );
         if (!response.ok) throw new ApiError(response.status, await errorBody(response));
         return response.blob();
+      },
+      /**
+       * Delete a document and everything only it used (Phase 9). `dryRun` returns what would
+       * go without deleting; 409 `deletion_blocked` while a review of it is running.
+       */
+      delete(documentId: string, options: { dryRun?: boolean } = {}): Promise<DeletionOut> {
+        const query = options.dryRun ? "?dry_run=true" : "";
+        return request(`/documents/${encodeURIComponent(documentId)}${query}`, {
+          method: "DELETE",
+        });
       },
       /** The pasted text of a text document; clause offsets index into this exact string. */
       async text(documentId: string): Promise<string> {
@@ -215,6 +227,10 @@ export function createApiClient(options: ApiClientOptions = {}) {
     },
     ready(): Promise<Ready> {
       return request("/ready");
+    },
+    /** Who the server takes the caller to be; the default owner while login is off. */
+    me(): Promise<PrincipalOut> {
+      return request("/me");
     },
   };
 }
