@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -36,8 +36,14 @@ def create_app(
     feedback: Any,
     settings: Any,
     readiness: Mapping[str, Probe] | None = None,
+    on_shutdown: Iterable[Callable[[], None]] = (),
 ) -> FastAPI:
-    """Build an application whose external dependencies are all supplied by its caller."""
+    """Build an application whose external dependencies are all supplied by its caller.
+
+    `on_shutdown` closes what the caller opened beyond the store (the checkpoint pool),
+    after the service has stopped using it.
+    """
+    closers = list(on_shutdown)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -49,6 +55,8 @@ def create_app(
             close_store = getattr(store, "close", None)
             if close_store is not None:
                 close_store()
+            for close in closers:
+                close()
 
     application = FastAPI(title="AGB-Check API", version="1", lifespan=lifespan)
     application.state.store = store
@@ -106,6 +114,7 @@ def build_app() -> FastAPI:
 
     from app.agent.run import make_judge
     from app.api.readiness import production_probes
+    from app.review.checkpoint import postgres_checkpointer
     from app.review.feedback import FeedbackService
     from app.review.limiter import build_limiter, review_settings
     from app.review.service import build_service
@@ -123,7 +132,16 @@ def build_app() -> FastAPI:
     tracer = None
     if environment.langfuse_public_key and environment.langfuse_secret_key:
         tracer = langfuse_client.client()
-    judge = make_judge(config, limiter=limiter, tracer=tracer, caches=store.caches)
+    # Interrupted (uncertain) clauses wait in Postgres, so a decision resumes them after a
+    # restart (Phase 7, 7.B). Tables are created or migrated here, once per process.
+    checkpointer = postgres_checkpointer()
+    judge = make_judge(
+        config,
+        limiter=limiter,
+        tracer=tracer,
+        caches=store.caches,
+        checkpointer=checkpointer.saver,
+    )
     feedback = FeedbackService(store, tracer)
     router_model = setting(config, "models.router.name", "jina-embeddings-v3")
     service = build_service(
@@ -148,6 +166,7 @@ def build_app() -> FastAPI:
             router_model=router_model,
             explain_model=setting(config, "models.explain.name", "gemini-3.8-flash"),
         ),
+        on_shutdown=[checkpointer.close],
     )
 
 
