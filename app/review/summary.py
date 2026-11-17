@@ -10,10 +10,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import threading
+import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from core.llm import complete
+from core.logging import get_logger
 
 from app.domain import (
     SUMMARY_NO_BASIS,
@@ -41,6 +44,15 @@ _SUMMARY_SYSTEM = (
     "Nutze ausschließlich die übergebenen strukturierten Fakten, erfinde keine Normen und "
     "gib keine Rechtsberatung. Antworte als JSON mit dem Feld recommendation."
 )
+_RECOMMENDATION_MAX_CHARS = 1200
+_FAILURE_TTL_SECONDS = 60.0
+_MARKDOWN_LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
+_MARKUP = re.compile(r"<[^<>\n]{1,200}>|[*_`#>]")
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_failure_until: dict[tuple[str, str], float] = {}
+_locks: dict[tuple[str, str], threading.Lock] = {}
+_locks_guard = threading.Lock()
+log = get_logger("review.summary")
 
 
 def _now() -> datetime:
@@ -142,10 +154,43 @@ def _model_text(result: Any) -> str | None:
     try:
         value = json.loads(raw)
     except json.JSONDecodeError:
-        return raw
+        return None
     if isinstance(value, dict) and isinstance(value.get("recommendation"), str):
-        return value["recommendation"].strip() or None
+        text = _MARKDOWN_LINK.sub(r"\1", value["recommendation"])
+        text = _MARKUP.sub("", text)
+        text = " ".join(_CONTROL.sub("", text).split())[:_RECOMMENDATION_MAX_CHARS]
+        return text or None
     return None
+
+
+def _model_lock(key: tuple[str, str]) -> threading.Lock:
+    with _locks_guard:
+        return _locks.setdefault(key, threading.Lock())
+
+
+def _cached_or_generate(
+    service: Service, decision_hash: str, model_name: str, canonical: str
+) -> str | None:
+    """Single-flight one decision set and briefly suppress repeated failed calls."""
+    key = (decision_hash, model_name)
+    with _model_lock(key):
+        cached = service.store.caches.get_summary_text(decision_hash, model_name)
+        if cached is not None:
+            return cached
+        now = time.monotonic()
+        if _failure_until.get(key, 0.0) > now:
+            return None
+        try:
+            generated = _model_text(service.summary_model(_SUMMARY_SYSTEM, canonical))
+        except Exception:  # noqa: BLE001 - the deterministic summary is always available
+            log.warning("summary recommendation model failed", exc_info=True)
+            generated = None
+        if not generated:
+            _failure_until[key] = now + _FAILURE_TTL_SECONDS
+            return None
+        _failure_until.pop(key, None)
+        service.store.caches.put_summary_text(decision_hash, model_name, generated)
+        return service.store.caches.get_summary_text(decision_hash, model_name)
 
 
 def _build_summary(service: Service, review_id: str, *, allow_model_call: bool) -> ReviewSummary:
@@ -212,6 +257,21 @@ def _build_summary(service: Service, review_id: str, *, allow_model_call: bool) 
         "counts": counts.model_dump(mode="json"),
         "void_groups": [group.model_dump(mode="json") for group in groups],
         "top_risks": [item.model_dump(mode="json") for item in risks],
+        "findings": [
+            {
+                "position": finding.position,
+                "status": finding.status,
+                "verdict": (
+                    finding.verdict.model_dump(mode="json") if finding.verdict is not None else None
+                ),
+                "decision": (
+                    finding.decision.model_dump(mode="json")
+                    if finding.decision is not None
+                    else None
+                ),
+            }
+            for finding in findings
+        ],
     }
     canonical = json.dumps(deterministic, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     decision_hash = hashlib.sha256(canonical.encode()).hexdigest()
@@ -222,10 +282,7 @@ def _build_summary(service: Service, review_id: str, *, allow_model_call: bool) 
     if settings.llm_enabled and service.summary_model is not None:
         cached = service.store.caches.get_summary_text(decision_hash, model_name)
         if cached is None and allow_model_call:
-            generated = _model_text(service.summary_model(_SUMMARY_SYSTEM, canonical))
-            if generated:
-                service.store.caches.put_summary_text(decision_hash, model_name, generated)
-                cached = service.store.caches.get_summary_text(decision_hash, model_name)
+            cached = _cached_or_generate(service, decision_hash, model_name, canonical)
         if cached:
             recommendation = cached
             from_llm = True
