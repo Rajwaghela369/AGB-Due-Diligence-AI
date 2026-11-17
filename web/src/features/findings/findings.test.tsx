@@ -100,6 +100,7 @@ beforeEach(() => {
     http.get("http://localhost/api/v1/reviews/r1/findings", () =>
       HttpResponse.json({ review: REVIEW, findings: stored } satisfies FindingsOut),
     ),
+    http.get("http://localhost/api/v1/reviews/r1/audit", () => HttpResponse.json({ events: [] })),
     http.get("http://localhost/api/v1/statutes/:id", ({ params }) => {
       statuteRequests.push(String(params.id));
       return HttpResponse.json({

@@ -87,7 +87,11 @@
     "description": "Details for the selected clause with legal basis, reasoning and feedback.",
     "clause": "Clause",
     "confidence": "Confidence",
-    "confidenceBands": { "high": "High", "medium": "Medium", "low": "Low" },
+    "confidenceBands": {
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    },
     "legalBasis": "Legal basis",
     "noBasis": "No legal basis cited.",
     "statuteLoading": "Loading statute text …",
@@ -164,7 +168,8 @@
       "queued": "Waiting",
       "running": "Running",
       "finished": "Finished",
-      "failed": "Failed"
+      "failed": "Failed",
+      "awaiting_decisions": "Decisions pending"
     }
   },
   "upload": {
@@ -213,7 +218,9 @@
       "high": "High",
       "medium": "Medium",
       "low": "Low"
-    }
+    },
+    "decision": "Decision",
+    "allDecisions": "All decisions"
   },
   "viewer": {
     "toolbar": "Document tools",
@@ -268,6 +275,111 @@
     "escape": "Close details or clear search",
     "help": "Show or hide this overview",
     "keys": "Key",
-    "action": "Action"
+    "action": "Action",
+    "accept": "Accept finding",
+    "override": "Override finding",
+    "dismiss": "Dismiss finding"
+  },
+  "decision": {
+    "title": "Decision",
+    "status": {
+      "open": "Open",
+      "accepted": "Accepted",
+      "overridden": "Overridden",
+      "dismissed": "Dismissed",
+      "awaiting": "Decision needed"
+    },
+    "accept": "Accept",
+    "dismiss": "Dismiss",
+    "note": "Note (optional)",
+    "awaitingHint": "The AI is unsure about this clause. Please decide yourself.",
+    "statusFilter": "Decision",
+    "statusFilters": {
+      "all": "All",
+      "open": "Open",
+      "accepted": "Accepted",
+      "overridden": "Overridden",
+      "dismissed": "Dismissed"
+    },
+    "verdict": {
+      "valid": "Valid",
+      "potentially_void": "Potentially void",
+      "uncertain": "To review"
+    },
+    "current": {
+      "accept": "Accepted",
+      "dismiss": "Dismissed (not relevant)",
+      "override": "Overridden: {{verdict}}"
+    },
+    "override": {
+      "open": "Override",
+      "verdict": "Your verdict",
+      "basis": "Legal basis",
+      "noBasis": "No suggestions available.",
+      "basisHint": "With no selection the AI's § stays.",
+      "model": "AI verdict",
+      "needVerdict": "Please choose a verdict.",
+      "needChange": "Please choose a different verdict or a different §.",
+      "confirm": "Confirm override",
+      "cancel": "Cancel"
+    },
+    "error": {
+      "generic": "The decision could not be saved. Please try again."
+    }
+  },
+  "audit": {
+    "title": "History",
+    "loading": "Loading history …",
+    "loadError": "The history could not be loaded.",
+    "empty": "No decision yet.",
+    "unknown": "Unknown",
+    "unauthenticated": "not signed in",
+    "action": {
+      "accept": "Accepted",
+      "override": "Overridden",
+      "dismiss": "Dismissed"
+    },
+    "verdict": "Verdict",
+    "basis": "§",
+    "agentVersion": "Agent version",
+    "noVerdict": "none"
+  },
+  "progress": {
+    "label": "Decision progress",
+    "text": "{{decided}} of {{total}} decided",
+    "open": "Open findings",
+    "openVoid": "Potentially void open: {{count}}",
+    "openReview": "To review open: {{count}}",
+    "decided": "Decided: {{count}}",
+    "complete": "Complete review",
+    "completeDisabled": "Possible once every void and review finding is decided.",
+    "confirmTitle": "Complete the review?",
+    "confirmText": "Every finding is decided. The export follows in a later version; you return to the overview.",
+    "confirm": "Complete",
+    "cancel": "Cancel"
+  },
+  "agreement": {
+    "title": "Agreement with your decisions",
+    "version": "Agent version {{version}}",
+    "none": "No decisions yet.",
+    "unavailable": "Agreement is not available.",
+    "decided": "Decided: {{count}}",
+    "kept": "Kept: {{count}}",
+    "overridden": "Overridden: {{count}}",
+    "dismissed": "Dismissed: {{count}}",
+    "explain": "Share of decisions that kept the AI's verdict; dismissed findings do not count."
+  },
+  "reviewer": {
+    "title": "Your name",
+    "description": "It is stored with every decision in the history. There is no sign-in yet.",
+    "label": "Name",
+    "hint": "The name is stored in this browser.",
+    "save": "Save",
+    "skip": "Continue without a name",
+    "close": "Close",
+    "none": "No name set",
+    "set": "Set name",
+    "change": "Change name (current: {{name}})",
+    "unauthenticated": "not signed in"
   }
 }

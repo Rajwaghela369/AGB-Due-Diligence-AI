@@ -9,11 +9,14 @@ import { useEffect, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 
-import { useReviewUi } from "./store";
+import { useReviewUi, type DecisionAction } from "./store";
 
 const SHORTCUTS = [
   { keys: ["J"], label: "hotkeys.next" },
   { keys: ["K"], label: "hotkeys.previous" },
+  { keys: ["A"], label: "hotkeys.accept" },
+  { keys: ["O"], label: "hotkeys.override" },
+  { keys: ["D"], label: "hotkeys.dismiss" },
   { keys: ["/"], label: "hotkeys.search" },
   { keys: ["Esc"], label: "hotkeys.escape" },
   { keys: ["?"], label: "hotkeys.help" },
@@ -25,10 +28,17 @@ export function WorkspaceHotkeys() {
   const next = useReviewUi((s) => s.next);
   const previous = useReviewUi((s) => s.previous);
   const requestSearchFocus = useReviewUi((s) => s.requestSearchFocus);
+  const requestDecision = useReviewUi((s) => s.requestDecision);
 
   useHotkeys("j", next, { preventDefault: true }, [next]);
   useHotkeys("k", previous, { preventDefault: true }, [previous]);
   useHotkeys("slash", requestSearchFocus, { preventDefault: true }, [requestSearchFocus]);
+  const decide = (action: DecisionAction) => () => {
+    if (!document.querySelector('[role="dialog"]')) requestDecision(action);
+  };
+  useHotkeys("a", decide("accept"), { preventDefault: true }, [requestDecision]);
+  useHotkeys("o", decide("override"), { preventDefault: true }, [requestDecision]);
+  useHotkeys("d", decide("dismiss"), { preventDefault: true }, [requestDecision]);
   // "?" needs Shift on most layouts, so match the produced character, not a key code.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

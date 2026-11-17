@@ -5,10 +5,18 @@
 // while a review runs. Components never fetch findings or open streams themselves.
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { create } from "zustand";
 
 import { api } from "../../api/client";
 import { useReviewStream, type ReviewProgress } from "../../api/events";
-import type { ClauseSpan, ClauseVerdict, DocumentOut, Finding, Review } from "../../api/types.gen";
+import type {
+  ClauseSpan,
+  ClauseVerdict,
+  DocumentOut,
+  Finding,
+  FindingStatus,
+  Review,
+} from "../../api/types.gen";
 import type { ClauseStatus } from "../../api/aliases";
 
 export type { ReviewProgress };
@@ -20,6 +28,8 @@ export interface ReviewFinding {
   verdict: ClauseVerdict | null;
   error: string | null;
   decision: Finding["decision"];
+  /** What the lawyer did with it: open until a decision exists (docs/Phase 7 API.md). */
+  findingStatus: FindingStatus;
   feedback: Finding["feedback"];
 }
 
@@ -39,6 +49,20 @@ export interface ReviewData {
   /** Refetch the findings and reopen the stream, e.g. after retrying a clause. */
   refresh: () => Promise<void>;
 }
+
+/**
+ * How many decisions this page has recorded per review. A decision response is newer than any
+ * stream state received before it, and the stream may already be closed (a review awaiting
+ * decisions has no run), so `useReview` stops trusting the older stream state after one.
+ */
+export const useDecisionCount = create<{
+  counts: Record<string, number>;
+  bump: (reviewId: string) => void;
+}>((set) => ({
+  counts: {},
+  bump: (reviewId) =>
+    set((s) => ({ counts: { ...s.counts, [reviewId]: (s.counts[reviewId] ?? 0) + 1 } })),
+}));
 
 export const reviewKeys = {
   findings: (reviewId: string) => ["reviews", reviewId, "findings"] as const,
@@ -79,6 +103,14 @@ export function useReview(reviewId: string | undefined): ReviewData {
   }, [refetch, reopen]);
 
   const documentData = documentQuery.data ?? null;
+  const decisions = useDecisionCount((s) => s.counts[reviewId ?? ""] ?? 0);
+  const [stale, setStale] = useState<{ decisions: number; state: unknown }>({
+    decisions: 0,
+    state: null,
+  });
+  if (stale.decisions !== decisions) setStale({ decisions, state: live.state });
+  // Live state received before the latest decision is older than the stored findings.
+  const liveState = live.state !== null && live.state !== stale.state ? live.state : null;
   return useMemo(() => {
     const base: ReviewFinding[] = (stored.data?.findings ?? []).map((f) => ({
       position: f.position,
@@ -87,23 +119,25 @@ export function useReview(reviewId: string | undefined): ReviewData {
       verdict: f.verdict ?? null,
       error: f.error ?? null,
       decision: f.decision,
+      findingStatus: f.finding_status ?? "open",
       feedback: f.feedback,
     }));
-    const clauses = live.state?.clauses ?? {};
+    const clauses = liveState?.clauses ?? {};
     const findings = base.map((f) => {
       const entry = clauses[String(f.position)];
       return entry
         ? { ...f, status: entry.status, verdict: entry.verdict ?? f.verdict, error: entry.error }
         : f;
     });
-    const review = live.state?.review ?? stored.data?.review ?? null;
+    const review = liveState?.review ?? stored.data?.review ?? null;
     return {
       review,
       findings,
       byPosition: new Map(findings.map((f) => [f.position, f])),
       isLoading: stored.isLoading,
       error: (stored.error as Error | null) ?? live.error,
-      isFinal: review !== null && ["finished", "failed"].includes(review.status),
+      isFinal:
+        review !== null && ["finished", "awaiting_decisions", "failed"].includes(review.status),
       progress: live.progress,
       document: documentData,
       refresh,
@@ -112,7 +146,7 @@ export function useReview(reviewId: string | undefined): ReviewData {
     stored.data,
     stored.isLoading,
     stored.error,
-    live.state,
+    liveState,
     live.error,
     live.progress,
     documentData,

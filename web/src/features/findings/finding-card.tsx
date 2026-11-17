@@ -5,6 +5,9 @@ import { useTranslation } from "react-i18next";
 
 import { cn } from "../../lib/utils";
 import { confidenceBand, riskStyle } from "../review/risk";
+import { CardActions } from "../decisions/card-actions";
+import { StatusBadge } from "../decisions/status-badge";
+import { isDecidable } from "../decisions/status";
 import { useReviewUi } from "../review/store";
 import type { ReviewFinding } from "../review/use-review";
 import { FeedbackControl } from "./feedback-control";
@@ -25,7 +28,12 @@ export function FindingCard(props: { finding: ReviewFinding; reviewId: string })
   const chunkId = strongestBasis(verdict?.legal_basis, verdict?.basis_scores);
   const statute = useStatute(chunkId);
   const live = style.tone === "queued" || style.tone === "checking" || style.tone === "failed";
-  const reason = verdict?.reason_unavailable ? t("drawer.reasonUnavailable") : verdict?.reason_de;
+  const decision = finding.decision;
+  // The reasoning written for the lawyer's verdict replaces the model's (docs/Phase 7 API.md).
+  const reason =
+    decision?.reason_unavailable || (!decision?.reason_de && verdict?.reason_unavailable)
+      ? t("drawer.reasonUnavailable")
+      : decision?.reason_de || verdict?.reason_de;
 
   return (
     <article
@@ -64,6 +72,11 @@ export function FindingCard(props: { finding: ReviewFinding; reviewId: string })
           )}
         </span>
         <span className="mt-1 block text-sm">{clauseTitle(finding)}</span>
+        {isDecidable(finding) && (
+          <span className="mt-1.5 block">
+            <StatusBadge finding={finding} />
+          </span>
+        )}
         {chunkId && (
           <span className="mt-0.5 block text-xs text-muted-foreground">
             {statute.data?.citation ?? chunkId}
@@ -79,8 +92,15 @@ export function FindingCard(props: { finding: ReviewFinding; reviewId: string })
         )}
       </button>
       {verdict && !live && (
-        <div className="border-t border-border px-3 py-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-1 border-t border-border px-3 py-1.5">
           <FeedbackControl reviewId={reviewId} finding={finding} compact />
+          {isDecidable(finding) && (
+            <CardActions
+              reviewId={reviewId}
+              position={finding.position}
+              current={decision?.action}
+            />
+          )}
         </div>
       )}
     </article>

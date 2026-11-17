@@ -1,8 +1,10 @@
 /** Typed access to the frozen Phase 5 endpoint surface and its uniform errors. */
 
 import type {
-  Decision,
+  AgreementOut,
+  AuditOut,
   DecisionIn,
+  DecisionOut,
   DocumentList,
   DocumentOut,
   ErrorBody,
@@ -105,11 +107,33 @@ export function createApiClient(options: ApiClientOptions = {}) {
           method: "POST",
         });
       },
-      decide(reviewId: string, position: number, input: DecisionIn): Promise<Decision> {
+      /**
+       * Record, change or replace the decision on one finding. `reviewer` is the name typed in
+       * the UI; it travels percent-encoded because header values are Latin-1 only.
+       */
+      decide(
+        reviewId: string,
+        position: number,
+        input: DecisionIn,
+        reviewer?: string | null,
+      ): Promise<DecisionOut> {
+        const name = reviewer?.trim();
         return request(
           `/reviews/${encodeURIComponent(reviewId)}/clauses/${position}/decision`,
-          jsonRequest("PUT", input),
+          jsonRequest("PUT", input, name ? { "X-Reviewer": encodeURIComponent(name) } : undefined),
         );
+      },
+      /** The decision history, oldest first; `position` narrows it to one finding. */
+      audit(reviewId: string, position?: number): Promise<AuditOut> {
+        const query = position === undefined ? "" : `?position=${position}`;
+        return request(`/reviews/${encodeURIComponent(reviewId)}/audit${query}`);
+      },
+    },
+    metrics: {
+      /** Lawyer agreement for one agent version (the service's current one by default). */
+      agreement(agentVersion?: string): Promise<AgreementOut> {
+        const query = agentVersion ? `?agent_version=${encodeURIComponent(agentVersion)}` : "";
+        return request(`/metrics/agreement${query}`);
       },
     },
     feedback(input: FeedbackIn): Promise<FeedbackOut> {
@@ -139,10 +163,14 @@ async function errorBody(response: Response): Promise<ErrorBody> {
   return { code: "http_error", message: response.statusText || `HTTP ${response.status}` };
 }
 
-function jsonRequest(method: "POST" | "PUT", body: unknown): RequestInit {
+function jsonRequest(
+  method: "POST" | "PUT",
+  body: unknown,
+  headers: Record<string, string> = {},
+): RequestInit {
   return {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   };
 }
