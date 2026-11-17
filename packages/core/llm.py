@@ -28,7 +28,7 @@ import os
 import random
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -332,3 +332,51 @@ def _complete_anthropic(
         output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
         model=name,
     )
+
+
+def complete_stream(
+    system: str,
+    user: str,
+    model: dict,
+    budget: RequestBudget | None = None,
+    client: Any = None,
+) -> Iterator[Completion]:
+    """Generate plain text and yield it piece by piece, for an answer a person watches arrive
+    (the rewrite chat). Each yielded `Completion` carries the next piece in `text`; the last
+    one carries the usage, or `error` when the provider failed, and ends the stream.
+
+    Exactly one request, reserved once and never retried: once a piece has been shown, a
+    retry would show a second, different answer, and each message is budgeted as one call.
+    Like `complete`, a provider failure is data and only `BudgetExceeded` propagates.
+    """
+    provider = model.get("provider")
+    name = model.get("name", "")
+    max_tokens = int(model.get("max_output_tokens", 800))
+    if provider != GEMINI:
+        raise NotImplementedError(f"complete_stream() does not support provider {provider!r}")
+
+    input_tokens = output_tokens = 0
+    try:
+        resolved = _gemini_client(client)
+        if budget is not None:
+            budget.reserve()
+        stream = resolved.models.generate_content_stream(
+            model=name,
+            contents=user,
+            config={"system_instruction": system, "max_output_tokens": max_tokens},
+        )
+        for response in stream:
+            usage = getattr(response, "usage_metadata", None)
+            if usage is not None:  # cumulative; the last response has the totals
+                input_tokens = int(getattr(usage, "prompt_token_count", 0) or 0)
+                output_tokens = int(getattr(usage, "candidates_token_count", 0) or 0)
+            text = getattr(response, "text", "") or ""
+            if text:
+                yield Completion(text, 0, 0, name)
+    except BudgetExceeded:
+        raise
+    except Exception as exc:  # noqa: BLE001 - a failed call is data, not a crash
+        log.warning("streamed completion failed: %s: %s", type(exc).__name__, exc)
+        yield Completion("", input_tokens, output_tokens, name, f"{type(exc).__name__}: {exc}")
+        return
+    yield Completion("", input_tokens, output_tokens, name)

@@ -2,10 +2,11 @@
 
 It is the real application (real routes, ingest, review service, SSE and feedback
 service) with every external dependency replaced: an in-memory store, a temp-dir
-file store, a keyword judge instead of Gemini, no Langfuse tracer, a Langfuse fake that
-records scores, and no Gotenberg (so PDF uploads only). Two extra routes under
-``/api/v1/__test__`` expose what the test must assert on from outside the process: how many
-times the judge ran, and which scores feedback wrote. They exist only on this app.
+file store, a keyword judge instead of Gemini, a scripted rewrite-chat model, no
+Langfuse tracer, a Langfuse fake that records scores, and no Gotenberg (so PDF uploads
+only). Extra routes under ``/api/v1/__test__`` expose what the test must assert on from
+outside the process: how many times the judge and the chat model ran, and which scores
+feedback wrote. They exist only on this app.
 
     uvicorn app.api.testing:build_test_app --factory --port 8010
 """
@@ -16,6 +17,7 @@ import os
 import tempfile
 import threading
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +27,7 @@ from fastapi import APIRouter, FastAPI, Request
 from app.api.main import create_app
 from app.domain import ClauseSpan, ClauseVerdict, StepObservations
 from app.review.feedback import FeedbackService
+from app.review.interfaces import ChatChunk
 from app.review.limiter import build_limiter
 from app.review.service import build_service
 from app.store.files import LocalFileStore
@@ -85,6 +88,48 @@ class KeywordJudge:
         )
 
 
+class FakeChatModel:
+    """The rewrite chat without Gemini: it proposes the quoted clause with „ausgeschlossen“
+    softened, streamed in a few pieces, so the browser sees deltas, a suggestion and a diff.
+    Deterministic, and it counts its calls like the judge."""
+
+    model = "fake-chat"
+
+    def __init__(self, delay: float = 0.02) -> None:
+        self.delay = delay
+        self.calls = 0
+        self._lock = threading.Lock()
+
+    def __call__(self, system: str, user: str) -> Iterator[ChatChunk]:
+        with self._lock:
+            self.calls += 1
+        clause = _quoted_clause(user)
+        suggestion = clause.replace(
+            "ausgeschlossen",
+            "ausgeschlossen, soweit nicht Leben, Körper oder Gesundheit verletzt sind",
+        )
+        if suggestion == clause:
+            suggestion = f"{clause} Zwingende gesetzliche Rechte bleiben unberührt."
+        answer = (
+            "Ein möglicher Vorschlag:\n"
+            f"<vorschlag>{suggestion}</vorschlag>\n"
+            "Die neue Fassung lässt die gesetzliche Haftung für Personenschäden unberührt."
+        )
+        size = max(1, len(answer) // 4)
+        for start in range(0, len(answer), size):
+            time.sleep(self.delay)
+            yield ChatChunk(text=answer[start : start + size], model=self.model)
+        yield ChatChunk(
+            input_tokens=len(user) // 4, output_tokens=len(answer) // 4, model=self.model
+        )
+
+
+def _quoted_clause(user: str) -> str:
+    """The clause text out of the chat prompt's `<klausel>` block (after its heading line)."""
+    block = user.split("<klausel>\n", 1)[-1].split("\n</klausel>", 1)[0]
+    return " ".join(block.split("\n")[1:]).strip() or "Die Klausel."
+
+
 class RecordingLangfuse:
     """Just enough of the Langfuse client for `FeedbackService`: it keeps every score."""
 
@@ -117,6 +162,7 @@ def build_test_app() -> FastAPI:
     judge = KeywordJudge(delay)
     langfuse = RecordingLangfuse()
     feedback = FeedbackService(store, langfuse)
+    chat_model = FakeChatModel()
     service = build_service(
         store,
         judge,
@@ -125,6 +171,7 @@ def build_test_app() -> FastAPI:
         max_concurrency=2,
         statutes={_STATUTE.chunk_id: _STATUTE},
         feedback=feedback,
+        chat_model=chat_model,
     )
     application = create_app(
         store=store,
@@ -139,6 +186,10 @@ def build_test_app() -> FastAPI:
     @router.get("/judge-calls")
     def judge_calls(_request: Request) -> dict[str, int]:
         return {"calls": judge.calls}
+
+    @router.get("/chat-calls")
+    def chat_calls(_request: Request) -> dict[str, int]:
+        return {"calls": chat_model.calls}
 
     @router.get("/scores")
     def scores(_request: Request) -> dict[str, list[dict[str, Any]]]:

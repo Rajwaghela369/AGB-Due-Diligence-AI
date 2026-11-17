@@ -158,7 +158,7 @@ def test_service_stubs_raise_not_implemented():
         service.summary("r")
     with pytest.raises(NotImplementedError):
         service.export("r", "md", reviewer=Reviewer())
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(KeyError):  # chat is implemented (tests/test_chat.py)
         service.chat("r", 0, ChatIn(message="x"), Reviewer())
     assert service.summary_model is None and service.chat_model is None
     assert service.deliverable.summary.llm_enabled is False
@@ -173,7 +173,8 @@ def test_stub_routes_answer_501():
         bad_format = client.get("/api/v1/reviews/r/export?format=pdf")
         bad_chat = client.post("/api/v1/reviews/r/clauses/0/chat", json={"message": ""})
 
-    for response in (summary, export, chat):
+    assert chat.status_code == 404  # chat is implemented (tests/test_chat.py)
+    for response in (summary, export):
         assert response.status_code == 501
         assert response.json()["code"] == "not_implemented"
     assert bad_format.status_code == 422 and bad_format.json()["code"] == "invalid_request"
