@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     langfuse_secret_key: str = Field(default="", alias="LANGFUSE_SECRET_KEY")
     langfuse_host: str = Field(default="https://cloud.langfuse.com", alias="LANGFUSE_HOST")
 
+    # Object-storage credentials are deployment secrets, deliberately separate from the
+    # provider-neutral endpoint and bucket in configs/app.yaml.
+    s3_access_key_id: str = Field(default="", alias="S3_ACCESS_KEY_ID")
+    s3_secret_access_key: str = Field(default="", alias="S3_SECRET_ACCESS_KEY")
+
 
 def load_settings() -> Settings:
     return Settings()

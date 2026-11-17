@@ -842,8 +842,6 @@ def test_reviews_keep_their_owner(store):
 
 
 def test_file_delete_is_idempotent(store):
-    if type(store.files).__name__ == "LocalFileStore":
-        pytest.skip("LocalFileStore.delete is Phase 9 Wave 1 (storage)")
     key = f"documents/{uid()}.pdf"
     store.files.put(key, b"x")
 

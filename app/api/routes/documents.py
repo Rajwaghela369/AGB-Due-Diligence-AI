@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
-from fastapi.responses import Response
+from fastapi.responses import RedirectResponse, Response
 from pydantic import ValidationError
 from starlette.datastructures import UploadFile
 
@@ -11,6 +11,7 @@ from app.api.costs import cache_hit_rate, cost_eur, pricing, wall_time_ms
 from app.api.deps import setting, state
 from app.api.errors import ApiError
 from app.api.schemas import DocumentList, DocumentListItem, DocumentOut, PasteIn
+from app.domain import blob_key
 from app.ingest import IngestError, ingest_file, ingest_text
 
 router = APIRouter()
@@ -124,8 +125,17 @@ def get_document_file(document_id: str, request: Request) -> Response:
     if document is None:
         raise ApiError(404, "not_found", "Dokument nicht gefunden.")
     is_text = document.source_type == "text"
+    key = blob_key(document)
+    files = dependencies.store.files
+    download = setting(dependencies.settings, "files.s3.download", "proxy")
+    if download == "redirect":
+        url = files.presign(
+            key, int(setting(dependencies.settings, "files.s3.presign_seconds", 300))
+        )
+        if url is not None:
+            return RedirectResponse(url=url, status_code=307, headers={"Cache-Control": "no-store"})
     try:
-        content = dependencies.store.files.get(f"{document_id}.{'txt' if is_text else 'pdf'}")
+        content = files.get(key)
     except FileNotFoundError as exc:
         raise ApiError(404, "not_found", "Datei nicht gefunden.") from exc
     return Response(

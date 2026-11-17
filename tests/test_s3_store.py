@@ -1,0 +1,136 @@
+"""S3 FileStore tests use botocore's wire-level stubber, never an object-store service."""
+
+from io import BytesIO
+
+import boto3
+import pytest
+from botocore.response import StreamingBody
+from botocore.stub import ANY, Stubber
+
+from app.store.files import LocalFileStore
+from app.store.s3 import S3FileStore, S3Settings, file_store_from_config
+from scripts.migrate_files_to_s3 import migrate
+
+
+def _client():
+    return boto3.client(
+        "s3",
+        endpoint_url="http://s3.invalid",
+        region_name="eu-central-1",
+        aws_access_key_id="test",
+        aws_secret_access_key="test",
+    )
+
+
+def _store(client):
+    return S3FileStore(S3Settings(bucket="files", prefix="source/"), client=client)
+
+
+def test_put_is_immutable_and_requests_server_side_encryption():
+    client = _client()
+    store = _store(client)
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "put_object",
+            {},
+            {
+                "Bucket": "files",
+                "Key": "source/a.pdf",
+                "Body": ANY,
+                "IfNoneMatch": "*",
+                "ServerSideEncryption": "AES256",
+            },
+        )
+        assert store.put("a.pdf", b"contents") == "a.pdf"
+
+
+def test_existing_put_is_a_noop_and_missing_values_follow_file_contract():
+    client = _client()
+    store = _store(client)
+    with Stubber(client) as stubber:
+        stubber.add_client_error(
+            "put_object", service_error_code="PreconditionFailed", http_status_code=412
+        )
+        stubber.add_client_error("get_object", service_error_code="NoSuchKey", http_status_code=404)
+        stubber.add_client_error("head_object", service_error_code="404", http_status_code=404)
+        stubber.add_client_error(
+            "head_object", service_error_code="NoSuchKey", http_status_code=404
+        )
+
+        assert store.put("a.pdf", b"contents") == "a.pdf"
+        with pytest.raises(FileNotFoundError):
+            store.get("missing.pdf")
+        assert store.exists("missing.pdf") is False
+        assert store.delete("missing.pdf") is False
+
+
+def test_get_delete_and_presign_use_the_configured_prefix():
+    client = _client()
+    store = _store(client)
+    with Stubber(client) as stubber:
+        stubber.add_response(
+            "get_object",
+            {"Body": StreamingBody(BytesIO(b"contents"), 8)},
+            {"Bucket": "files", "Key": "source/a.pdf"},
+        )
+        stubber.add_response("head_object", {}, {"Bucket": "files", "Key": "source/a.pdf"})
+        stubber.add_response("delete_object", {}, {"Bucket": "files", "Key": "source/a.pdf"})
+
+        assert store.get("a.pdf") == b"contents"
+        assert store.delete("a.pdf") is True
+
+    client.generate_presigned_url = lambda *args, **kwargs: "https://signed.invalid/a.pdf"
+    assert store.presign("a.pdf", 60) == "https://signed.invalid/a.pdf"
+    with pytest.raises(ValueError, match="positive"):
+        store.presign("a.pdf", 0)
+
+
+@pytest.mark.parametrize("key", ["", "/a.pdf", "../a.pdf", "a//b.pdf", "a/../b.pdf"])
+def test_s3_keys_cannot_escape_the_configured_prefix(key):
+    with pytest.raises(ValueError):
+        _store(_client()).exists(key)
+
+
+def test_factory_reads_credentials_only_from_environment(monkeypatch, tmp_path):
+    monkeypatch.setenv("S3_ACCESS_KEY_ID", "from-env")
+    monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "secret-from-env")
+    store = file_store_from_config({"files": {"backend": "s3"}}, tmp_path)
+
+    assert store._access_key_id == "from-env"
+    assert store._secret_access_key == "secret-from-env"
+
+
+@pytest.mark.parametrize(
+    ("s3", "message"),
+    [
+        ({"server_side_encryption": "none"}, "server_side_encryption"),
+        ({"download": "public"}, "download"),
+        ({"presign_seconds": 0}, "presign_seconds"),
+    ],
+)
+def test_s3_config_rejects_unsafe_or_invalid_values(s3, message, tmp_path):
+    with pytest.raises(ValueError, match=message):
+        file_store_from_config({"files": {"backend": "s3", "s3": s3}}, tmp_path)
+
+
+def test_migration_copies_verifies_and_is_resumable(tmp_path):
+    source = LocalFileStore(tmp_path / "source")
+    source.put("a.pdf", b"alpha")
+
+    class Destination:
+        def __init__(self):
+            self.blobs = {}
+
+        def exists(self, key):
+            return key in self.blobs
+
+        def put(self, key, data):
+            self.blobs.setdefault(key, data)
+            return key
+
+        def get(self, key):
+            return self.blobs[key]
+
+    destination = Destination()
+    assert migrate(source, destination) == (1, 0)
+    assert migrate(source, destination) == (0, 1)

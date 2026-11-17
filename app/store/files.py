@@ -51,8 +51,16 @@ class LocalFileStore:
         return self._path(key).is_file()
 
     def delete(self, key: str) -> bool:
-        raise NotImplementedError("Phase 9 Wave 1: LocalFileStore.delete")
+        path = self._path(key)
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return False
+        return True
 
     def presign(self, key: str, expires_in: int) -> str | None:
         """Local disk cannot sign a URL: always None, and the API proxies the bytes."""
-        raise NotImplementedError("Phase 9 Wave 1: LocalFileStore.presign")
+        self._path(key)
+        if expires_in <= 0:
+            raise ValueError("expires_in must be positive")
+        return None

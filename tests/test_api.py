@@ -269,6 +269,25 @@ def test_upload_reupload_paste_and_file_cache_headers(api):
     assert missing_file.status_code == 404
 
 
+def test_file_redirect_uses_a_short_lived_s3_url_when_configured(api):
+    application, store, _service, _langfuse = api
+    _save_document(store)
+
+    class SignedFiles:
+        def presign(self, key, expires_in):
+            assert key == "doc-1.pdf" and expires_in == 90
+            return "https://storage.example/doc-1.pdf?signature=temporary"
+
+    store.files = SignedFiles()
+    application.state.settings = {"files": {"s3": {"download": "redirect", "presign_seconds": 90}}}
+    with TestClient(application) as client:
+        response = client.get("/api/v1/documents/doc-1/file", follow_redirects=False)
+
+    assert response.status_code == 307
+    assert response.headers["location"].startswith("https://storage.example/")
+    assert response.headers["cache-control"] == "no-store"
+
+
 @pytest.mark.parametrize(
     ("code", "status"),
     [
