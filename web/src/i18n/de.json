@@ -87,6 +87,7 @@
     "description": "Details zur ausgewählten Klausel mit Rechtsgrundlage, Begründung und Rückmeldung.",
     "clause": "Klausel",
     "confidence": "Sicherheit",
+    "confidenceBands": { "high": "Hoch", "medium": "Mittel", "low": "Gering" },
     "legalBasis": "Rechtsgrundlage",
     "noBasis": "Keine Rechtsgrundlage angegeben.",
     "statuteLoading": "Gesetzestext wird geladen …",

@@ -87,6 +87,7 @@
     "description": "Details for the selected clause with legal basis, reasoning and feedback.",
     "clause": "Clause",
     "confidence": "Confidence",
+    "confidenceBands": { "high": "High", "medium": "Medium", "low": "Low" },
     "legalBasis": "Legal basis",
     "noBasis": "No legal basis cited.",
     "statuteLoading": "Loading statute text …",

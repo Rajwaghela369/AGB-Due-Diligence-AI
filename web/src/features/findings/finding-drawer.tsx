@@ -78,7 +78,7 @@ function DrawerBody({ finding, reviewId }: { finding: ReviewFinding; reviewId: s
         {verdict && (
           <span className="ml-auto font-normal text-muted-foreground">
             {t("drawer.confidence")}:{" "}
-            {t(`findings.confidence.${confidenceBand(verdict.confidence)}`)}
+            {t(`drawer.confidenceBands.${confidenceBand(verdict.confidence)}`)}
           </span>
         )}
       </div>
