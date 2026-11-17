@@ -385,3 +385,215 @@ class StoredEvent(BaseModel):
     type: EventType
     payload: dict[str, Any]
     created_at: datetime | None = None
+
+
+# --- Phase 8: summary, export and rewrite chat ---------------------------------
+#
+# docs/Phase 8 API.md is the prose contract for everything below. The summary is a pure
+# function of the review's findings and decisions; only its optional recommendation
+# paragraph may come from a model (`summary.llm_enabled`, off by default).
+
+# Where a void finding has no § in force, it is grouped under this label.
+SUMMARY_NO_BASIS = "ohne Norm"
+
+
+class SummaryFinding(BaseModel):
+    """One finding as the summary and the export see it: the verdict *in force*.
+
+    In force means `decided_verdict(decision)` once the lawyer decided, else the model's
+    verdict (`finding_status == "open"`). A dismissed finding has no verdict in force and
+    never appears in a summary list; it is only counted.
+    """
+
+    position: int
+    number: str | None = None  # ClauseSpan.number, e.g. "6.1"
+    heading: str | None = None  # ClauseSpan.heading
+    excerpt: str  # the clause text, cut to `summary.excerpt_chars` at a word boundary
+    verdict: Verdict  # in force
+    basis: list[str] = Field(default_factory=list)  # chunk_ids in force, strongest first
+    citations: list[str] = Field(default_factory=list)  # LawChunk.citation of each basis id
+    model_verdict: Verdict
+    confidence: float  # the model's (ClauseVerdict.confidence)
+    finding_status: FindingStatus
+    # An override from a non-void model verdict to potentially_void: the lawyer found a
+    # risk the model missed, so it ranks with the confirmed void findings.
+    overridden_to_void: bool = False
+    decided_by: str | None = None
+    note: str = ""
+
+
+class SummaryGroup(BaseModel):
+    """Void findings that share the statute paragraph of their strongest § in force.
+
+    The paragraph is that of the first chunk of `SummaryFinding.basis` (`LawChunk.law` and
+    `LawChunk.paragraph`), so § 309 Nr. 7 and § 309 Nr. 8 fall in one group "§ 309 BGB".
+    Findings without a basis form one group, `key = label = SUMMARY_NO_BASIS`.
+    """
+
+    key: str  # stable, e.g. "bgb-309"; SUMMARY_NO_BASIS for findings without a §
+    label: str  # shown, e.g. "§ 309 BGB"
+    findings: list[SummaryFinding]  # document order
+
+
+class SummaryCounts(BaseModel):
+    """What the summary block and the memo cover state, by the verdict in force."""
+
+    findings: int = 0  # clauses with a verdict (ReviewOut.decidable)
+    potentially_void: int = 0  # in force, decided or still open
+    uncertain: int = 0
+    valid: int = 0
+    accepted: int = 0
+    overridden: int = 0
+    dismissed: int = 0
+    open: int = 0  # findings without a decision
+    open_void: int = 0  # = ReviewCounts.open_void: block a final export
+    open_review: int = 0  # = ReviewCounts.open_review: block a final export
+    failed: int = 0  # clauses that could not be judged (listed as „nicht geprüft“)
+    out_of_scope: int = 0
+
+
+class ReviewSummary(BaseModel):
+    """The summary block (8.A): deterministic from the findings and the current decisions.
+
+    `decision_set_hash` changes exactly when anything the deterministic part shows changes
+    (a decision, a note, a verdict); it keys the cached LLM recommendation, so the paragraph
+    is generated at most once per decision set. With `summary.llm_enabled` false (the
+    default) the recommendation is always the rule-based German text.
+    """
+
+    review_id: str
+    document_id: str
+    filename: str
+    agent_version: str
+    review_status: ReviewStatus
+    # True while a final export would be blocked: open void or review findings, or the
+    # review is not idle-and-successful (`status` not in finished / awaiting_decisions).
+    draft: bool
+    counts: SummaryCounts
+    # Groups ordered by size (largest first), then by `key`.
+    void_groups: list[SummaryGroup] = Field(default_factory=list)
+    # At most `summary.top_risks` findings whose verdict in force is potentially_void or
+    # uncertain. Order: lawyer-confirmed void (accepted void, or overridden_to_void) first,
+    # then open void, then uncertain; within each by model confidence (descending), then
+    # by position.
+    top_risks: list[SummaryFinding] = Field(default_factory=list)
+    recommendation: str  # German, one paragraph
+    recommendation_from_llm: bool = False  # False: the rule-based text (also on LLM failure)
+    decision_set_hash: str  # sha256 hex
+    reviewers: list[str] = Field(default_factory=list)  # distinct Decision.decided_by, sorted
+    last_decided_at: datetime | None = None
+    generated_at: datetime
+
+
+ExportFormat = Literal["docx", "md", "csv"]
+
+EXPORT_MEDIA_TYPES: dict[ExportFormat, str] = {
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "md": "text/markdown; charset=utf-8",
+    "csv": "text/csv; charset=utf-8",
+}
+
+# The watermark of a draft export: diagonal on every DOCX page, a banner line in Markdown,
+# and the `entwurf` column in CSV.
+DRAFT_WATERMARK = "Entwurf"
+
+EXPORT_DISCLAIMER = (
+    "Dieses Dokument wurde mit Unterstützung eines KI-Systems erstellt. Maßgeblich sind "
+    "allein die Entscheidungen der prüfenden Person. Es ersetzt keine Rechtsberatung."
+)
+
+ExportBlockReason = Literal["undecided", "not_finished"]
+
+
+class ExportBlocker(BaseModel):
+    """One finding that blocks a final export: a void or review verdict without a decision."""
+
+    position: int
+    number: str | None = None
+    heading: str | None = None
+    verdict: Verdict  # the model's: potentially_void or uncertain
+
+
+class ExportFile(BaseModel):
+    """A rendered export, as the service hands it to the API."""
+
+    filename: str  # e.g. "AGB-Check_Muster-AGB_2026-11-17_Entwurf.docx"; no path
+    media_type: str  # EXPORT_MEDIA_TYPES[format]
+    content: bytes
+    draft: bool
+
+
+# Shown under every rewrite suggestion and stored in its result.
+CHAT_DISCLAIMER = (
+    "KI-generierter Formulierungsvorschlag, keine Rechtsberatung. Bitte vor Verwendung "
+    "anwaltlich prüfen."
+)
+
+ChatRole = Literal["user", "assistant"]
+
+
+class ChatMessage(BaseModel):
+    """One earlier turn of a finding's chat. The server keeps no chat history: the client
+    sends it back, and the server treats all of it as untrusted data."""
+
+    role: ChatRole
+    content: str = Field(max_length=8000)
+
+
+class ChatIn(BaseModel):
+    """`POST …/clauses/{position}/chat`: one question about one finding."""
+
+    message: str = Field(min_length=1, max_length=2000)
+    # Oldest first; the server uses only the last `chat.max_history_messages`.
+    history: list[ChatMessage] = Field(default_factory=list, max_length=20)
+
+
+DiffOp = Literal["equal", "insert", "delete"]
+
+
+class DiffSegment(BaseModel):
+    """One run of a word-level diff from the original clause to the suggestion.
+    Concatenating the `equal` and `delete` texts gives the original, `equal` and `insert`
+    the suggestion; whitespace belongs to the segment it follows."""
+
+    op: DiffOp
+    text: str
+
+
+class ChatResult(BaseModel):
+    """`CUSTOM chat_result` value: the finished answer, once streaming is over."""
+
+    message_id: str
+    text: str  # the whole answer as plain text, at most `chat.max_answer_chars`
+    suggestion: str | None = None  # the proposed clause wording, if the answer has one
+    diff: list[DiffSegment] = Field(default_factory=list)  # [] without a suggestion
+    truncated: bool = False  # the answer hit the length cap (tokens or characters)
+    disclaimer: str = CHAT_DISCLAIMER
+    model: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0  # at the configured prices; not added to Review.cost_usd
+    latency_ms: int = 0
+
+
+# `CUSTOM` event name of the chat stream (docs/Events.md, "Rewrite chat").
+CUSTOM_CHAT_RESULT = "chat_result"  # value: ChatResult
+
+ChatEventType = Literal[
+    "RUN_STARTED",
+    "TEXT_MESSAGE_START",
+    "TEXT_MESSAGE_CONTENT",
+    "TEXT_MESSAGE_END",
+    "CUSTOM",
+    "RUN_ERROR",
+    "RUN_FINISHED",
+]
+
+
+class ChatEvent(BaseModel):
+    """One event of a chat stream: an AG-UI event serialised like a review event
+    (`app.review.events.serialise`), sent as one SSE message without an `id:`. Chat events
+    are not stored and a chat stream cannot be resumed."""
+
+    type: ChatEventType
+    payload: dict[str, Any]

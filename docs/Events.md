@@ -165,3 +165,55 @@ or from the stream's `STATE_SNAPSHOT`; nothing about an interrupt lives only in 
 restart does not resume `awaiting_decisions` reviews (they have no run): their checkpoints
 stay in Postgres until the decision. A `running` review is resumed as before; its
 `awaiting_decision` clauses are not re-judged.
+
+## Rewrite chat (Phase 8)
+
+`POST /api/v1/reviews/{id}/clauses/{pos}/chat` (docs/Phase 8 API.md) answers with its own
+short `text/event-stream`, separate from the review stream. The events are `ag_ui.core`
+models serialised like review events (`app.review.events.serialise`: camelCase envelope,
+`metadata.schemaVersion`), wrapped in `app.domain.ChatEvent` and sent as
+
+```
+event: <type>
+data: <json>
+```
+
+**without `id:` lines**: chat events are not stored in `run_events`, never appear in the
+review stream, and a chat stream cannot be resumed (`Last-Event-ID` is ignored). A dropped
+connection loses the answer; the client asks again. No `: ping` is needed: the stream
+lasts one model call.
+
+### Sequence
+
+```
+RUN_STARTED           threadId = "{review_id}:{position}:chat", runId = messageId
+TEXT_MESSAGE_START    messageId, role = "assistant"
+TEXT_MESSAGE_CONTENT  messageId, delta = next piece of the answer   (one or more; never empty)
+TEXT_MESSAGE_END      messageId
+CUSTOM                name = "chat_result", value = ChatResult (app.domain)
+RUN_FINISHED          threadId, runId
+```
+
+- `messageId` is a fresh uuid hex per message, and equals `ChatResult.message_id`.
+- The deltas concatenated are the raw answer as the model wrote it, so the UI can render
+  while it streams. `ChatResult.text` is the final answer to keep: capped at
+  `chat.max_answer_chars`, plain text, with the `<vorschlag>` markers removed. The UI
+  replaces the streamed text with it, and shows `suggestion` with `diff` highlighted and
+  the `disclaimer` underneath.
+- Once the answer hits `chat.max_answer_chars`, no more deltas are sent and
+  `ChatResult.truncated` is true.
+
+### Failure
+
+Everything that can fail before the model is asked is an HTTP error with a JSON body
+(404, 409 `not_chattable`, 422, 429, 501, 503) and no stream. After `RUN_STARTED`:
+
+```
+RUN_STARTED
+[TEXT_MESSAGE_START, TEXT_MESSAGE_CONTENT…, TEXT_MESSAGE_END]   (only if text had started)
+RUN_ERROR             code = "chat_failed" | "daily_budget", message (German)
+```
+
+No `chat_result` follows an error, and partial text is not a result: the UI shows the
+error and offers to ask again. A model failure costs nothing extra and is never retried
+by the server.

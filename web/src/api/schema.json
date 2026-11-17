@@ -152,6 +152,127 @@
       "title": "AuditOut",
       "type": "object"
     },
+    "ChatIn": {
+      "description": "`POST …/clauses/{position}/chat`: one question about one finding.",
+      "properties": {
+        "history": {
+          "items": {
+            "$ref": "#/$defs/ChatMessage"
+          },
+          "maxItems": 20,
+          "title": "History",
+          "type": "array"
+        },
+        "message": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "title": "ChatIn",
+      "type": "object"
+    },
+    "ChatMessage": {
+      "description": "One earlier turn of a finding's chat. The server keeps no chat history: the client\nsends it back, and the server treats all of it as untrusted data.",
+      "properties": {
+        "content": {
+          "maxLength": 8000,
+          "title": "Content",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "user",
+            "assistant"
+          ],
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "content"
+      ],
+      "title": "ChatMessage",
+      "type": "object"
+    },
+    "ChatResult": {
+      "description": "`CUSTOM chat_result` value: the finished answer, once streaming is over.",
+      "properties": {
+        "cost_usd": {
+          "default": 0.0,
+          "title": "Cost Usd",
+          "type": "number"
+        },
+        "diff": {
+          "items": {
+            "$ref": "#/$defs/DiffSegment"
+          },
+          "title": "Diff",
+          "type": "array"
+        },
+        "disclaimer": {
+          "default": "KI-generierter Formulierungsvorschlag, keine Rechtsberatung. Bitte vor Verwendung anwaltlich prüfen.",
+          "title": "Disclaimer",
+          "type": "string"
+        },
+        "input_tokens": {
+          "default": 0,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "latency_ms": {
+          "default": 0,
+          "title": "Latency Ms",
+          "type": "integer"
+        },
+        "message_id": {
+          "title": "Message Id",
+          "type": "string"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "output_tokens": {
+          "default": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "suggestion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Suggestion"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "truncated": {
+          "default": false,
+          "title": "Truncated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "message_id",
+        "text",
+        "model"
+      ],
+      "title": "ChatResult",
+      "type": "object"
+    },
     "ClauseSpan": {
       "description": "One clause as the splitter found it. Position is its 0-based index in the document.",
       "properties": {
@@ -717,6 +838,30 @@
       "title": "DecisionOut",
       "type": "object"
     },
+    "DiffSegment": {
+      "description": "One run of a word-level diff from the original clause to the suggestion.\nConcatenating the `equal` and `delete` texts gives the original, `equal` and `insert`\nthe suggestion; whitespace belongs to the segment it follows.",
+      "properties": {
+        "op": {
+          "enum": [
+            "equal",
+            "insert",
+            "delete"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "text"
+      ],
+      "title": "DiffSegment",
+      "type": "object"
+    },
     "Document": {
       "properties": {
         "created_at": {
@@ -793,6 +938,9 @@
           },
           "title": "Items",
           "type": "array"
+        },
+        "pricing": {
+          "$ref": "#/$defs/Pricing"
         }
       },
       "required": [
@@ -803,6 +951,23 @@
     },
     "DocumentListItem": {
       "properties": {
+        "cache_hit_rate": {
+          "default": 0.0,
+          "title": "Cache Hit Rate",
+          "type": "number"
+        },
+        "cost_eur": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Eur"
+        },
         "document": {
           "$ref": "#/$defs/Document"
         },
@@ -816,6 +981,18 @@
             }
           ],
           "default": null
+        },
+        "wall_time_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wall Time Ms"
         }
       },
       "required": [
@@ -877,6 +1054,89 @@
         "message"
       ],
       "title": "ErrorBody",
+      "type": "object"
+    },
+    "ExportBlockedBody": {
+      "description": "409 `export_blocked` from `GET /reviews/{id}/export` without `draft=true`.",
+      "properties": {
+        "blocking": {
+          "items": {
+            "$ref": "#/$defs/ExportBlocker"
+          },
+          "title": "Blocking",
+          "type": "array"
+        },
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "undecided",
+            "not_finished"
+          ],
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "reason"
+      ],
+      "title": "ExportBlockedBody",
+      "type": "object"
+    },
+    "ExportBlocker": {
+      "description": "One finding that blocks a final export: a void or review verdict without a decision.",
+      "properties": {
+        "heading": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heading"
+        },
+        "number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Number"
+        },
+        "position": {
+          "title": "Position",
+          "type": "integer"
+        },
+        "verdict": {
+          "enum": [
+            "valid",
+            "potentially_void",
+            "uncertain"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "position",
+        "verdict"
+      ],
+      "title": "ExportBlocker",
       "type": "object"
     },
     "Feedback": {
@@ -1258,6 +1518,40 @@
       "title": "PasteIn",
       "type": "object"
     },
+    "Pricing": {
+      "description": "The token prices of `configs/app.yaml` (`review.price_usd_per_million_tokens`,\n`review.eur_per_usd`), so the UI turns tokens into money with the server's numbers:\n`usd = (input_tokens * input_usd_per_million + output_tokens * output_usd_per_million)\n/ 1e6`, and `eur = usd * eur_per_usd` when the rate is set.",
+      "properties": {
+        "confirmed": {
+          "default": false,
+          "title": "Confirmed",
+          "type": "boolean"
+        },
+        "eur_per_usd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Eur Per Usd"
+        },
+        "input_usd_per_million": {
+          "default": 0.0,
+          "title": "Input Usd Per Million",
+          "type": "number"
+        },
+        "output_usd_per_million": {
+          "default": 0.0,
+          "title": "Output Usd Per Million",
+          "type": "number"
+        }
+      },
+      "title": "Pricing",
+      "type": "object"
+    },
     "Ready": {
       "properties": {
         "checks": {
@@ -1546,10 +1840,25 @@
           "title": "Can Complete",
           "type": "boolean"
         },
+        "cost_eur": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Eur"
+        },
         "decidable": {
           "default": 0,
           "title": "Decidable",
           "type": "integer"
+        },
+        "pricing": {
+          "$ref": "#/$defs/Pricing"
         },
         "progress": {
           "default": 0.0,
@@ -1574,12 +1883,129 @@
           ],
           "default": null,
           "title": "Waiting Reason"
+        },
+        "wall_time_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wall Time Ms"
         }
       },
       "required": [
         "review"
       ],
       "title": "ReviewOut",
+      "type": "object"
+    },
+    "ReviewSummary": {
+      "description": "The summary block (8.A): deterministic from the findings and the current decisions.\n\n`decision_set_hash` changes exactly when anything the deterministic part shows changes\n(a decision, a note, a verdict); it keys the cached LLM recommendation, so the paragraph\nis generated at most once per decision set. With `summary.llm_enabled` false (the\ndefault) the recommendation is always the rule-based German text.",
+      "properties": {
+        "agent_version": {
+          "title": "Agent Version",
+          "type": "string"
+        },
+        "counts": {
+          "$ref": "#/$defs/SummaryCounts"
+        },
+        "decision_set_hash": {
+          "title": "Decision Set Hash",
+          "type": "string"
+        },
+        "document_id": {
+          "title": "Document Id",
+          "type": "string"
+        },
+        "draft": {
+          "title": "Draft",
+          "type": "boolean"
+        },
+        "filename": {
+          "title": "Filename",
+          "type": "string"
+        },
+        "generated_at": {
+          "format": "date-time",
+          "title": "Generated At",
+          "type": "string"
+        },
+        "last_decided_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Decided At"
+        },
+        "recommendation": {
+          "title": "Recommendation",
+          "type": "string"
+        },
+        "recommendation_from_llm": {
+          "default": false,
+          "title": "Recommendation From Llm",
+          "type": "boolean"
+        },
+        "review_id": {
+          "title": "Review Id",
+          "type": "string"
+        },
+        "review_status": {
+          "enum": [
+            "queued",
+            "running",
+            "finished",
+            "awaiting_decisions",
+            "failed"
+          ],
+          "title": "Review Status",
+          "type": "string"
+        },
+        "reviewers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reviewers",
+          "type": "array"
+        },
+        "top_risks": {
+          "items": {
+            "$ref": "#/$defs/SummaryFinding"
+          },
+          "title": "Top Risks",
+          "type": "array"
+        },
+        "void_groups": {
+          "items": {
+            "$ref": "#/$defs/SummaryGroup"
+          },
+          "title": "Void Groups",
+          "type": "array"
+        }
+      },
+      "required": [
+        "review_id",
+        "document_id",
+        "filename",
+        "agent_version",
+        "review_status",
+        "draft",
+        "counts",
+        "recommendation",
+        "decision_set_hash",
+        "generated_at"
+      ],
+      "title": "ReviewSummary",
       "type": "object"
     },
     "StatuteOut": {
@@ -1729,6 +2155,215 @@
       ],
       "title": "StoredEvent",
       "type": "object"
+    },
+    "SummaryCounts": {
+      "description": "What the summary block and the memo cover state, by the verdict in force.",
+      "properties": {
+        "accepted": {
+          "default": 0,
+          "title": "Accepted",
+          "type": "integer"
+        },
+        "dismissed": {
+          "default": 0,
+          "title": "Dismissed",
+          "type": "integer"
+        },
+        "failed": {
+          "default": 0,
+          "title": "Failed",
+          "type": "integer"
+        },
+        "findings": {
+          "default": 0,
+          "title": "Findings",
+          "type": "integer"
+        },
+        "open": {
+          "default": 0,
+          "title": "Open",
+          "type": "integer"
+        },
+        "open_review": {
+          "default": 0,
+          "title": "Open Review",
+          "type": "integer"
+        },
+        "open_void": {
+          "default": 0,
+          "title": "Open Void",
+          "type": "integer"
+        },
+        "out_of_scope": {
+          "default": 0,
+          "title": "Out Of Scope",
+          "type": "integer"
+        },
+        "overridden": {
+          "default": 0,
+          "title": "Overridden",
+          "type": "integer"
+        },
+        "potentially_void": {
+          "default": 0,
+          "title": "Potentially Void",
+          "type": "integer"
+        },
+        "uncertain": {
+          "default": 0,
+          "title": "Uncertain",
+          "type": "integer"
+        },
+        "valid": {
+          "default": 0,
+          "title": "Valid",
+          "type": "integer"
+        }
+      },
+      "title": "SummaryCounts",
+      "type": "object"
+    },
+    "SummaryFinding": {
+      "description": "One finding as the summary and the export see it: the verdict *in force*.\n\nIn force means `decided_verdict(decision)` once the lawyer decided, else the model's\nverdict (`finding_status == \"open\"`). A dismissed finding has no verdict in force and\nnever appears in a summary list; it is only counted.",
+      "properties": {
+        "basis": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Basis",
+          "type": "array"
+        },
+        "citations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Citations",
+          "type": "array"
+        },
+        "confidence": {
+          "title": "Confidence",
+          "type": "number"
+        },
+        "decided_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decided By"
+        },
+        "excerpt": {
+          "title": "Excerpt",
+          "type": "string"
+        },
+        "finding_status": {
+          "enum": [
+            "open",
+            "accepted",
+            "overridden",
+            "dismissed"
+          ],
+          "title": "Finding Status",
+          "type": "string"
+        },
+        "heading": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heading"
+        },
+        "model_verdict": {
+          "enum": [
+            "valid",
+            "potentially_void",
+            "uncertain"
+          ],
+          "title": "Model Verdict",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        },
+        "number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Number"
+        },
+        "overridden_to_void": {
+          "default": false,
+          "title": "Overridden To Void",
+          "type": "boolean"
+        },
+        "position": {
+          "title": "Position",
+          "type": "integer"
+        },
+        "verdict": {
+          "enum": [
+            "valid",
+            "potentially_void",
+            "uncertain"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "position",
+        "excerpt",
+        "verdict",
+        "model_verdict",
+        "confidence",
+        "finding_status"
+      ],
+      "title": "SummaryFinding",
+      "type": "object"
+    },
+    "SummaryGroup": {
+      "description": "Void findings that share the statute paragraph of their strongest § in force.\n\nThe paragraph is that of the first chunk of `SummaryFinding.basis` (`LawChunk.law` and\n`LawChunk.paragraph`), so § 309 Nr. 7 and § 309 Nr. 8 fall in one group \"§ 309 BGB\".\nFindings without a basis form one group, `key = label = SUMMARY_NO_BASIS`.",
+      "properties": {
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/SummaryFinding"
+          },
+          "title": "Findings",
+          "type": "array"
+        },
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "findings"
+      ],
+      "title": "SummaryGroup",
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1740,6 +2375,12 @@
     },
     "AuditOut": {
       "$ref": "#/$defs/AuditOut"
+    },
+    "ChatIn": {
+      "$ref": "#/$defs/ChatIn"
+    },
+    "ChatResult": {
+      "$ref": "#/$defs/ChatResult"
     },
     "DecisionIn": {
       "$ref": "#/$defs/DecisionIn"
@@ -1759,6 +2400,9 @@
     "ErrorBody": {
       "$ref": "#/$defs/ErrorBody"
     },
+    "ExportBlockedBody": {
+      "$ref": "#/$defs/ExportBlockedBody"
+    },
     "FeedbackIn": {
       "$ref": "#/$defs/FeedbackIn"
     },
@@ -1777,6 +2421,9 @@
     "PasteIn": {
       "$ref": "#/$defs/PasteIn"
     },
+    "Pricing": {
+      "$ref": "#/$defs/Pricing"
+    },
     "Ready": {
       "$ref": "#/$defs/Ready"
     },
@@ -1785,6 +2432,9 @@
     },
     "ReviewOut": {
       "$ref": "#/$defs/ReviewOut"
+    },
+    "ReviewSummary": {
+      "$ref": "#/$defs/ReviewSummary"
     },
     "StatuteOut": {
       "$ref": "#/$defs/StatuteOut"

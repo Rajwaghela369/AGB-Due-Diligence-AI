@@ -88,3 +88,65 @@ describe("API client", () => {
     ]);
   });
 });
+
+describe("Phase 8 client", () => {
+  it("downloads an export with its filename and draft flag", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("a;b\r\n", {
+        status: 200,
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": "attachment; filename*=UTF-8''AGB-Check_M%C3%BCller_Entwurf.csv",
+          "X-Export-Draft": "true",
+        },
+      }),
+    );
+    const client = createApiClient({ baseUrl: "", fetch: fetchMock });
+
+    const download = await client.reviews.export("r1", "csv", { draft: true, reviewer: "Müller" });
+
+    expect(download.filename).toBe("AGB-Check_Müller_Entwurf.csv");
+    expect(download.draft).toBe(true);
+    expect(await download.blob.text()).toBe("a;b\r\n");
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("/api/v1/reviews/r1/export?format=csv&draft=true");
+    expect((init?.headers as Record<string, string>)["X-Reviewer"]).toBe("M%C3%BCller");
+  });
+
+  it("keeps the blocking findings of a 409 export_blocked", async () => {
+    const body = {
+      code: "export_blocked",
+      message: "Offene Feststellungen",
+      reason: "undecided",
+      blocking: [{ position: 2, number: "6.1", heading: null, verdict: "potentially_void" }],
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify(body), { status: 409 }));
+    const client = createApiClient({ baseUrl: "", fetch: fetchMock });
+
+    await expect(client.reviews.export("r1", "docx")).rejects.toMatchObject({
+      status: 409,
+      body,
+    });
+  });
+
+  it("opens the chat stream as a POST that accepts SSE", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("event: RUN_STARTED\ndata: {}\n\n", {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      }),
+    );
+    const client = createApiClient({ baseUrl: "", fetch: fetchMock });
+
+    const response = await client.reviews.chat("r1", 4, { message: "Formuliere um" });
+
+    expect(await response.text()).toContain("RUN_STARTED");
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("/api/v1/reviews/r1/clauses/4/chat");
+    expect(init?.method).toBe("POST");
+    expect((init?.headers as Record<string, string>).Accept).toBe("text/event-stream");
+    expect(JSON.parse(init?.body as string)).toEqual({ message: "Formuliere um" });
+  });
+});

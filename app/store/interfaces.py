@@ -102,6 +102,15 @@ class CacheRepo(Protocol):
         """Store `{content_hash: topic}`; insert-or-reuse per (content_hash, model)."""
         ...
 
+    def get_summary_text(self, decision_set_hash: str, model: str) -> str | None:
+        """The LLM recommendation paragraph generated for this decision set (Phase 8, 8.A)."""
+        ...
+
+    def put_summary_text(self, decision_set_hash: str, model: str, text: str) -> None:
+        """Store a recommendation; insert-or-reuse per (decision_set_hash, model), so two
+        concurrent requests for one decision set keep the first text."""
+        ...
+
 
 class ReviewRepo(Protocol):
     def create(self, review: Review) -> Review: ...

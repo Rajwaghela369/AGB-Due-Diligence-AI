@@ -55,6 +55,13 @@ def install_error_handlers(app: FastAPI) -> None:
         body = ErrorBody(code="conflict", message=str(exc))
         return JSONResponse(status_code=409, content=body.model_dump())
 
+    # Before RuntimeError's handler matters: NotImplementedError subclasses it, and a Wave 1
+    # body that is not written yet is 501, not 503 (Starlette picks the closest class).
+    @app.exception_handler(NotImplementedError)
+    async def not_implemented(_request: Request, exc: NotImplementedError) -> JSONResponse:
+        body = ErrorBody(code="not_implemented", message=str(exc) or "Noch nicht verfügbar.")
+        return JSONResponse(status_code=501, content=body.model_dump())
+
     @app.exception_handler(RuntimeError)
     async def service_unavailable(_request: Request, exc: RuntimeError) -> JSONResponse:
         body = ErrorBody(code="service_unavailable", message=str(exc))

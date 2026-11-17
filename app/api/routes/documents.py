@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from pydantic import ValidationError
 from starlette.datastructures import UploadFile
 
+from app.api.costs import cache_hit_rate, cost_eur, pricing, wall_time_ms
 from app.api.deps import setting, state
 from app.api.errors import ApiError
 from app.api.schemas import DocumentList, DocumentListItem, DocumentOut, PasteIn
@@ -89,15 +90,17 @@ async def create_document(request: Request) -> DocumentOut:
 @router.get("/documents", response_model=DocumentList)
 def list_documents(request: Request) -> DocumentList:
     dependencies = state(request)
-    return DocumentList(
-        items=[
-            DocumentListItem(
-                document=document,
-                latest_review=dependencies.store.reviews.latest_for(document.document_id),
-            )
-            for document in dependencies.store.documents.list()
-        ]
-    )
+    prices = pricing(dependencies.settings)
+    items = []
+    for document in dependencies.store.documents.list():
+        latest = dependencies.store.reviews.latest_for(document.document_id)
+        item = DocumentListItem(document=document, latest_review=latest)
+        if latest is not None:
+            item.cache_hit_rate = cache_hit_rate(latest)
+            item.cost_eur = cost_eur(latest, prices)
+            item.wall_time_ms = wall_time_ms(latest)
+        items.append(item)
+    return DocumentList(items=items, pricing=prices)
 
 
 @router.get("/documents/{document_id}", response_model=DocumentOut)

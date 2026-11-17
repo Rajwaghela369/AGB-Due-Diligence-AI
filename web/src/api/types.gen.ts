@@ -29,6 +29,233 @@ export type ReviewId = string;
 export type ToBasis = string[];
 export type ToVerdict = ("valid" | "potentially_void" | "uncertain") | null;
 export type Events = DecisionEvent[];
+/**
+ * @maxItems 20
+ */
+export type History =
+  | []
+  | [ChatMessage]
+  | [ChatMessage, ChatMessage]
+  | [ChatMessage, ChatMessage, ChatMessage]
+  | [ChatMessage, ChatMessage, ChatMessage, ChatMessage]
+  | [ChatMessage, ChatMessage, ChatMessage, ChatMessage, ChatMessage]
+  | [ChatMessage, ChatMessage, ChatMessage, ChatMessage, ChatMessage, ChatMessage]
+  | [ChatMessage, ChatMessage, ChatMessage, ChatMessage, ChatMessage, ChatMessage, ChatMessage]
+  | [ChatMessage, ChatMessage, ChatMessage, ChatMessage, ChatMessage, ChatMessage, ChatMessage, ChatMessage]
+  | [
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+    ]
+  | [
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+    ]
+  | [
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+    ]
+  | [
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+    ]
+  | [
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+    ]
+  | [
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+    ]
+  | [
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+    ]
+  | [
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+    ]
+  | [
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+    ]
+  | [
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+    ]
+  | [
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+    ]
+  | [
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+      ChatMessage,
+    ];
+export type Content = string;
+export type Role = "user" | "assistant";
+export type Message = string;
+export type CostUsd = number;
+export type Op = "equal" | "insert" | "delete";
+export type Text = string;
+export type Diff = DiffSegment[];
+export type Disclaimer = string;
+export type InputTokens = number;
+export type LatencyMs = number;
+export type MessageId = string;
+export type Model = string;
+export type OutputTokens = number;
+export type Suggestion = string | null;
+export type Text1 = string;
+export type Truncated = boolean;
 export type Action1 = "accept" | "override" | "dismiss";
 export type CorrectedBasis = string[];
 export type CorrectedVerdict = ("valid" | "potentially_void" | "uncertain") | null;
@@ -59,7 +286,7 @@ export type X0 = number;
 export type X1 = number;
 export type Rects = Rect[];
 export type Start = number | null;
-export type Text = string;
+export type Text2 = string;
 export type Topic = string | null;
 export type Error = string | null;
 export type AgentVersion2 = string;
@@ -81,14 +308,14 @@ export type Candidates = string[];
 export type Check = string | null;
 export type Confidence = number;
 export type ContentHash1 = string;
-export type InputTokens = number;
-export type LatencyMs = number | null;
+export type InputTokens1 = number;
+export type LatencyMs1 = number | null;
 export type LegalBasis = string[];
 export type ClauseSpan1 = string | null;
 export type Explanation = string | null;
 export type Judge = string | null;
 export type Retrieval = string | null;
-export type OutputTokens = number;
+export type OutputTokens1 = number;
 export type ReasonDe1 = string;
 export type ReasonUnavailable1 = boolean;
 export type TraceId = string | null;
@@ -97,10 +324,15 @@ export type VoidProbability = number | null;
 export type BudgetLeft = number | null;
 export type CacheHitRate = number;
 export type CanComplete = boolean;
+export type CostEur = number | null;
 export type Decidable = number;
+export type Confirmed = boolean;
+export type EurPerUsd = number | null;
+export type InputUsdPerMillion = number;
+export type OutputUsdPerMillion = number;
 export type Progress = number;
 export type AgentVersion4 = string;
-export type CostUsd = number;
+export type CostUsd1 = number;
 export type AwaitingDecision = number;
 export type CacheHits = number;
 export type Decided2 = number;
@@ -123,6 +355,9 @@ export type StartedAt = string | null;
 export type Status1 = "queued" | "running" | "finished" | "awaiting_decisions" | "failed";
 export type TraceId1 = string | null;
 export type WaitingReason = ("rate_limit" | "daily_budget") | null;
+export type WallTimeMs = number | null;
+export type CacheHitRate1 = number;
+export type CostEur1 = number | null;
 export type CreatedAt2 = string | null;
 export type DocumentId1 = string;
 export type Filename = string;
@@ -131,15 +366,24 @@ export type ParserVersion = string;
 export type SourceType = "pdf" | "docx" | "text";
 export type SplitterVersion = string;
 export type TextHash = string;
+export type WallTimeMs1 = number | null;
 export type Items = DocumentListItem[];
 export type Clauses = ClauseSpan[];
 export type Reused = boolean;
 export type Code = string;
-export type Message = string;
+export type Message1 = string;
+export type Heading1 = string | null;
+export type Number1 = string | null;
+export type Position5 = number;
+export type Verdict1 = "valid" | "potentially_void" | "uncertain";
+export type Blocking = ExportBlocker[];
+export type Code1 = string;
+export type Message2 = string;
+export type Reason = "undecided" | "not_finished";
 export type Comment1 = string;
 export type CorrectedBasis3 = string[];
 export type CorrectedVerdict3 = ("valid" | "potentially_void" | "uncertain") | null;
-export type Position5 = number;
+export type Position6 = number;
 export type Reasons1 = ("verdict_wrong" | "basis_wrong" | "reasoning_unclear" | "clause_cut")[];
 export type ReviewId4 = string;
 export type Vote1 = "up" | "down";
@@ -148,21 +392,63 @@ export type ScoredSteps = string[];
 export type Findings = Finding[];
 export type Status2 = "ok";
 export type Confidence1 = number;
-export type Position6 = number;
+export type Position7 = number;
 export type Question = string;
-export type Verdict1 = "valid" | "potentially_void" | "uncertain";
+export type Verdict2 = "valid" | "potentially_void" | "uncertain";
 export type Filename1 = string;
-export type Text1 = string;
+export type Text3 = string;
 export type Ready1 = boolean;
 export type DocumentId2 = string;
 export type Scope1 = ("liability" | "warranty")[];
+export type AgentVersion5 = string;
+export type Accepted = number;
+export type Dismissed2 = number;
+export type Failed1 = number;
+export type Findings1 = number;
+export type Open = number;
+export type OpenReview1 = number;
+export type OpenVoid1 = number;
+export type OutOfScope1 = number;
+export type Overridden2 = number;
+export type PotentiallyVoid1 = number;
+export type Uncertain1 = number;
+export type Valid1 = number;
+export type DecisionSetHash = string;
+export type DocumentId3 = string;
+export type Draft = boolean;
+export type Filename2 = string;
+export type GeneratedAt = string;
+export type LastDecidedAt1 = string | null;
+export type Recommendation = string;
+export type RecommendationFromLlm = boolean;
+export type ReviewId5 = string;
+export type ReviewStatus = "queued" | "running" | "finished" | "awaiting_decisions" | "failed";
+export type Reviewers = string[];
+export type Basis = string[];
+export type Citations = string[];
+export type Confidence2 = number;
+export type DecidedBy2 = string | null;
+export type Excerpt = string;
+export type FindingStatus1 = "open" | "accepted" | "overridden" | "dismissed";
+export type Heading2 = string | null;
+export type ModelVerdict1 = "valid" | "potentially_void" | "uncertain";
+export type Note3 = string;
+export type Number2 = string | null;
+export type OverriddenToVoid = boolean;
+export type Position8 = number;
+export type Verdict3 = "valid" | "potentially_void" | "uncertain";
+export type TopRisks = SummaryFinding[];
+export type Findings2 = SummaryFinding[];
+export type Key = string;
+export type Label = string;
+export type VoidGroups = SummaryGroup[];
 export type ChunkId = string;
 export type Citation = string;
 export type SourceUrl = string | null;
-export type Text2 = string;
+export type Text4 = string;
 export type Title = string;
 export type CreatedAt3 = string | null;
-export type ReviewId5 = string;
+export type ReviewId6 = string;
 export type Seq = number;
 export type Type =
   | "RUN_STARTED"
@@ -180,21 +466,26 @@ export type Type =
 export interface AGBCheckAPIContracts {
   AgreementOut?: AgreementOut;
   AuditOut?: AuditOut;
+  ChatIn?: ChatIn;
+  ChatResult?: ChatResult;
   DecisionIn?: DecisionIn;
   DecisionOut?: DecisionOut;
   DocumentList?: DocumentList;
   DocumentListItem?: DocumentListItem;
   DocumentOut?: DocumentOut;
   ErrorBody?: ErrorBody;
+  ExportBlockedBody?: ExportBlockedBody;
   FeedbackIn?: FeedbackIn;
   FeedbackOut?: FeedbackOut;
   FindingsOut?: FindingsOut;
   Health?: Health;
   Interrupt?: Interrupt;
   PasteIn?: PasteIn;
+  Pricing?: Pricing;
   Ready?: Ready;
   ReviewIn?: ReviewIn;
   ReviewOut?: ReviewOut;
+  ReviewSummary?: ReviewSummary;
   StatuteOut?: StatuteOut;
   StoredEvent?: StoredEvent;
 }
@@ -292,6 +583,62 @@ export interface DecisionEvent {
   [k: string]: unknown;
 }
 /**
+ * `POST …/clauses/{position}/chat`: one question about one finding.
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "ChatIn".
+ */
+export interface ChatIn {
+  history?: History;
+  message: Message;
+  [k: string]: unknown;
+}
+/**
+ * One earlier turn of a finding's chat. The server keeps no chat history: the client
+ * sends it back, and the server treats all of it as untrusted data.
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "ChatMessage".
+ */
+export interface ChatMessage {
+  content: Content;
+  role: Role;
+  [k: string]: unknown;
+}
+/**
+ * `CUSTOM chat_result` value: the finished answer, once streaming is over.
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "ChatResult".
+ */
+export interface ChatResult {
+  cost_usd?: CostUsd;
+  diff?: Diff;
+  disclaimer?: Disclaimer;
+  input_tokens?: InputTokens;
+  latency_ms?: LatencyMs;
+  message_id: MessageId;
+  model: Model;
+  output_tokens?: OutputTokens;
+  suggestion?: Suggestion;
+  text: Text1;
+  truncated?: Truncated;
+  [k: string]: unknown;
+}
+/**
+ * One run of a word-level diff from the original clause to the suggestion.
+ * Concatenating the `equal` and `delete` texts gives the original, `equal` and `insert`
+ * the suggestion; whitespace belongs to the segment it follows.
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "DiffSegment".
+ */
+export interface DiffSegment {
+  op: Op;
+  text: Text;
+  [k: string]: unknown;
+}
+/**
  * A lawyer's decision on one finding. `corrected_*` are only allowed with `override`;
  * an override needs `corrected_verdict`, and an empty `corrected_basis` keeps the model's §.
  *
@@ -371,7 +718,7 @@ export interface ClauseSpan {
   position: Position2;
   rects?: Rects;
   start?: Start;
-  text: Text;
+  text: Text2;
   topic?: Topic;
   [k: string]: unknown;
 }
@@ -424,11 +771,11 @@ export interface ClauseVerdict {
   check?: Check;
   confidence: Confidence;
   content_hash: ContentHash1;
-  input_tokens?: InputTokens;
-  latency_ms?: LatencyMs;
+  input_tokens?: InputTokens1;
+  latency_ms?: LatencyMs1;
   legal_basis?: LegalBasis;
   observations?: StepObservations;
-  output_tokens?: OutputTokens;
+  output_tokens?: OutputTokens1;
   reason_de?: ReasonDe1;
   reason_unavailable?: ReasonUnavailable1;
   trace_id?: TraceId;
@@ -460,10 +807,29 @@ export interface ReviewOut {
   budget_left?: BudgetLeft;
   cache_hit_rate?: CacheHitRate;
   can_complete?: CanComplete;
+  cost_eur?: CostEur;
   decidable?: Decidable;
+  pricing?: Pricing;
   progress?: Progress;
   review: Review;
   waiting_reason?: WaitingReason;
+  wall_time_ms?: WallTimeMs;
+  [k: string]: unknown;
+}
+/**
+ * The token prices of `configs/app.yaml` (`review.price_usd_per_million_tokens`,
+ * `review.eur_per_usd`), so the UI turns tokens into money with the server's numbers:
+ * `usd = (input_tokens * input_usd_per_million + output_tokens * output_usd_per_million)
+ * / 1e6`, and `eur = usd * eur_per_usd` when the rate is set.
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "Pricing".
+ */
+export interface Pricing {
+  confirmed?: Confirmed;
+  eur_per_usd?: EurPerUsd;
+  input_usd_per_million?: InputUsdPerMillion;
+  output_usd_per_million?: OutputUsdPerMillion;
   [k: string]: unknown;
 }
 /**
@@ -472,7 +838,7 @@ export interface ReviewOut {
  */
 export interface Review {
   agent_version: AgentVersion4;
-  cost_usd?: CostUsd;
+  cost_usd?: CostUsd1;
   counts?: ReviewCounts;
   created_at?: CreatedAt1;
   document_id: DocumentId;
@@ -517,6 +883,7 @@ export interface ReviewCounts {
  */
 export interface DocumentList {
   items: Items;
+  pricing?: Pricing;
   [k: string]: unknown;
 }
 /**
@@ -524,8 +891,11 @@ export interface DocumentList {
  * via the `definition` "DocumentListItem".
  */
 export interface DocumentListItem {
+  cache_hit_rate?: CacheHitRate1;
+  cost_eur?: CostEur1;
   document: Document;
   latest_review?: Review | null;
+  wall_time_ms?: WallTimeMs1;
   [k: string]: unknown;
 }
 /**
@@ -562,7 +932,33 @@ export interface DocumentOut {
  */
 export interface ErrorBody {
   code: Code;
-  message: Message;
+  message: Message1;
+  [k: string]: unknown;
+}
+/**
+ * 409 `export_blocked` from `GET /reviews/{id}/export` without `draft=true`.
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "ExportBlockedBody".
+ */
+export interface ExportBlockedBody {
+  blocking?: Blocking;
+  code: Code1;
+  message: Message2;
+  reason: Reason;
+  [k: string]: unknown;
+}
+/**
+ * One finding that blocks a final export: a void or review verdict without a decision.
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "ExportBlocker".
+ */
+export interface ExportBlocker {
+  heading?: Heading1;
+  number?: Number1;
+  position: Position5;
+  verdict: Verdict1;
   [k: string]: unknown;
 }
 /**
@@ -573,7 +969,7 @@ export interface FeedbackIn {
   comment?: Comment1;
   corrected_basis?: CorrectedBasis3;
   corrected_verdict?: CorrectedVerdict3;
-  position: Position5;
+  position: Position6;
   reasons?: Reasons1;
   review_id: ReviewId4;
   vote: Vote1;
@@ -613,9 +1009,9 @@ export interface Health {
  */
 export interface Interrupt {
   confidence: Confidence1;
-  position: Position6;
+  position: Position7;
   question?: Question;
-  verdict: Verdict1;
+  verdict: Verdict2;
   [k: string]: unknown;
 }
 /**
@@ -626,7 +1022,7 @@ export interface Interrupt {
  */
 export interface PasteIn {
   filename?: Filename1;
-  text: Text1;
+  text: Text3;
   [k: string]: unknown;
 }
 /**
@@ -651,6 +1047,98 @@ export interface ReviewIn {
   [k: string]: unknown;
 }
 /**
+ * The summary block (8.A): deterministic from the findings and the current decisions.
+ *
+ * `decision_set_hash` changes exactly when anything the deterministic part shows changes
+ * (a decision, a note, a verdict); it keys the cached LLM recommendation, so the paragraph
+ * is generated at most once per decision set. With `summary.llm_enabled` false (the
+ * default) the recommendation is always the rule-based German text.
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "ReviewSummary".
+ */
+export interface ReviewSummary {
+  agent_version: AgentVersion5;
+  counts: SummaryCounts;
+  decision_set_hash: DecisionSetHash;
+  document_id: DocumentId3;
+  draft: Draft;
+  filename: Filename2;
+  generated_at: GeneratedAt;
+  last_decided_at?: LastDecidedAt1;
+  recommendation: Recommendation;
+  recommendation_from_llm?: RecommendationFromLlm;
+  review_id: ReviewId5;
+  review_status: ReviewStatus;
+  reviewers?: Reviewers;
+  top_risks?: TopRisks;
+  void_groups?: VoidGroups;
+  [k: string]: unknown;
+}
+/**
+ * What the summary block and the memo cover state, by the verdict in force.
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "SummaryCounts".
+ */
+export interface SummaryCounts {
+  accepted?: Accepted;
+  dismissed?: Dismissed2;
+  failed?: Failed1;
+  findings?: Findings1;
+  open?: Open;
+  open_review?: OpenReview1;
+  open_void?: OpenVoid1;
+  out_of_scope?: OutOfScope1;
+  overridden?: Overridden2;
+  potentially_void?: PotentiallyVoid1;
+  uncertain?: Uncertain1;
+  valid?: Valid1;
+  [k: string]: unknown;
+}
+/**
+ * One finding as the summary and the export see it: the verdict *in force*.
+ *
+ * In force means `decided_verdict(decision)` once the lawyer decided, else the model's
+ * verdict (`finding_status == "open"`). A dismissed finding has no verdict in force and
+ * never appears in a summary list; it is only counted.
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "SummaryFinding".
+ */
+export interface SummaryFinding {
+  basis?: Basis;
+  citations?: Citations;
+  confidence: Confidence2;
+  decided_by?: DecidedBy2;
+  excerpt: Excerpt;
+  finding_status: FindingStatus1;
+  heading?: Heading2;
+  model_verdict: ModelVerdict1;
+  note?: Note3;
+  number?: Number2;
+  overridden_to_void?: OverriddenToVoid;
+  position: Position8;
+  verdict: Verdict3;
+  [k: string]: unknown;
+}
+/**
+ * Void findings that share the statute paragraph of their strongest § in force.
+ *
+ * The paragraph is that of the first chunk of `SummaryFinding.basis` (`LawChunk.law` and
+ * `LawChunk.paragraph`), so § 309 Nr. 7 and § 309 Nr. 8 fall in one group "§ 309 BGB".
+ * Findings without a basis form one group, `key = label = SUMMARY_NO_BASIS`.
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "SummaryGroup".
+ */
+export interface SummaryGroup {
+  findings: Findings2;
+  key: Key;
+  label: Label;
+  [k: string]: unknown;
+}
+/**
  * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
  * via the `definition` "StatuteOut".
  */
@@ -658,7 +1146,7 @@ export interface StatuteOut {
   chunk_id: ChunkId;
   citation: Citation;
   source_url?: SourceUrl;
-  text: Text2;
+  text: Text4;
   title: Title;
   [k: string]: unknown;
 }
@@ -675,7 +1163,7 @@ export interface StatuteOut {
 export interface StoredEvent {
   created_at?: CreatedAt3;
   payload: Payload;
-  review_id: ReviewId5;
+  review_id: ReviewId6;
   seq: Seq;
   type: Type;
   [k: string]: unknown;

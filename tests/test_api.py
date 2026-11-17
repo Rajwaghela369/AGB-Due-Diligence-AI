@@ -26,6 +26,7 @@ from app.domain import (
     StoredEvent,
 )
 from app.ingest import IngestError
+from app.review.deliverable import deliverable_settings
 from app.review.feedback import FeedbackService
 from app.review.limiter import build_limiter
 from app.review.service import build_service
@@ -697,6 +698,20 @@ def test_build_app_wires_the_real_service_contract(monkeypatch, with_langfuse):
     monkeypatch.setattr("app.review.limiter.review_settings", fake_review_settings)
     monkeypatch.setattr("app.agent.run.make_judge", fake_judge)
     monkeypatch.setattr("app.review.service.build_service", fake_service)
+    # Phase 8 generating models: built from the config and the one shared limiter.
+    summary_model, chat_model = object(), object()
+
+    def fake_model(model):
+        def make(received_config, *, limiter):
+            assert received_config is config and limiter is shared
+            return model
+
+        return make
+
+    shared = limiter
+
+    monkeypatch.setattr("app.review.summary.make_summary_model", fake_model(summary_model))
+    monkeypatch.setattr("app.review.chat.make_chat_model", fake_model(chat_model))
 
     application = build_app()
     expected_tracer = langfuse if with_langfuse else None
@@ -720,6 +735,9 @@ def test_build_app_wires_the_real_service_contract(monkeypatch, with_langfuse):
             "statutes": {},
             "router_model": "jina-embeddings-v3",
             "feedback": application.state.feedback,
+            "deliverable": deliverable_settings(config),
+            "summary_model": summary_model,
+            "chat_model": chat_model,
             "max_concurrency": 2,
             "prices": {"input": 0.0, "output": 0.0},
         },

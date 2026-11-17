@@ -18,9 +18,10 @@ from app.api.errors import install_error_handlers
 from app.api.middleware import BodyLimitMiddleware, RequestLogMiddleware
 from app.api.rate_limit import IpRateLimiter
 from app.api.readiness import Probe, Readiness
-from app.api.routes import decisions, documents, health, metrics, reviews
+from app.api.routes import chat, decisions, documents, export, health, metrics, reviews
 from app.api.routes import feedback as feedback_routes
 from app.api.routes import statutes as statute_routes
+from app.api.routes.export import EXPORT_DRAFT_HEADER
 from app.review.interfaces import ReviewService
 from app.store.interfaces import Store
 
@@ -76,7 +77,7 @@ def create_app(
         allow_origins=list(setting(settings, "api.cors_origins", [])),
         allow_methods=["GET", "POST", "PUT"],
         allow_headers=["Content-Type", "Last-Event-ID", REVIEWER_HEADER],
-        expose_headers=["X-Request-Id"],
+        expose_headers=["X-Request-Id", "Content-Disposition", EXPORT_DRAFT_HEADER],
         max_age=600,
     )
     # Body size is checked before any parser runs; the slack covers multipart framing.
@@ -91,6 +92,8 @@ def create_app(
         reviews,
         feedback_routes,
         decisions,
+        export,
+        chat,
         metrics,
         statute_routes,
         health,
@@ -122,11 +125,14 @@ def build_app() -> FastAPI:
 
     from app.agent.run import make_judge
     from app.api.readiness import production_probes
+    from app.review.chat import make_chat_model
     from app.review.checkpoint import postgres_checkpointer
     from app.review.corrections import Corrections, CorrectionSettings
+    from app.review.deliverable import deliverable_settings
     from app.review.feedback import FeedbackService
     from app.review.limiter import build_limiter, review_settings
     from app.review.service import build_service
+    from app.review.summary import make_summary_model
     from app.store.files import LocalFileStore
     from app.store.migrate import apply_pending
     from app.store.postgres import postgres_store
@@ -163,6 +169,9 @@ def build_app() -> FastAPI:
         router=partial(classify_topics, model=router_model),
         router_model=router_model,
         feedback=feedback,
+        deliverable=deliverable_settings(config),
+        summary_model=make_summary_model(config, limiter=limiter),
+        chat_model=make_chat_model(config, limiter=limiter),
         **review_settings(config),
     )
     service.corrections = corrections

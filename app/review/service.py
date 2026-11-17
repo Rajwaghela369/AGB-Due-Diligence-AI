@@ -16,6 +16,7 @@ import hashlib
 import threading
 import time
 import uuid
+from collections.abc import Iterator
 from typing import Any
 
 from ag_ui.core import (
@@ -33,22 +34,30 @@ from app.domain import (
     IDLE_REVIEW_STATUSES,
     Agreement,
     AgreementByVerdict,
+    ChatEvent,
+    ChatIn,
     ClauseSpan,
     ClauseVerdict,
     Decision,
     DecisionEvent,
     DecisionIn,
+    ExportFile,
+    ExportFormat,
     Finding,
     Review,
     Reviewer,
+    ReviewSummary,
     StoredEvent,
     Topic,
     decided_verdict,
     kept_model_verdict,
 )
+from app.review.chat import start_chat
 from app.review.corrections import Corrections
+from app.review.deliverable import DeliverableSettings
 from app.review.events import TERMINAL_TYPES, EventBus, Subscription, serialise
-from app.review.interfaces import InvalidDecision, NotDecidable
+from app.review.export import build_export
+from app.review.interfaces import ChatModel, InvalidDecision, NotDecidable, SummaryModel
 from app.review.limiter import DEFAULT_MAX_CONCURRENCY
 from app.review.runner import (
     KeyedLocks,
@@ -63,6 +72,7 @@ from app.review.runner import (
     review_clauses,
     thread_id,
 )
+from app.review.summary import build_summary
 from app.review.topics import Router, tag_topics
 from app.store.interfaces import Store
 
@@ -90,6 +100,9 @@ class Service:
         router_model: str = DEFAULT_ROUTER_MODEL,
         feedback: Any = None,
         corrections: Corrections | None = None,
+        deliverable: DeliverableSettings | None = None,
+        summary_model: SummaryModel | None = None,
+        chat_model: ChatModel | None = None,
     ) -> None:
         if max_concurrency < 1:
             raise ValueError("max_concurrency must be at least 1")
@@ -101,6 +114,11 @@ class Service:
         self.router_model = router_model
         self.feedback = feedback  # app.review.feedback.FeedbackService, used by `decide`
         self.corrections = corrections
+        # Phase 8: summary, export and chat settings, and the two generating models
+        # (None: no LLM recommendation; no chat, which the API answers with 503).
+        self.deliverable = deliverable or DeliverableSettings()
+        self.summary_model = summary_model
+        self.chat_model = chat_model
         self.bus = EventBus(store, recheck_seconds=recheck_seconds)
         self._ctx = RunContext(
             store=store,
@@ -121,6 +139,11 @@ class Service:
     @property
     def agent_version(self) -> str:
         return self.judge.agent_version
+
+    @property
+    def prices(self) -> dict[str, float]:
+        """USD per million tokens, `{"input": x, "output": y}`; `runner.price` applies them."""
+        return dict(self._ctx.prices)
 
     # --- ReviewService ----------------------------------------------------------
 
@@ -623,6 +646,35 @@ class Service:
         update = {"reason_de": explained.reason_de, "reason_unavailable": not explained.reason_de}
         return decision.model_copy(update=update), cost
 
+    # --- Phase 8: the bodies live in their slices' modules -----------------------
+
+    def summary(self, review_id: str) -> ReviewSummary:
+        """See `ReviewService.summary`; implemented in `app.review.summary`."""
+        return build_summary(self, review_id)
+
+    def export(
+        self,
+        review_id: str,
+        fmt: ExportFormat,
+        *,
+        draft: bool = False,
+        reviewer: Reviewer,
+    ) -> ExportFile:
+        """See `ReviewService.export`; implemented in `app.review.export`."""
+        return build_export(self, review_id, fmt, draft=draft, reviewer=reviewer)
+
+    def chat(
+        self,
+        review_id: str,
+        position: int,
+        message: ChatIn,
+        reviewer: Reviewer,
+        *,
+        request_id: str | None = None,
+    ) -> Iterator[ChatEvent]:
+        """See `ReviewService.chat`; implemented in `app.review.chat`."""
+        return start_chat(self, review_id, position, message, reviewer, request_id=request_id)
+
     def resume_running(self) -> int:
         """Resume reviews left `running` by a restart; returns how many were resumed.
 
@@ -758,6 +810,9 @@ def build_service(
     router_model: str = DEFAULT_ROUTER_MODEL,
     feedback: Any = None,
     corrections: Corrections | None = None,
+    deliverable: DeliverableSettings | None = None,
+    summary_model: SummaryModel | None = None,
+    chat_model: ChatModel | None = None,
 ) -> Service:
     """The one review service of a process; see `app.review.limiter.review_settings`."""
     return Service(
@@ -774,4 +829,7 @@ def build_service(
         router_model=router_model,
         feedback=feedback,
         corrections=corrections,
+        deliverable=deliverable,
+        summary_model=summary_model,
+        chat_model=chat_model,
     )

@@ -6,8 +6,9 @@ import asyncio
 import json
 import queue
 import threading
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import suppress
+from typing import Any
 
 from fastapi import Request
 
@@ -32,11 +33,17 @@ def encode_event(event: StoredEvent) -> bytes:
     return "\n".join(lines).encode("utf-8")
 
 
-async def stream_events(request: Request, events: Iterator[StoredEvent]) -> AsyncIterator[bytes]:
-    output: queue.Queue[StoredEvent | BaseException | object] = queue.Queue(maxsize=1)
+async def stream_events(
+    request: Request,
+    events: Iterator[Any],
+    encode: Callable[[Any], bytes] = encode_event,
+) -> AsyncIterator[bytes]:
+    """Stream a blocking iterator as SSE; `encode` turns one item into one message (review
+    events by default, chat events with `app.api.routes.chat.encode_chat_event`)."""
+    output: queue.Queue[Any] = queue.Queue(maxsize=1)
     stopped = threading.Event()
 
-    def offer(item: StoredEvent | BaseException | object) -> bool:
+    def offer(item: Any) -> bool:
         while not stopped.is_set():
             try:
                 output.put(item, timeout=0.1)
@@ -76,7 +83,7 @@ async def stream_events(request: Request, events: Iterator[StoredEvent]) -> Asyn
                 return
             if isinstance(item, BaseException):
                 raise item
-            yield encode_event(item)
+            yield encode(item)
             deadline = loop.time() + PING_SECONDS
     finally:
         stopped.set()

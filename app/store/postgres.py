@@ -446,6 +446,23 @@ class PostgresCacheRepo(_Repo):
                 (model, hashes, [topics[h] for h in hashes]),
             )
 
+    def get_summary_text(self, decision_set_hash: str, model: str) -> str | None:
+        with self._connect() as conn:
+            rows = _rows(
+                conn,
+                "select text from summary_texts where decision_set_hash = %s and model = %s",
+                (decision_set_hash, model),
+            )
+        return rows[0]["text"] if rows else None
+
+    def put_summary_text(self, decision_set_hash: str, model: str, text: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "insert into summary_texts (decision_set_hash, model, text) values (%s, %s, %s)"
+                " on conflict (decision_set_hash, model) do nothing",
+                (decision_set_hash, model, text),
+            )
+
 
 _REVIEW_COLUMNS = (
     "review_id, document_id, agent_version, scope, status, counts, cost_usd, trace_id, error,"
@@ -535,10 +552,21 @@ class PostgresReviewRepo(_Repo):
                 "update reviews set status = %s, error = %s,"
                 " started_at = case when %s::text = 'running'"
                 " then coalesce(started_at, clock_timestamp()) else started_at end,"
-                " finished_at = case when %s::text = any(%s::text[]) then clock_timestamp()"
+                # The end of the last run: moving between idle statuses (a decision settling
+                # awaiting_decisions → finished) keeps it. The right side reads old values.
+                " finished_at = case when %s::text = any(%s::text[])"
+                " and not (status = any(%s::text[])) then clock_timestamp()"
                 " else finished_at end"
                 " where review_id = %s",
-                (status, error, status, status, list(IDLE_REVIEW_STATUSES), review_id),
+                (
+                    status,
+                    error,
+                    status,
+                    status,
+                    list(IDLE_REVIEW_STATUSES),
+                    list(IDLE_REVIEW_STATUSES),
+                    review_id,
+                ),
             )
 
     def update_counts(self, review_id: str, counts: ReviewCounts, cost_usd: float) -> None:

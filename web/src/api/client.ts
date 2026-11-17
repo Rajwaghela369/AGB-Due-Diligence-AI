@@ -3,6 +3,7 @@
 import type {
   AgreementOut,
   AuditOut,
+  ChatIn,
   DecisionIn,
   DecisionOut,
   DocumentList,
@@ -17,14 +18,31 @@ import type {
   Ready,
   ReviewIn,
   ReviewOut,
+  ReviewSummary,
   StatuteOut,
 } from "./types.gen";
 
+/** `GET …/export?format=`: the memo as Word or Markdown, or the findings as CSV. */
+export type ExportFormat = "docx" | "md" | "csv";
+
+/** A downloaded export; `draft` is the server's `X-Export-Draft`. */
+export interface ExportDownload {
+  blob: Blob;
+  filename: string;
+  draft: boolean;
+}
+
+/**
+ * Every error body has `code` and `message`; some carry more (409 `export_blocked` is an
+ * `ExportBlockedBody` with `reason` and `blocking`), which is kept as sent.
+ */
+export type ApiErrorBody = ErrorBody & Record<string, unknown>;
+
 export class ApiError extends Error {
   readonly status: number;
-  readonly body: ErrorBody;
+  readonly body: ApiErrorBody;
 
-  constructor(status: number, body: ErrorBody) {
+  constructor(status: number, body: ApiErrorBody) {
     super(body.message);
     this.name = "ApiError";
     this.status = status;
@@ -123,6 +141,56 @@ export function createApiClient(options: ApiClientOptions = {}) {
           jsonRequest("PUT", input, name ? { "X-Reviewer": encodeURIComponent(name) } : undefined),
         );
       },
+      /** The summary block (Phase 8, 8.A); deterministic from the decisions. */
+      summary(reviewId: string): Promise<ReviewSummary> {
+        return request(`/reviews/${encodeURIComponent(reviewId)}/summary`);
+      },
+      /**
+       * Download the DD export. Without `draft` it fails with 409 `export_blocked` while a
+       * void or review finding is undecided (`ApiError.body.blocking` lists them).
+       */
+      async export(
+        reviewId: string,
+        format: ExportFormat,
+        options: { draft?: boolean; reviewer?: string | null } = {},
+      ): Promise<ExportDownload> {
+        const query = new URLSearchParams({ format });
+        if (options.draft) query.set("draft", "true");
+        const name = options.reviewer?.trim();
+        const response = await (fetchImplementation ?? globalThis.fetch)(
+          `${baseUrl}/api/v1/reviews/${encodeURIComponent(reviewId)}/export?${query.toString()}`,
+          name ? { headers: { "X-Reviewer": encodeURIComponent(name) } } : undefined,
+        );
+        if (!response.ok) throw new ApiError(response.status, await errorBody(response));
+        return {
+          blob: await response.blob(),
+          filename:
+            attachmentName(response.headers.get("Content-Disposition")) ?? `export.${format}`,
+          draft: response.headers.get("X-Export-Draft") === "true",
+        };
+      },
+      /**
+       * Open the rewrite chat stream for one finding (Phase 8, 8.C). Resolves with the raw
+       * `text/event-stream` response once the server accepted the request; errors before
+       * streaming (404, 409 `not_chattable`, 422, 429, 501, 503) throw `ApiError`. The
+       * caller reads `response.body` (docs/Events.md, "Rewrite chat").
+       */
+      async chat(
+        reviewId: string,
+        position: number,
+        input: ChatIn,
+        options: { reviewer?: string | null; signal?: AbortSignal } = {},
+      ): Promise<Response> {
+        const name = options.reviewer?.trim();
+        const headers: Record<string, string> = { Accept: "text/event-stream" };
+        if (name) headers["X-Reviewer"] = encodeURIComponent(name);
+        const response = await (fetchImplementation ?? globalThis.fetch)(
+          `${baseUrl}/api/v1/reviews/${encodeURIComponent(reviewId)}/clauses/${position}/chat`,
+          { ...jsonRequest("POST", input, headers), signal: options.signal ?? null },
+        );
+        if (!response.ok) throw new ApiError(response.status, await errorBody(response));
+        return response;
+      },
       /** The decision history, oldest first; `position` narrows it to one finding. */
       audit(reviewId: string, position?: number): Promise<AuditOut> {
         const query = position === undefined ? "" : `?position=${position}`;
@@ -151,16 +219,31 @@ export function createApiClient(options: ApiClientOptions = {}) {
   };
 }
 
-async function errorBody(response: Response): Promise<ErrorBody> {
+async function errorBody(response: Response): Promise<ApiErrorBody> {
   try {
-    const body = (await response.json()) as Partial<ErrorBody>;
+    const body = (await response.json()) as Partial<ApiErrorBody>;
     if (typeof body.code === "string" && typeof body.message === "string") {
-      return { code: body.code, message: body.message };
+      return { ...body, code: body.code, message: body.message };
     }
   } catch {
     // A proxy or failed dependency can return HTML; callers still receive one stable shape.
   }
   return { code: "http_error", message: response.statusText || `HTTP ${response.status}` };
+}
+
+/** The filename of `Content-Disposition: attachment; filename*=UTF-8''…`. */
+export function attachmentName(header: string | null): string | null {
+  if (!header) return null;
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (encoded?.[1]) {
+    try {
+      return decodeURIComponent(encoded[1]);
+    } catch {
+      return null;
+    }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(header);
+  return plain?.[1] ?? null;
 }
 
 function jsonRequest(

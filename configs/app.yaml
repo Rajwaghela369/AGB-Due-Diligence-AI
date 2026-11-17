@@ -18,6 +18,15 @@ models:
     # Confirmed available by the Gemini API on this project's key.
     name: gemini-3.8-flash
     max_output_tokens: 300
+  # Phase 8. Both generate text like explain and default to its model; neither is called
+  # unless its feature is used (summary: only with summary.llm_enabled).
+  summary:
+    provider: gemini
+    name: gemini-3.8-flash
+    max_output_tokens: 300
+  chat:
+    provider: gemini
+    name: gemini-3.8-flash
 
 prompts:
   # Evaluation runs use a labelled Langfuse version. Promote a version to
@@ -71,10 +80,35 @@ review:
   # project's Gemini quota before the live gate.
   rpm: 60  # 180 produced Gemini 429s during the 2026-11-16 live gate
   daily_budget: 10000  # same as configs/evals.yaml run.request_budget
-  # For `cost_usd`; 0 until the Gemini prices are confirmed for this project.
+  # For `cost_usd` and the cost shown in the UI (Phase 8, 8.D).
+  # TODO(prices): still placeholders. Set the confirmed Gemini prices for this project's
+  # models before the Phase 8 gate; while both are 0 the UI shows „Preise nicht hinterlegt“
+  # (`Pricing.confirmed` is false) instead of a cost. One pair covers every model call.
   price_usd_per_million_tokens:
-    input: 0
-    output: 0
+    input: 0  # TODO(prices)
+    output: 0  # TODO(prices)
+  # TODO(prices): USD → EUR rate for the € figures; null shows USD.
+  eur_per_usd: null
+
+# Phase 8 (polish and deliverable); read by app.review.deliverable.deliverable_settings.
+summary:
+  # One generated recommendation paragraph per decision set (cached by its hash), on top
+  # of the rule-based one. Off by default (Phase 7-10 plan, "Decisions taken" #4).
+  llm_enabled: false
+  top_risks: 5
+  excerpt_chars: 240
+
+export:
+  # The DOCX memo template and its assets; configs/export/README.md describes them.
+  template_dir: configs/export
+  statute_appendix: true
+
+chat:
+  # The rewrite chat's length caps: the model's output, and the answer kept and shown.
+  max_output_tokens: 800
+  max_answer_chars: 4000
+  # Earlier turns the client sends back that reach the prompt (the newest ones).
+  max_history_messages: 10
 
 # HTTP API (Phase 5). Read by app.api.main.build_app and passed to create_app.
 ingest:

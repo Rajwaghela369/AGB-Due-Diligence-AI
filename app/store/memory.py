@@ -190,6 +190,7 @@ class MemoryCacheRepo:
         self._embeddings: dict[tuple[str, str], list[float]] = {}
         self._retrievals: dict[tuple[str, str, str], list] = {}
         self._topics: dict[tuple[str, str], str] = {}
+        self._summaries: dict[tuple[str, str], str] = {}
 
     def get_embedding(self, content_hash: str, model: str) -> list[float] | None:
         with self._lock:
@@ -225,6 +226,14 @@ class MemoryCacheRepo:
         with self._lock:
             for content_hash, topic in topics.items():
                 self._topics.setdefault((content_hash, model), topic)
+
+    def get_summary_text(self, decision_set_hash: str, model: str) -> str | None:
+        with self._lock:
+            return self._summaries.get((decision_set_hash, model))
+
+    def put_summary_text(self, decision_set_hash: str, model: str, text: str) -> None:
+        with self._lock:
+            self._summaries.setdefault((decision_set_hash, model), text)
 
 
 class MemoryReviewRepo:
@@ -306,11 +315,14 @@ class MemoryReviewRepo:
                 if active is not None and active.review_id != review_id:
                     # Postgres: unique violation on reviews_one_active_idx.
                     raise ValueError(f"review {active.review_id} is already active")
+            # finished_at marks the end of the last run, so the move between idle statuses
+            # that a decision makes (awaiting_decisions → finished) does not restamp it.
+            was_idle = review.status in IDLE_REVIEW_STATUSES
             review.status = status
             review.error = error
             if status == "running" and review.started_at is None:
                 review.started_at = _now()
-            if status in IDLE_REVIEW_STATUSES:
+            if status in IDLE_REVIEW_STATUSES and not was_idle:
                 review.finished_at = _now()
 
     def update_counts(self, review_id: str, counts: ReviewCounts, cost_usd: float) -> None:
