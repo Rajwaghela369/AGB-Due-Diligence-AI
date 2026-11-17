@@ -45,8 +45,7 @@ const tabClass = cn(
   "aria-selected:font-medium",
 );
 
-const PANES = ["document", "findings"] as const;
-type Pane = (typeof PANES)[number];
+type Pane = "document" | "findings";
 
 /** Height from the top of the workspace to the bottom of the viewport, minus the page padding. */
 function useFillHeight(ref: React.RefObject<HTMLElement | null>): number | undefined {
@@ -56,7 +55,7 @@ function useFillHeight(ref: React.RefObject<HTMLElement | null>): number | undef
       const el = ref.current;
       if (!el) return;
       const bottom = parseFloat(getComputedStyle(el.parentElement ?? el).paddingBottom) || 0;
-      setHeight(Math.max(window.innerHeight - el.getBoundingClientRect().top - bottom, 320));
+      setHeight(Math.max(window.innerHeight - el.getBoundingClientRect().top - bottom, 0));
     };
     measure();
     window.addEventListener("resize", measure);
@@ -103,23 +102,35 @@ export function ReviewWorkspace() {
       ref={fillRef}
       style={fillHeight === undefined ? undefined : { height: fillHeight }}
       className={cn(
-        "workspace-fill flex h-[calc(100dvh-14rem)] flex-col gap-3 overflow-clip",
+        "workspace-fill flex h-[calc(100dvh-14rem)] flex-col gap-3",
         // Wide screens: break out of the page's max width so the right column can grow.
         "min-[1600px]:relative min-[1600px]:left-1/2 min-[1600px]:w-[calc(100vw-3rem)]",
         "min-[1600px]:max-w-[120rem] min-[1600px]:-translate-x-1/2",
       )}
     >
       <div role="tablist" aria-label={t("workspace.panes")} className="flex gap-2 lg:hidden">
-        {PANES.map((p) => (
+        {(
+          [
+            ["document", "workspace.viewDocument", pane === "document" && view === "document"],
+            ["table", "workspace.viewTable", pane === "document" && view === "table"],
+            ["findings", "findings.title", pane === "findings"],
+          ] as const
+        ).map(([key, label, active]) => (
           <button
-            key={p}
+            key={key}
             role="tab"
             type="button"
-            aria-selected={pane === p}
-            onClick={() => setPane(p)}
+            aria-selected={active}
+            onClick={() => {
+              if (key === "findings") setPane("findings");
+              else {
+                setPane("document");
+                setView(key);
+              }
+            }}
             className={tabClass}
           >
-            {t(p === "document" ? "workspace.document" : "findings.title")}
+            {t(label)}
           </button>
         ))}
       </div>
@@ -150,7 +161,11 @@ export function ReviewWorkspace() {
             })}
           </ul>
           <div className="mb-2 flex items-center gap-2">
-            <div role="tablist" aria-label={t("workspace.views")} className="flex gap-2">
+            <div
+              role="tablist"
+              aria-label={t("workspace.views")}
+              className="flex gap-2 max-lg:hidden"
+            >
               <button
                 role="tab"
                 type="button"

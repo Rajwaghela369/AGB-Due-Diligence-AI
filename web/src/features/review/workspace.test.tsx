@@ -111,21 +111,26 @@ describe("review workspace layout", () => {
     expect(screen.getByTestId("findings-table")).toBeInTheDocument();
   });
 
-  it("keeps the page from scrolling and scrolls only inside the panel on selection (bug 2)", async () => {
+  it("never scrolls the page itself on selection (bug 2; layout is covered in e2e)", async () => {
     const pageScroll = vi.fn();
     window.scrollTo = pageScroll as typeof window.scrollTo;
-    const scrolled: HTMLElement[] = [];
-    Element.prototype.scrollIntoView = function (this: Element) {
-      scrolled.push(this as HTMLElement);
-    };
     await renderWorkspace();
-    const root = screen.getByTestId("findings-panel").closest(".workspace-fill") as HTMLElement;
-    // `overflow: clip` forbids even programmatic scrolling of the workspace itself.
-    expect(root.className).toContain("overflow-clip");
     fireEvent.click(within(screen.getByTestId("finding-card-1")).getAllByRole("button")[0]!);
     expect(window.scrollY).toBe(0);
     expect(pageScroll).not.toHaveBeenCalled();
-    for (const el of scrolled) expect(screen.getByTestId("findings-panel")).toContainElement(el);
+  });
+
+  it("moves focus into the detail and back to the card (focus management)", async () => {
+    await renderWorkspace();
+    const button = within(screen.getByTestId("finding-card-1")).getAllByRole("button")[0]!;
+    button.focus();
+    fireEvent.click(button);
+    const drawer = await screen.findByTestId("finding-drawer");
+    await waitFor(() =>
+      expect(within(drawer).getByRole("button", { name: "Fundstellen" })).toHaveFocus(),
+    );
+    fireEvent.click(within(drawer).getByRole("button", { name: "Fundstellen" }));
+    await waitFor(() => expect(button).toHaveFocus());
   });
 
   it("renders the drawer in the panel column and goes back to the list (bug 1)", async () => {

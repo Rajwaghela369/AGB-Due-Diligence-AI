@@ -4,7 +4,7 @@
 // document stays clickable and selecting another clause just swaps the content. Esc or the
 // back button returns to the list.
 import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { confidenceBand, riskStyle } from "../review/risk";
@@ -145,6 +145,26 @@ export function FindingDrawer({ review }: { review: ReviewData }) {
   const reviewId = review.review?.review_id;
   const open = finding !== undefined && reviewId !== undefined;
 
+  // The card that opened the detail, so Back or Esc can hand focus back to it.
+  const trigger = useRef<HTMLElement | null>(null);
+  const backRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.closest('[data-testid="finding-drawer"]')) return;
+      trigger.current = target.closest('[data-testid^="finding-card-"]') ? target : null;
+    };
+    document.addEventListener("focusin", onFocusIn);
+    return () => document.removeEventListener("focusin", onFocusIn);
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    backRef.current?.focus({ preventScroll: true });
+    return () => {
+      const card = trigger.current;
+      if (card?.isConnected) card.focus({ preventScroll: true });
+    };
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
@@ -165,6 +185,7 @@ export function FindingDrawer({ review }: { review: ReviewData }) {
       className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-lg border border-border bg-surface p-4"
     >
       <button
+        ref={backRef}
         type="button"
         onClick={() => select(null)}
         className="mb-3 inline-flex w-fit items-center gap-1 rounded-md px-1.5 py-1 text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

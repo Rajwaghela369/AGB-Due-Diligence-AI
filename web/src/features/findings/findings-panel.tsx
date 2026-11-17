@@ -1,7 +1,7 @@
 // The side panel: finding cards in document order behind Void / Review / All filters.
 // It publishes the visible positions as `navigable`, so the viewer's ◀ ▶ and J/K walk
 // exactly the list the lawyer is looking at (Phase 6 plan, 6.D).
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import { cn } from "../../lib/utils";
@@ -48,6 +48,12 @@ export function FindingsPanel({ review }: { review: ReviewData }) {
     setNavigable(key === "" ? [] : key.split(",").map(Number));
   }, [key, setNavigable]);
 
+  // display:none forgets the scroll position, so keep it and put it back with the list.
+  const scrollTop = useRef(0);
+  useLayoutEffect(() => {
+    if (!detailOpen && listRef.current) listRef.current.scrollTop = scrollTop.current;
+  }, [detailOpen]);
+
   useEffect(() => {
     if (selected === null || detailOpen) return;
     const card = listRef.current?.querySelector(`[data-testid="finding-card-${selected}"]`);
@@ -84,7 +90,13 @@ export function FindingsPanel({ review }: { review: ReviewData }) {
         </div>
       </div>
 
-      <div ref={listRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+      <div
+        ref={listRef}
+        onScroll={(e) => {
+          scrollTop.current = e.currentTarget.scrollTop;
+        }}
+        className="min-h-0 flex-1 space-y-2 overflow-y-auto"
+      >
         {visible.length === 0 ? (
           <p className="p-3 text-sm text-muted-foreground">
             {review.isFinal ? t("findings.empty") : t("findings.waiting")}

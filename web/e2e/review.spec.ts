@@ -283,3 +283,26 @@ for (const theme of ["light", "dark"] as const) {
     }
   });
 }
+
+for (const [width, height] of [
+  [1440, 900],
+  [820, 1180],
+] as const) {
+  test(`page scrollY stays 0 when a finding is selected (${width}px)`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto(`/reviews/${reviewId}`);
+    await expect(page.getByTestId("risk-summary")).toBeVisible();
+    if (width < 1024) await page.getByRole("tab", { name: "Fundstellen" }).click();
+    const last = page.getByTestId("finding-card-30");
+    await last.scrollIntoViewIfNeeded();
+    await last.getByRole("button").first().click();
+    await page.waitForTimeout(500);
+    const metrics = await page.evaluate(() => ({
+      y: window.scrollY,
+      scroll: document.documentElement.scrollHeight,
+      inner: window.innerHeight,
+    }));
+    expect(metrics.y).toBe(0);
+    expect(metrics.scroll).toBeLessThanOrEqual(metrics.inner);
+  });
+}
