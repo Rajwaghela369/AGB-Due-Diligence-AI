@@ -64,7 +64,8 @@ def test_existing_put_is_a_noop_and_missing_values_follow_file_contract():
         with pytest.raises(FileNotFoundError):
             store.get("missing.pdf")
         assert store.exists("missing.pdf") is False
-        assert store.delete("missing.pdf") is False
+        # Delete is a bare DeleteObject: idempotent, and it never needs HEAD or ListBucket.
+        assert store.delete("missing.pdf") is True
 
 
 def test_concurrent_conditional_put_is_a_noop_only_when_the_blob_matches():

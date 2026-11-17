@@ -21,9 +21,9 @@ writes the client (boto3, or the minio client) and `scripts/migrate_files_to_s3.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass
-import hashlib
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -211,14 +211,15 @@ def file_store_from_config(config: Mapping[str, Any], root: Path) -> FileStore:
     if backend == "s3":
         from core.settings import load_settings
 
+        s3_settings = S3Settings.from_config(config)
         settings = load_settings()
         if not settings.s3_access_key_id or not settings.s3_secret_access_key:
             raise ValueError(
                 "S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be set when files.backend is 's3'"
             )
         return S3FileStore(
-            S3Settings.from_config(config),
-            access_key_id=settings.s3_access_key_id or None,
-            secret_access_key=settings.s3_secret_access_key or None,
+            s3_settings,
+            access_key_id=settings.s3_access_key_id,
+            secret_access_key=settings.s3_secret_access_key,
         )
     raise ValueError(f"unknown files.backend {backend!r}; expected 'local' or 's3'")

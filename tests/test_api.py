@@ -21,10 +21,10 @@ from app.domain import (
     ClauseVerdict,
     Document,
     Finding,
+    Principal,
     Review,
     StepObservations,
     StoredEvent,
-    Principal,
 )
 from app.ingest import IngestError
 from app.review.deliverable import deliverable_settings

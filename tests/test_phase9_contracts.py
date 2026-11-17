@@ -412,7 +412,9 @@ def test_the_memory_file_store_deletes_idempotently_and_does_not_sign():
     assert not files.exists("k.pdf") and files.keys() == []
 
 
-def test_the_file_store_is_chosen_by_config(tmp_path: Path):
+def test_the_file_store_is_chosen_by_config(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("S3_ACCESS_KEY_ID", "test-key")
+    monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "test-secret")
     assert isinstance(file_store_from_config(APP_CONFIG, tmp_path), LocalFileStore)
     assert (tmp_path / "stores/files").is_dir()
     s3 = file_store_from_config(

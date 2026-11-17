@@ -26,7 +26,9 @@ def migrate(source: LocalFileStore, destination: S3FileStore) -> tuple[int, int]
     copied = 0
     already_present = 0
     for path in sorted(
-        item for item in source.root.rglob("*") if item.is_file() and not item.name.startswith(".tmp-")
+        item
+        for item in source.root.rglob("*")
+        if item.is_file() and not item.name.startswith(".tmp-")
     ):
         key = path.relative_to(source.root).as_posix()
         expected = source.get(key)
