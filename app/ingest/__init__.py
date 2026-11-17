@@ -21,7 +21,7 @@ from core.hashing import content_hash
 from app.domain import Document, IngestResult
 
 PARSER_VERSION = "pdfplumber-1"
-SPLITTER_VERSION = "1"  # bump on any change to split.py
+SPLITTER_VERSION = "2"  # bump on any change to split.py
 
 
 class IngestError(Exception):

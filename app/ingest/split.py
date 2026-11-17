@@ -74,11 +74,15 @@ def words_from_text(text: str) -> list[dict[str, Any]]:
 def split(words: list[dict[str, Any]]) -> list[ClauseSpan]:
     """Purely turn parsed or synthetic words into ordered clause spans."""
     lines = _drop_running_matter(_lines(words))
+    first_marker = next(
+        (index for index, line in enumerate(lines) if _marker(line.text) is not None),
+        None,
+    )
     clauses: list[ClauseSpan] = []
     pending: _Pending | None = None
     heading: str | None = None
 
-    def flush() -> None:
+    def flush(*, in_scope: bool = True) -> None:
         nonlocal pending
         if pending is None or not pending.lines:
             pending = None
@@ -101,12 +105,16 @@ def split(words: list[dict[str, Any]]) -> list[ClauseSpan]:
                 rects=rects,
                 start=min(starts) if starts else None,
                 end=max(ends) if ends else None,
-                in_scope=True,
+                in_scope=in_scope,
             )
         )
         pending = None
 
-    for line in lines:
+    if first_marker is not None and first_marker > 0:
+        pending = _Pending(number=None, heading=None, lines=lines[:first_marker])
+        flush(in_scope=False)
+
+    for line in lines[first_marker or 0 :]:
         marker = _marker(line.text)
         if marker is not None:
             number, remainder, is_section = marker
