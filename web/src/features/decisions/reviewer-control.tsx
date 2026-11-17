@@ -16,7 +16,8 @@ export function ReviewerControl() {
       type="button"
       onClick={edit}
       data-testid="reviewer-control"
-      aria-label={name ? t("reviewer.change", { name }) : t("reviewer.set")}
+      // The visible text is the accessible name (WCAG 2.5.3); the action is the description.
+      title={name ? t("reviewer.change", { name }) : t("reviewer.set")}
       className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
     >
       <UserRound aria-hidden="true" size={14} />
