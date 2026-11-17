@@ -1,6 +1,8 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+
+import { useReviewer } from "../decisions/reviewer";
 
 import type { ReviewSummary } from "../../api/types.gen";
 import "../../i18n";
@@ -9,6 +11,7 @@ import { ORIGIN, installOriginFetch } from "../home/test-utils";
 import { SummaryBlock } from "./summary-block";
 
 installOriginFetch();
+beforeEach(() => useReviewer.setState({ name: "Anna Müller", declined: false }));
 
 const summary = {
   review_id: "review-1",
@@ -73,5 +76,57 @@ describe("SummaryBlock", () => {
     expect(within(dialog).getByRole("button", { name: "6.1 · Haftung" })).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: /als Entwurf exportieren/ }));
     expect(within(dialog).getByRole("checkbox")).toBeChecked();
+  });
+
+  it("follows later changes to summary.draft and groups the format radios", () => {
+    const { rerender } = render(<SummaryBlock reviewId="review-1" summary={summary} />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Exportieren" })[0]!);
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("checkbox")).toBeChecked();
+    const radios = within(dialog).getAllByRole("radio");
+    expect(radios).toHaveLength(3);
+    expect(new Set(radios.map((radio) => radio.getAttribute("name"))).size).toBe(1);
+    expect(radios[0]!.getAttribute("name")).toBeTruthy();
+
+    rerender(<SummaryBlock reviewId="review-1" summary={{ ...summary, draft: false }} />);
+    expect(within(screen.getByRole("dialog")).getByRole("checkbox")).not.toBeChecked();
+  });
+
+  it("explains a not_finished block instead of the generic message", async () => {
+    server.use(
+      http.get(`${ORIGIN}/api/v1/reviews/review-1/export`, () =>
+        HttpResponse.json(
+          { code: "export_blocked", message: "x", reason: "not_finished", blocking: [] },
+          { status: 409 },
+        ),
+      ),
+    );
+    render(<SummaryBlock reviewId="review-1" summary={summary} />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Exportieren" })[0]!);
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Exportieren" }));
+    await waitFor(() =>
+      expect(within(dialog).getByRole("alert")).toHaveTextContent("Die Prüfung läuft noch."),
+    );
+  });
+
+  it("sends the reviewer name with the export", async () => {
+    let header: string | null = null;
+    server.use(
+      http.get(`${ORIGIN}/api/v1/reviews/review-1/export`, ({ request }) => {
+        header = request.headers.get("X-Reviewer");
+        return new HttpResponse("x", {
+          headers: { "Content-Disposition": 'attachment; filename="a.docx"' },
+        });
+      }),
+    );
+    URL.createObjectURL = () => "blob:x";
+    URL.revokeObjectURL = () => undefined;
+    render(<SummaryBlock reviewId="review-1" summary={summary} />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Exportieren" })[0]!);
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Exportieren" }),
+    );
+    await waitFor(() => expect(header).toBe(encodeURIComponent("Anna Müller")));
   });
 });

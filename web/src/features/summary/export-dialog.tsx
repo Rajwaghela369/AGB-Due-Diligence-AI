@@ -1,6 +1,6 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AlertCircle, Download, X } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ApiError, api, type ExportFormat } from "../../api/client";
@@ -21,6 +21,12 @@ function blockers(error: unknown): ExportBlocker[] | null {
   return Array.isArray(blocking) ? (blocking as ExportBlocker[]) : [];
 }
 
+function reasonOf(error: unknown): string | null {
+  return error instanceof ApiError && typeof error.body.reason === "string"
+    ? error.body.reason
+    : null;
+}
+
 export function ExportDialog({
   reviewId,
   defaultDraft,
@@ -34,29 +40,45 @@ export function ExportDialog({
   const [open, setOpen] = useState(false);
   const [format, setFormat] = useState<ExportFormat>("docx");
   const [draft, setDraft] = useState(defaultDraft);
+  const formatName = useId();
+  const [seenDraft, setSeenDraft] = useState(defaultDraft);
+  if (seenDraft !== defaultDraft) {
+    setSeenDraft(defaultDraft);
+    setDraft(defaultDraft);
+  }
   const [pending, setPending] = useState(false);
   const [blocked, setBlocked] = useState<ExportBlocker[] | null>(null);
+  const [reason, setReason] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const reviewer = useReviewer((state) => state.name);
   const select = useReviewUi((state) => state.select);
 
   const download = async () => {
     setPending(true);
     setError(null);
     setBlocked(null);
+    setReason(null);
     try {
-      const file = await api.reviews.export(reviewId, format, { draft, reviewer });
+      const reviewer = await useReviewer.getState().ensure();
+      if (reviewer === null) return; // the lawyer cancelled the name dialog
+      const file = await api.reviews.export(reviewId, format, {
+        draft,
+        reviewer: reviewer || null,
+      });
       const url = URL.createObjectURL(file.blob);
       const link = document.createElement("a");
       link.href = url;
       link.download = file.filename;
+      document.body.appendChild(link);
       link.click();
-      URL.revokeObjectURL(url);
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       setOpen(false);
-    } catch (reason) {
-      const nextBlocked = blockers(reason);
-      if (nextBlocked !== null) setBlocked(nextBlocked);
-      else setError(reason instanceof Error ? reason.message : t("export.error"));
+    } catch (caught) {
+      const nextBlocked = blockers(caught);
+      if (nextBlocked !== null) {
+        setBlocked(nextBlocked);
+        setReason(reasonOf(caught));
+      } else setError(caught instanceof Error ? caught.message : t("export.error"));
     } finally {
       setPending(false);
     }
@@ -96,6 +118,7 @@ export function ExportDialog({
                 >
                   <input
                     type="radio"
+                    name={formatName}
                     checked={format === value}
                     onChange={() => setFormat(value)}
                   />
@@ -116,7 +139,7 @@ export function ExportDialog({
             <div role="alert" className="mt-4 rounded-md border border-[var(--risk)] p-3 text-sm">
               <p className="flex items-center gap-2 font-medium">
                 <AlertCircle aria-hidden className="size-4" />
-                {t("export.blocked")}
+                {reason === "not_finished" ? t("export.notFinished") : t("export.blocked")}
               </p>
               <ul className="mt-2 list-inside list-disc">
                 {blocked.map((finding) => (

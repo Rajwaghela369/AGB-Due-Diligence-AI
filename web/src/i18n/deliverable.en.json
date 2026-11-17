@@ -24,6 +24,7 @@
     "format": "Format",
     "draft": "Export as draft (include open findings)",
     "blocked": "The final export is still blocked.",
+    "notFinished": "The review is still running.",
     "useDraft": "Export as a draft instead",
     "cancel": "Cancel",
     "exporting": "Creating export …",

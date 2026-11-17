@@ -30,7 +30,7 @@ export function ReviewCost({
       value: new Intl.NumberFormat(i18n.language, {
         style: "percent",
         maximumFractionDigits: 0,
-      }).format(cacheHitRate ?? 0),
+      }).format(Math.floor((cacheHitRate ?? 0) * 100 + 1e-9) / 100),
     },
   ];
   return (

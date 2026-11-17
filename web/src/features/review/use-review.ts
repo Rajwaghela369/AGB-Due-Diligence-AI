@@ -109,6 +109,7 @@ export function useReview(reviewId: string | undefined): ReviewData {
   const live = useReviewStream(streamReviewId);
 
   const { refetch } = stored;
+  const storedUpdatedAt = stored.dataUpdatedAt;
   const { refetch: refetchDetails } = details;
   const { reopen } = live;
   const refresh = useCallback(async () => {
@@ -127,7 +128,16 @@ export function useReview(reviewId: string | undefined): ReviewData {
     retry: false,
   });
   useEffect(() => {
-    if (streamStatus === "finished" || streamStatus === "failed") void refetchDetails();
+    // Cost and wall time move whenever a run ends or a decision resumes it.
+    if (decisions > 0) void refetchDetails();
+  }, [refetchDetails, decisions]);
+  useEffect(() => {
+    if (
+      streamStatus === "finished" ||
+      streamStatus === "failed" ||
+      streamStatus === "awaiting_decisions"
+    )
+      void refetchDetails();
   }, [refetchDetails, streamStatus]);
   const [stale, setStale] = useState<{ decisions: number; state: unknown }>({
     decisions: 0,
@@ -154,7 +164,14 @@ export function useReview(reviewId: string | undefined): ReviewData {
         ? { ...f, status: entry.status, verdict: entry.verdict ?? f.verdict, error: entry.error }
         : f;
     });
-    const review = liveState?.review ?? details.data?.review ?? stored.data?.review ?? null;
+    // A decision writes `stored` directly; keep it unless the details were fetched after it.
+    const detailsNewer = details.data !== undefined && details.dataUpdatedAt >= storedUpdatedAt;
+    const review =
+      liveState?.review ??
+      (detailsNewer ? details.data?.review : undefined) ??
+      stored.data?.review ??
+      details.data?.review ??
+      null;
     return {
       review,
       findings,
@@ -181,6 +198,8 @@ export function useReview(reviewId: string | undefined): ReviewData {
     live.progress,
     documentData,
     details.data,
+    details.dataUpdatedAt,
+    storedUpdatedAt,
     summary.data,
     refresh,
   ]);

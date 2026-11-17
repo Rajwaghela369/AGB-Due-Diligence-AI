@@ -24,6 +24,7 @@
     "format": "Format",
     "draft": "Als Entwurf exportieren (offene Feststellungen einschließen)",
     "blocked": "Der finale Export ist noch blockiert.",
+    "notFinished": "Die Prüfung läuft noch.",
     "useDraft": "Stattdessen als Entwurf exportieren",
     "cancel": "Abbrechen",
     "exporting": "Export wird erstellt …",

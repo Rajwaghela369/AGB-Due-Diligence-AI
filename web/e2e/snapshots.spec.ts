@@ -36,6 +36,15 @@ html, body { font-family: Arial, Helvetica, sans-serif !important; }
 /** Upload date of the document, the only text that changes with the clock. */
 const CLOCK_TEXT = (page: Page) => page.locator("li span.mt-1:has(svg.lucide-calendar-days)");
 
+/** Wall time and cache share vary with the run (and so does their width): pin the text. */
+const pinWallTime = (page: Page) =>
+  page.evaluate(() => {
+    document.querySelectorAll('dd[title="Laufzeit"]').forEach((el) => (el.textContent = "2,5 s"));
+    document
+      .querySelectorAll('dd[title="Cache-Treffer"]')
+      .forEach((el) => (el.textContent = "0 %"));
+  });
+
 let reviewId = "";
 
 test.describe.configure({ mode: "serial" });
@@ -132,6 +141,7 @@ for (const route of ROUTES) {
         await route.open(page);
         await page.addStyleTag({ content: FIXED_FONTS });
         await page.evaluate(() => document.fonts.ready);
+        await pinWallTime(page);
 
         const overflow = await page.evaluate(
           () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

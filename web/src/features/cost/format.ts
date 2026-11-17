@@ -40,14 +40,17 @@ export function formatDuration(milliseconds: number | null | undefined, language
       " s"
     );
   }
-  const minutes = Math.floor(milliseconds / 60_000);
-  const seconds = Math.round((milliseconds % 60_000) / 1000);
+  const total = Math.round(milliseconds / 1000);
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
   return `${minutes} min ${seconds} s`;
 }
 
 export function formatTokens(
   inputTokens: number | undefined,
   outputTokens: number | undefined,
+  language = "de",
 ): string {
-  return `${inputTokens ?? 0} / ${outputTokens ?? 0}`;
+  const number = new Intl.NumberFormat(language);
+  return `${number.format(inputTokens ?? 0)} / ${number.format(outputTokens ?? 0)}`;
 }
