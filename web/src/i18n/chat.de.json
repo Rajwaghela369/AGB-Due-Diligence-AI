@@ -1,3 +1,33 @@
 {
-  "title": "Umformulieren"
+  "title": "Umformulieren",
+  "intro": "Fragen Sie nach einer rechtskonformen Fassung dieser Klausel. Jede Frage ist ein Modellaufruf; der Verlauf wird nicht gespeichert.",
+  "log": "Verlauf des Umformulierens",
+  "you": "Ihre Frage",
+  "assistant": "Vorschlag des Assistenten",
+  "inputLabel": "Ihre Frage zur Klausel",
+  "placeholder": "z. B. „Formuliere die Klausel rechtskonform um“",
+  "quickPrompt": "Formuliere {{clause}} rechtskonform um",
+  "send": "Senden",
+  "stop": "Abbrechen",
+  "streaming": "Antwort wird erstellt …",
+  "suggestion": "Vorgeschlagene Fassung",
+  "copy": "Vorschlag kopieren",
+  "copied": "Kopiert",
+  "legendRemoved": "entfernt",
+  "legendInserted": "eingefügt",
+  "removedSr": "entfernt: ",
+  "insertedSr": "eingefügt: ",
+  "truncated": "Die Antwort wurde gekürzt, weil sie die Höchstlänge erreicht hat.",
+  "disclaimer": "KI-generierter Formulierungsvorschlag, keine Rechtsberatung. Bitte vor Verwendung anwaltlich prüfen.",
+  "stopped": "Abgebrochen.",
+  "retry": "Erneut fragen",
+  "errors": {
+    "chat_failed": "Die Antwort konnte nicht erzeugt werden. Bitte versuchen Sie es erneut.",
+    "daily_budget": "Das Tagesbudget für Modellaufrufe ist erschöpft.",
+    "rate_limited": "Zu viele Anfragen. Bitte versuchen Sie es gleich noch einmal.",
+    "not_chattable": "Diese Klausel hat noch kein Prüfergebnis.",
+    "service_unavailable": "Das Umformulieren ist gerade nicht verfügbar.",
+    "not_implemented": "Das Umformulieren ist noch nicht verfügbar.",
+    "interrupted": "Die Verbindung wurde unterbrochen. Bitte fragen Sie erneut."
+  }
 }
