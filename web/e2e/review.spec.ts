@@ -174,7 +174,12 @@ for (const zoomLabel of ["Verkleinern", "Vergrößern"]) {
   }) => {
     await page.goto(`/reviews/${reviewId}`);
     const target = (await storedFindings(page, reviewId)).find(
-      (f) => f.clause.rects && f.clause.rects.length > 0 && f.clause.rects[0]!.page === 1,
+      // In-scope only: the letterhead preamble (position 0) has rects but draws no highlight.
+      (f) =>
+        f.status !== "out_of_scope" &&
+        f.clause.rects &&
+        f.clause.rects.length > 0 &&
+        f.clause.rects[0]!.page === 1,
     )!;
     const zoom = page.getByRole("button", { name: zoomLabel });
     await expect(page.getByRole("region", { name: /^Seite 1 von/ })).toBeVisible();

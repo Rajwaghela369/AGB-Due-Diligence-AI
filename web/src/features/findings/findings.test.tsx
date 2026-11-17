@@ -201,7 +201,7 @@ describe("card and drawer stay in sync", () => {
     renderWorkspace();
     const first = await card(0);
     expect(within(first).getByText("Potenziell unwirksam")).toBeInTheDocument();
-    expect(within(first).getByText("1.1 Klausel 0")).toBeInTheDocument();
+    expect(within(first).getByText("1.1 · Klausel 0")).toBeInTheDocument();
     expect(within(first).getByText("Hohe Sicherheit")).toBeInTheDocument();
     expect(within(first).getByText("Grund 0")).toBeInTheDocument();
     // bgb-309 outscores bgb-307, so it is the strongest.
@@ -530,10 +530,10 @@ describe("activity feed", () => {
 
     stored = [finding(0, { status: "checking", verdict: null }), finding(1)];
     await act(() => queryClient.invalidateQueries());
-    expect(await screen.findByText("1.1 Klausel 0 — wird geprüft")).toBeInTheDocument();
+    expect(await screen.findByText("1.1 · Klausel 0 — wird geprüft")).toBeInTheDocument();
 
     stored = [fixture()[0]!, finding(1)];
     await act(() => queryClient.invalidateQueries());
-    expect(await screen.findByText("1.1 Klausel 0 — geprüft")).toBeInTheDocument();
+    expect(await screen.findByText("1.1 · Klausel 0 — geprüft")).toBeInTheDocument();
   });
 });

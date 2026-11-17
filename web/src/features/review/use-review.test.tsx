@@ -131,7 +131,8 @@ describe("useReview", () => {
     await act(() => new Promise((resolve) => window.setTimeout(resolve, 10)));
 
     expect(streamOpens).toBe(0);
-    expect(result.current.findings[0]?.clause.heading).toBe("· Lieferung");
+    // The stored heading is never rewritten; titles are formatted at render time.
+    expect(result.current.findings[0]?.clause.heading).toBe("3 Lieferung");
   });
 
   it("opens one stream for a running review under Strict Mode", async () => {

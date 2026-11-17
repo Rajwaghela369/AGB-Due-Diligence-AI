@@ -16,7 +16,6 @@ import type {
   Review,
   Status1,
 } from "../../api/types.gen";
-import { clauseTitle } from "./clause-title";
 
 export type { ReviewProgress };
 
@@ -89,7 +88,7 @@ export function useReview(reviewId: string | undefined): ReviewData {
   return useMemo(() => {
     const base: ReviewFinding[] = (stored.data?.findings ?? []).map((f) => ({
       position: f.position,
-      clause: displayClause(f.clause),
+      clause: f.clause,
       status: f.status,
       verdict: f.verdict ?? null,
       error: f.error ?? null,
@@ -125,12 +124,4 @@ export function useReview(reviewId: string | undefined): ReviewData {
     documentData,
     refresh,
   ]);
-}
-
-function displayClause(clause: ClauseSpan): ClauseSpan {
-  if (!clause.number || !clause.heading) return clause;
-  const title = clauseTitle(clause);
-  const prefix = `${clause.number} · `;
-  if (!title.startsWith(prefix) || title === `${prefix}${clause.heading}`) return clause;
-  return { ...clause, heading: `· ${title.slice(prefix.length)}` };
 }

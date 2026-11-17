@@ -5,7 +5,6 @@ const LEADING_MARKER = /^(?:§\s*\d+[a-z]?|\d+(?:\.\d+)*\.?|\(\d+\)|[a-z]\))\s*/
 
 export function clauseTitle(clause: ClauseSpan): string {
   const heading = clause.heading?.replace(LEADING_MARKER, "").trim();
-  const separator = heading?.startsWith("·") ? " " : " · ";
-  const identity = [clause.number, heading].filter(Boolean).join(separator);
+  const identity = [clause.number, heading].filter(Boolean).join(" · ");
   return identity || `#${clause.position + 1}`;
 }

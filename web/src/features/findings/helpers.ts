@@ -1,9 +1,10 @@
 // Small pure helpers shared by the findings components.
+import { clauseTitle as formatClauseTitle } from "../review/clause-title";
 import type { ReviewFinding } from "../review/use-review";
 
+/** „3.5 · Lieferung": one formatter for cards, drawer and table; the clause data stays as stored. */
 export function clauseTitle(finding: ReviewFinding): string {
-  const { number, heading } = finding.clause;
-  return [number, heading].filter(Boolean).join(" ") || `#${finding.position + 1}`;
+  return formatClauseTitle(finding.clause);
 }
 
 /** Free text for the § list: one entry per comma, semicolon or line. */
