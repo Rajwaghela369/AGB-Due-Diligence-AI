@@ -87,8 +87,12 @@ async def stream_events(
             deadline = loop.time() + PING_SECONDS
     finally:
         stopped.set()
+        cancel = getattr(events, "cancel", None)
+        if callable(cancel):
+            with suppress(Exception):
+                cancel()
         close = getattr(events, "close", None)
-        if callable(close):
+        if callable(close) and close != cancel:
             with suppress(RuntimeError, ValueError):
                 close()
         producer.join(timeout=1)

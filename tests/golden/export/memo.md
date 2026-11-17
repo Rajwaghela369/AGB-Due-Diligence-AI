@@ -2,6 +2,7 @@
 
 - **Dokument:** Muster-AGB.pdf
 - **Prüfdatum:** 17.11.2026
+- **Exportiert am:** 17.11.2026
 - **Exportiert von:** Eva Prüferin (nicht angemeldet)
 - **Prüfende Personen:** Anna Müller, Bernd König
 - **Agent-Version:** `agent-summary-v1`
@@ -24,9 +25,11 @@ Feststellungen: 4; potenziell unwirksam: 2; zu prüfen: 1; wirksam: 0; verworfen
 | Klausel | Entscheidung | Ergebnis | Normen | Begründung | Notiz | Entschieden von | Entschieden am |
 |---|---|---|---|---|---|---|---|
 | 1.1 – Die Haftung für Körper- und Gesundheitsschäden ist vollständig ausgeschlossen. | übernommen | potenziell unwirksam | § 309 Nr. 7 BGB | Haftungsausschluss unwirksam. | bestätigt | Anna Müller | 2026-11-17T12:00:00Z |
-| 2.1 – Eine Rückzahlung ist auch bei einer wesentlichen Pflichtverletzung ausgeschlossen. | geändert | potenziell unwirksam | § 307 BGB | Modell hielt die Klausel für wirksam. | Risiko ergänzt | Bernd König | 2026-11-17T12:00:00Z |
+| 2.1 – Eine Rückzahlung ist auch bei einer wesentlichen Pflichtverletzung ausgeschlossen. | geändert | potenziell unwirksam | § 307 BGB | Entscheidung der prüfenden Person, ohne Modellbegründung. | Risiko ergänzt | Bernd König | 2026-11-17T12:00:00Z |
 | 3.1 – Für jede Reklamation gilt eine sehr kurze Ausschlussfrist. | übernommen | zu prüfen | § 307 BGB | Die Frist muss geprüft werden. | zur weiteren Prüfung übernommen | Anna Müller | 2026-11-17T12:00:00Z |
-| 4.1 – Die gesetzliche Gewährleistung bleibt unberührt. | verworfen | — |  | Die Klausel bestätigt das Gesetz. | nur deklaratorisch | Anna Müller | 2026-11-17T12:00:00Z |
+| 4.1 – Die gesetzliche Gewährleistung bleibt unberührt. | verworfen | — |  | Entscheidung der prüfenden Person, ohne Modellbegründung. | nur deklaratorisch | Anna Müller | 2026-11-17T12:00:00Z |
+| 5.1 – Diese Klausel konnte technisch nicht geprüft werden. | offen | nicht geprüft |  |  |  |  |  |
+| 6.1 – Allgemeine Angaben zum Vertragspartner. | offen | nicht im Prüfumfang |  |  |  |  |  |
 
 ## Anhang: zitierte Normen
 

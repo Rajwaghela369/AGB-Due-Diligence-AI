@@ -27,10 +27,14 @@ database before the Phase 9 privacy work. The cost is reported per message and n
 from __future__ import annotations
 
 import difflib
+import math
 import re
+import threading
 import time
+import unicodedata
 import uuid
 from collections.abc import Iterator
+from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
 from ag_ui.core import (
@@ -173,16 +177,36 @@ def make_chat_model(
     budget = _BoundedWait(limiter) if limiter is not None else None
 
     def model(system: str, user: str) -> Iterator[ChatChunk]:
-        for piece in complete_stream(system, user, spec, budget=budget, client=client):
-            yield ChatChunk(
-                text=piece.text,
-                input_tokens=piece.input_tokens,
-                output_tokens=piece.output_tokens,
-                model=piece.model,
-                error=piece.error,
-            )
+        return _ChatChunkStream(complete_stream(system, user, spec, budget=budget, client=client))
 
     return model
+
+
+class _ChatChunkStream(Iterator[ChatChunk]):
+    """Map core completions without hiding their provider cancellation hook."""
+
+    def __init__(self, source: Iterator[Any]) -> None:
+        self._source = source
+
+    def __iter__(self) -> _ChatChunkStream:
+        return self
+
+    def __next__(self) -> ChatChunk:
+        piece = next(self._source)
+        return ChatChunk(
+            text=piece.text,
+            input_tokens=piece.input_tokens,
+            output_tokens=piece.output_tokens,
+            model=piece.model,
+            error=piece.error,
+        )
+
+    def cancel(self) -> None:
+        callback = getattr(self._source, "cancel", None) or getattr(self._source, "close", None)
+        if callable(callback):
+            callback()
+
+    close = cancel
 
 
 class _BoundedWait:
@@ -321,8 +345,10 @@ def word_diff(original: str, suggestion: str) -> list[DiffSegment]:
     rebuild the normalised original and `equal` + `insert` the suggestion. Each word keeps
     the whitespace that follows it, and neighbouring segments with the same op are merged.
     """
-    before = _WORD.findall(" ".join(original.split()))
-    after = _WORD.findall(" ".join(suggestion.split()))
+    before_text = unicodedata.normalize("NFC", original)
+    after_text = unicodedata.normalize("NFC", suggestion)
+    before = _WORD.findall(" ".join(before_text.split()))
+    after = _WORD.findall(" ".join(after_text.split()))
     matcher = difflib.SequenceMatcher(
         a=[word.strip() for word in before], b=[word.strip() for word in after], autojunk=False
     )
@@ -357,6 +383,48 @@ def word_diff(original: str, suggestion: str) -> list[DiffSegment]:
 # --- stream ---------------------------------------------------------------------------
 
 
+class _ChatEventStream(Iterator[ChatEvent]):
+    """Expose cancellation while the event generator is executing in the SSE thread."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self._cancelled = threading.Event()
+        self._model: Iterator[ChatChunk] | None = None
+        self._lock = threading.Lock()
+        self._events = _stream_events(*args, control=self, **kwargs)
+
+    def __iter__(self) -> _ChatEventStream:
+        return self
+
+    def __next__(self) -> ChatEvent:
+        return next(self._events)
+
+    def bind(self, model: Iterator[ChatChunk]) -> None:
+        with self._lock:
+            self._model = model
+        if self._cancelled.is_set():
+            self.stop_model()
+
+    def stop_model(self) -> None:
+        with self._lock:
+            model = self._model
+        if model is None:
+            return
+        callback = getattr(model, "cancel", None) or getattr(model, "close", None)
+        if callable(callback):
+            with suppress(Exception):
+                callback()
+
+    def cancel(self) -> None:
+        self._cancelled.set()
+        self.stop_model()
+
+    close = cancel
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled.is_set()
+
+
 def _stream(
     model: ChatModel,
     system: str,
@@ -366,6 +434,28 @@ def _stream(
     thread_id: str,
     settings: ChatSettings,
     prices: dict[str, float],
+) -> Iterator[ChatEvent]:
+    return _ChatEventStream(
+        model,
+        system,
+        user,
+        original=original,
+        thread_id=thread_id,
+        settings=settings,
+        prices=prices,
+    )
+
+
+def _stream_events(
+    model: ChatModel,
+    system: str,
+    user: str,
+    *,
+    original: str,
+    thread_id: str,
+    settings: ChatSettings,
+    prices: dict[str, float],
+    control: _ChatEventStream,
 ) -> Iterator[ChatEvent]:
     message_id = uuid.uuid4().hex
     yield _event(RunStartedEvent(thread_id=thread_id, run_id=message_id))
@@ -377,8 +467,12 @@ def _stream(
     input_tokens = output_tokens = 0
     model_name = str(settings.model.get("name", ""))
     failure: str | None = None
+    model_stream = iter(model(system, user))
+    control.bind(model_stream)
     try:
-        for chunk in model(system, user):
+        for chunk in model_stream:
+            if control.cancelled:
+                return
             input_tokens = max(input_tokens, chunk.input_tokens)
             output_tokens = max(output_tokens, chunk.output_tokens)
             model_name = chunk.model or model_name
@@ -386,17 +480,23 @@ def _stream(
                 log.warning("chat model failed: %s", chunk.error)
                 failure = "chat_failed"
                 break
-            if not chunk.text or truncated:
-                continue  # keep reading: the last chunk carries the usage
-            piece = chunk.text[: cap - len(raw)]
-            truncated = len(piece) < len(chunk.text)
-            if not piece:
+            if not chunk.text:
                 continue
+            piece = chunk.text[: cap - len(raw)]
+            if not piece:
+                truncated = True
+                control.stop_model()
+                break
             if not text_started:
                 yield _event(TextMessageStartEvent(message_id=message_id, role="assistant"))
                 text_started = True
             raw += piece
             yield _event(TextMessageContentEvent(message_id=message_id, delta=piece))
+            if len(raw) >= cap:
+                truncated = True
+                output_tokens = max(output_tokens, math.ceil(len(raw) / 4))
+                control.stop_model()
+                break
     except LimiterClosed:
         failure = "chat_failed"  # shutting down, not out of budget
     except BudgetExceeded:
@@ -404,6 +504,14 @@ def _stream(
     except Exception:  # noqa: BLE001 - after the first byte a failure is an event
         log.warning("chat model raised", exc_info=True)
         failure = "chat_failed"
+    finally:
+        callback = getattr(model_stream, "close", None)
+        if callable(callback):
+            with suppress(Exception):
+                callback()
+
+    if control.cancelled:
+        return
 
     if text_started:
         yield _event(TextMessageEndEvent(message_id=message_id))

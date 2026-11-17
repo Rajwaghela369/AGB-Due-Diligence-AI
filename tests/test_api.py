@@ -564,6 +564,43 @@ def test_idle_sse_disconnect_stops_its_producer_thread():
     service.shutdown(timeout=0)
 
 
+def test_sse_disconnect_uses_the_iterators_thread_safe_cancel_hook():
+    class CancellableEvents:
+        def __init__(self) -> None:
+            self.waiting = threading.Event()
+            self.released = threading.Event()
+            self.cancelled = False
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            self.waiting.set()
+            self.released.wait(timeout=2)
+            raise StopIteration
+
+        def cancel(self):
+            self.cancelled = True
+            self.released.set()
+
+    class DisconnectRequest:
+        checks = 0
+
+        async def is_disconnected(self) -> bool:
+            self.checks += 1
+            return self.checks > 1
+
+    events = CancellableEvents()
+
+    async def consume() -> None:
+        async for _item in stream_events(DisconnectRequest(), events):
+            pass
+
+    asyncio.run(consume())
+
+    assert events.cancelled is True
+
+
 def test_real_service_upload_review_feedback_and_cached_rereview():
     store = memory_store()
     langfuse = FakeLangfuse()

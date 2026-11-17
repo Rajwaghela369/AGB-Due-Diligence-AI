@@ -7,6 +7,7 @@ the decision set, but downloading a file must never trigger a paid model call.
 from __future__ import annotations
 
 import csv
+import html
 import io
 import re
 import zipfile
@@ -68,6 +69,8 @@ _VERDICTS = {
     "valid": "wirksam",
     None: "—",
 }
+_XML_INVALID = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 
 def _now() -> datetime:
@@ -96,8 +99,11 @@ def _citation(service: Service, chunk_id: str) -> str:
 
 
 def _reason(finding: Finding) -> str:
-    if finding.decision is not None and finding.decision.reason_de:
-        return finding.decision.reason_de
+    if finding.decision is not None:
+        if finding.decision.reason_de:
+            return finding.decision.reason_de
+        if finding.decision.action in ("override", "dismiss"):
+            return "Entscheidung der prüfenden Person, ohne Modellbegründung."
     return finding.verdict.reason_de if finding.verdict is not None else ""
 
 
@@ -113,8 +119,38 @@ def _filename(filename: str, fmt: ExportFormat, draft: bool, date: datetime) -> 
     return f"AGB-Check_{stem}_{date:%Y-%m-%d}{suffix}.{fmt}"
 
 
+def _md_text(value: Any, *, line_break: str = " ") -> str:
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+    text = html.escape(text, quote=False)
+    text = re.sub(r"([\\|`*_[\]])", r"\\\1", text)
+    return text.replace("\n", line_break)
+
+
 def _md_cell(value: Any) -> str:
-    return str(value or "").replace("|", "\\|").replace("\n", "<br>")
+    return _md_text(value, line_break="<br>")
+
+
+def _xml_safe(value: Any) -> str:
+    """Drop characters XML 1.0 forbids before handing text to python-docx."""
+    return _XML_INVALID.sub("", str(value or ""))
+
+
+def _csv_safe(value: Any) -> str:
+    """Neutralise spreadsheet formulas in every textual CSV field."""
+    # Tabs and carriage returns are formula triggers themselves, so only discard ordinary
+    # padding before checking the first meaningful byte.
+    text = str(value or "").lstrip(" ")
+    return "'" + text if text.startswith(_CSV_FORMULA_PREFIXES) else text
+
+
+def _result_label(finding: Finding, verdict: str | None) -> str:
+    if verdict is not None:
+        return _VERDICTS[verdict]
+    if finding.status == "out_of_scope":
+        return "nicht im Prüfumfang"
+    if finding.verdict is None:
+        return "nicht geprüft"
+    return _VERDICTS[None]
 
 
 def _statute_sort(chunk: LawChunk) -> tuple[Any, ...]:
@@ -148,6 +184,7 @@ def _markdown(
     reviewer: Reviewer,
     draft: bool,
     review_date: datetime,
+    export_date: datetime,
 ) -> bytes:
     title = "AGB-Prüfvermerk" + (f" – {DRAFT_WATERMARK}" if draft else "")
     lines = []
@@ -157,11 +194,12 @@ def _markdown(
         [
             f"# {title}",
             "",
-            f"- **Dokument:** {summary.filename}",
+            f"- **Dokument:** {_md_text(summary.filename)}",
             f"- **Prüfdatum:** {review_date:%d.%m.%Y}",
-            f"- **Exportiert von:** {_exporter(reviewer)}",
-            f"- **Prüfende Personen:** {', '.join(summary.reviewers) or '—'}",
-            f"- **Agent-Version:** `{summary.agent_version}`",
+            f"- **Exportiert am:** {export_date:%d.%m.%Y}",
+            f"- **Exportiert von:** {_md_text(_exporter(reviewer))}",
+            f"- **Prüfende Personen:** {_md_text(', '.join(summary.reviewers) or '—')}",
+            f"- **Agent-Version:** `{_md_text(summary.agent_version)}`",
             "",
             f"> {EXPORT_DISCLAIMER}",
             "",
@@ -197,7 +235,7 @@ def _markdown(
         values = [
             clause,
             _DECISIONS[decision.action if decision else None],
-            _VERDICTS[verdict],
+            _result_label(finding, verdict),
             " | ".join(_citation(service, chunk_id) for chunk_id in basis),
             _reason(finding),
             decision.note if decision else "",
@@ -220,24 +258,27 @@ def _csv(service: Service, findings: list[Finding], agent_version: str, draft: b
     for finding in findings:
         verdict, basis = _in_force(finding)
         decision = finding.decision
+        model = finding.verdict
+        row: dict[str, Any] = {
+            "position": finding.position,
+            "nummer": finding.clause.number or "",
+            "ueberschrift": finding.clause.heading or "",
+            "klausel": finding.clause.text,
+            "modell_ergebnis": model.verdict if model else "",
+            "modell_konfidenz": str(model.confidence) if model else "",
+            "entscheidung": _DECISIONS[decision.action if decision else None],
+            "ergebnis": verdict or _result_label(finding, verdict),
+            "normen": " | ".join(_citation(service, chunk_id) for chunk_id in basis),
+            "begruendung": _reason(finding),
+            "notiz": decision.note if decision else "",
+            "entschieden_von": decision.decided_by if decision else "",
+            "entschieden_am": _utc(decision.decided_at) if decision else "",
+            "agent_version": agent_version,
+            "entwurf": DRAFT_WATERMARK if draft else "nein",
+        }
+        numeric = {"position", "modell_konfidenz"}
         writer.writerow(
-            {
-                "position": finding.position,
-                "nummer": finding.clause.number or "",
-                "ueberschrift": finding.clause.heading or "",
-                "klausel": finding.clause.text,
-                "modell_ergebnis": finding.verdict.verdict,
-                "modell_konfidenz": str(finding.verdict.confidence),
-                "entscheidung": _DECISIONS[decision.action if decision else None],
-                "ergebnis": verdict or "",
-                "normen": " | ".join(_citation(service, chunk_id) for chunk_id in basis),
-                "begruendung": _reason(finding),
-                "notiz": decision.note if decision else "",
-                "entschieden_von": decision.decided_by if decision else "",
-                "entschieden_am": _utc(decision.decided_at) if decision else "",
-                "agent_version": agent_version,
-                "entwurf": "ja" if draft else "nein",
-            }
+            {key: value if key in numeric else _csv_safe(value) for key, value in row.items()}
         )
     return output.getvalue().encode("utf-8-sig")
 
@@ -268,13 +309,28 @@ def _watermark(section: Any) -> None:
         '<w:r xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
         'xmlns:v="urn:schemas-microsoft-com:vml" '
         'xmlns:o="urn:schemas-microsoft-com:office:office"><w:pict>'
+        '<v:shapetype id="_x0000_t136" coordsize="21600,21600" o:spt="136" '
+        'adj="10800" path="m@7,l@8,m@5,21600l@6,21600e">'
+        '<v:formulas><v:f eqn="sum #0 0 10800"/><v:f eqn="prod #0 2 1"/>'
+        '<v:f eqn="sum 21600 0 @1"/><v:f eqn="sum 0 0 @2"/>'
+        '<v:f eqn="sum 21600 0 @3"/><v:f eqn="if @0 @3 0"/>'
+        '<v:f eqn="if @0 21600 @1"/><v:f eqn="if @0 0 @2"/>'
+        '<v:f eqn="if @0 @4 21600"/><v:f eqn="mid @5 @6"/>'
+        '<v:f eqn="mid @8 @5"/><v:f eqn="mid @7 @8"/>'
+        '<v:f eqn="mid @6 @7"/><v:f eqn="sum @6 0 @5"/></v:formulas>'
+        '<v:path textpathok="t" o:connecttype="custom" '
+        'o:connectlocs="@9,0;@10,10800;@11,21600;@12,10800" '
+        'o:connectangles="270,180,90,0"/><v:textpath on="t" fitshape="t"/>'
+        '<v:handles><v:h position="#0,bottomRight" xrange="6629,14971"/></v:handles>'
+        '<o:lock v:ext="edit" text="t" shapetype="t"/></v:shapetype>'
         '<v:shape id="PowerPlusWaterMarkObject" '
         'o:spid="_x0000_s1025" type="#_x0000_t136" '
         'style="position:absolute;width:420pt;height:90pt;rotation:315;z-index:-251654144;'
         "mso-position-horizontal:center;mso-position-horizontal-relative:margin;"
         'mso-position-vertical:center;mso-position-vertical-relative:margin" '
-        'fillcolor="#d9d9d9" stroked="f"><v:textpath style="font-family:Arial;'
-        f'font-size:1pt" string="{DRAFT_WATERMARK}"/></v:shape></w:pict></w:r>'
+        'fillcolor="#d9d9d9" stroked="f" o:allowincell="f"><v:fill opacity=".5"/>'
+        '<v:textpath style="font-family:Arial;font-size:1pt" on="t" fitshape="t" '
+        f'string="{DRAFT_WATERMARK}"/></v:shape></w:pict></w:r>'
     )
     paragraph._p.append(parse_xml(xml))
 
@@ -282,7 +338,7 @@ def _watermark(section: Any) -> None:
 def _add_labeled(document: Any, label: str, value: str) -> None:
     paragraph = document.add_paragraph()
     paragraph.add_run(label + ": ").bold = True
-    paragraph.add_run(value)
+    paragraph.add_run(_xml_safe(value))
 
 
 def _docx(
@@ -292,6 +348,7 @@ def _docx(
     reviewer: Reviewer,
     draft: bool,
     review_date: datetime,
+    export_date: datetime,
     timestamp: datetime,
 ) -> bytes:
     template = service.deliverable.export.template_dir / "memo.docx"
@@ -301,7 +358,7 @@ def _docx(
     section.top_margin = Cm(2.2)
     section.bottom_margin = Cm(2.0)
     footer = section.footer.paragraphs[0]
-    footer.text = f"AGB-Check · {summary.agent_version} · Seite "
+    footer.text = _xml_safe(f"AGB-Check · {summary.agent_version} · Seite ")
     footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
     _page_field(footer)
     if draft:
@@ -311,10 +368,11 @@ def _docx(
     title.add_run("AGB-Prüfvermerk" + (f" – {DRAFT_WATERMARK}" if draft else ""))
     _add_labeled(document, "Dokument", summary.filename)
     _add_labeled(document, "Prüfdatum", f"{review_date:%d.%m.%Y}")
+    _add_labeled(document, "Exportiert am", f"{export_date:%d.%m.%Y}")
     _add_labeled(document, "Exportiert von", _exporter(reviewer))
     _add_labeled(document, "Prüfende Personen", ", ".join(summary.reviewers) or "—")
     _add_labeled(document, "Agent-Version", summary.agent_version)
-    disclaimer = document.add_paragraph(EXPORT_DISCLAIMER, style="Disclaimer")
+    disclaimer = document.add_paragraph(_xml_safe(EXPORT_DISCLAIMER), style="Disclaimer")
     disclaimer.runs[0].italic = True
 
     document.add_heading("Zusammenfassung", level=1)
@@ -323,7 +381,7 @@ def _docx(
         f"{summary.counts.potentially_void}; zu prüfen: {summary.counts.uncertain}; "
         f"wirksam: {summary.counts.valid}; verworfen: {summary.counts.dismissed}."
     )
-    recommendation = document.add_paragraph(summary.recommendation)
+    recommendation = document.add_paragraph(_xml_safe(summary.recommendation))
     if summary.recommendation_from_llm:
         recommendation.add_run(" (KI-generierte Empfehlung)").italic = True
     for group in summary.void_groups:
@@ -351,22 +409,22 @@ def _docx(
         values = [
             f"{finding.clause.number or finding.position + 1}\n{finding.clause.text}",
             _DECISIONS[decision.action if decision else None],
-            _VERDICTS[verdict],
+            _result_label(finding, verdict),
             "\n".join(_citation(service, chunk_id) for chunk_id in basis),
             _reason(finding),
             decision.note if decision else "",
             (f"{decision.decided_by or '—'}\n{_utc(decision.decided_at)}" if decision else "—"),
         ]
         for cell, value in zip(row, values, strict=True):
-            cell.text = str(value)
+            cell.text = _xml_safe(value)
 
     statutes = _appendix(service, findings) if service.deliverable.export.statute_appendix else []
     if statutes:
         document.add_page_break()
         document.add_heading("Anhang: zitierte Normen", level=1)
         for chunk in statutes:
-            document.add_heading(chunk.citation, level=2)
-            document.add_paragraph(chunk.text)
+            document.add_heading(_xml_safe(chunk.citation), level=2)
+            document.add_paragraph(_xml_safe(chunk.text))
 
     if timestamp.tzinfo is None:
         timestamp = timestamp.replace(tzinfo=UTC)
@@ -424,13 +482,14 @@ def build_export(
         raise ExportBlocked("undecided", blockers)
 
     summary = _build_summary(service, review_id, allow_model_call=False)
-    rendered_findings = [finding for finding in findings if finding.verdict is not None]
+    rendered_findings = findings
     now = _now()
     review_date = review.finished_at or review.created_at or now
     if review_date.tzinfo is None:
         review_date = review_date.replace(tzinfo=UTC)
+    review_date = review_date.astimezone(ZoneInfo("Europe/Berlin"))
     if fmt == "md":
-        content = _markdown(service, summary, rendered_findings, reviewer, draft, review_date)
+        content = _markdown(service, summary, rendered_findings, reviewer, draft, review_date, now)
     elif fmt == "csv":
         content = _csv(service, rendered_findings, review.agent_version, draft)
     else:
@@ -441,6 +500,7 @@ def build_export(
             reviewer,
             draft,
             review_date,
+            now,
             review.finished_at or review.created_at or now,
         )
     return ExportFile(

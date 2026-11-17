@@ -17,6 +17,7 @@ revised wording changes the agent version and never serves a cached verdict.
 import hashlib
 import json
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
@@ -148,8 +149,10 @@ def quote_clause(title: str | None, clause: str) -> str:
     """The `<klausel>` block of the explain step and the rewrite chat: heading and clause
     quoted as data, each with the delimiter's lookalikes defanged so neither can end the
     quotation early or open a second one."""
-    heading = _DELIMITER_LOOKALIKE.sub("(klausel", title or "(ohne Überschrift)")
-    quoted = _DELIMITER_LOOKALIKE.sub("(klausel", clause)
+    heading = unicodedata.normalize("NFKC", title or "(ohne Überschrift)")
+    quoted = unicodedata.normalize("NFKC", clause)
+    heading = _DELIMITER_LOOKALIKE.sub("(klausel", heading)
+    quoted = _DELIMITER_LOOKALIKE.sub("(klausel", quoted)
     return f"<klausel>\nAbschnitt: {heading}\n{quoted}\n</klausel>"
 
 
@@ -157,7 +160,8 @@ def defang(text: str) -> str:
     """Untrusted text with every chat delimiter's lookalike neutralised: `</klausel>`,
     `＜vorschlag` and the like become `(klausel`, `(vorschlag`, so the text stays inside
     whichever block quotes it."""
-    return _CHAT_LOOKALIKE.sub(lambda match: "(" + match.group(1).lower(), text)
+    normalised = unicodedata.normalize("NFKC", text)
+    return _CHAT_LOOKALIKE.sub(lambda match: "(" + match.group(1).lower(), normalised)
 
 
 def quote(tag: str, text: str) -> str:

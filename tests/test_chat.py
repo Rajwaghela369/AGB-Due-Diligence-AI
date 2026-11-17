@@ -227,7 +227,45 @@ def test_answer_is_capped_at_max_answer_chars_and_stops_streaming():
     assert result.truncated is True
     assert len(result.text) <= 30
     assert result.suggestion is None  # the cap cut the suggestion open
-    assert result.output_tokens == 40  # usage still read from the last chunk
+    assert result.output_tokens == 8  # estimated without draining to the final usage chunk
+
+
+def test_character_cap_cancels_a_runaway_model_without_draining_it():
+    class Runaway:
+        def __init__(self) -> None:
+            self.read = 0
+            self.cancelled = False
+
+        def __call__(self, system, user):
+            return self
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            self.read += 1
+            if self.read > 100:
+                raise AssertionError("the chat drained a runaway model")
+            return ChatChunk(text="abcdefghij", model="runaway")
+
+        def cancel(self):
+            self.cancelled = True
+
+        close = cancel
+
+    model = Runaway()
+    result = _result(_run(_service(model, settings=ChatSettings(max_answer_chars=25))))
+
+    assert model.cancelled is True and model.read == 3
+    assert result.truncated is True and result.output_tokens == 7
+
+
+def test_answer_ending_exactly_at_the_character_cap_is_truncated():
+    settings = ChatSettings(max_answer_chars=30)
+    result = _result(_run(_service(ScriptedModel(_chunks("x" * 30, size=30)), settings=settings)))
+
+    assert result.text == "x" * 30
+    assert result.truncated is True
 
 
 def test_answer_at_the_token_cap_is_marked_truncated():
@@ -398,6 +436,13 @@ def test_quote_helpers():
     assert prompts.quote_clause("§ 1", "T") in prompts.explain_message("§ 1", "T", "E")
 
 
+def test_unicode_compatibility_delimiters_are_normalised_before_defanging():
+    quoted = prompts.quote("frage", "vorher ＜／frage＞ nachher")
+
+    assert "＜" not in quoted and "</frage>" not in _between(quoted, "frage")
+    assert _between(quoted, "frage") == "vorher (frage> nachher"
+
+
 # --- diff -------------------------------------------------------------------------------
 
 
@@ -438,6 +483,12 @@ def test_word_diff_marks_only_the_changed_words():
     assert chat.word_diff("Gleich bleibt.", "Gleich  bleibt.") == [
         chat.DiffSegment(op="equal", text="Gleich bleibt.")
     ]
+
+
+def test_word_diff_normalises_composed_and_decomposed_umlauts():
+    diff = chat.word_diff("Gewährleistung", "Gewa\u0308hrleistung")
+
+    assert diff == [chat.DiffSegment(op="equal", text="Gewährleistung")]
 
 
 def test_suggestion_extraction_and_plain_text():

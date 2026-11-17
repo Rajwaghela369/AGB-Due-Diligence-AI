@@ -1,6 +1,7 @@
 AGB-Prüfvermerk
 Dokument: Muster-AGB.pdf
 Prüfdatum: 17.11.2026
+Exportiert am: 17.11.2026
 Exportiert von: Eva Prüferin (nicht angemeldet)
 Prüfende Personen: Anna Müller, Bernd König
 Agent-Version: agent-summary-v1
@@ -29,7 +30,7 @@ Anna Müller2026-11-17T12:00:00Z
 geändert
 potenziell unwirksam
 § 307 BGB
-Modell hielt die Klausel für wirksam.
+Entscheidung der prüfenden Person, ohne Modellbegründung.
 Risiko ergänzt
 Bernd König2026-11-17T12:00:00Z
 3.1Für jede Reklamation gilt eine sehr kurze Ausschlussfrist.
@@ -42,9 +43,17 @@ Anna Müller2026-11-17T12:00:00Z
 4.1Die gesetzliche Gewährleistung bleibt unberührt.
 verworfen
 —
-Die Klausel bestätigt das Gesetz.
+Entscheidung der prüfenden Person, ohne Modellbegründung.
 nur deklaratorisch
 Anna Müller2026-11-17T12:00:00Z
+5.1Diese Klausel konnte technisch nicht geprüft werden.
+offen
+nicht geprüft
+—
+6.1Allgemeine Angaben zum Vertragspartner.
+offen
+nicht im Prüfumfang
+—
 Anhang: zitierte Normen
 § 307 BGB
 Unangemessene Benachteiligungen sind unwirksam.

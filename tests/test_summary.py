@@ -1,12 +1,16 @@
 """The Phase 8 summary is a stable projection of findings, not a second review."""
 
+import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
+from core.budget import BudgetExceeded
 from core.hashing import content_hash
 from core.llm import Completion
 from core.schemas import LawChunk
 
 from app.domain import ClauseSpan, ClauseVerdict, Decision, Document, Review
+from app.review import summary as summary_module
 from app.review.deliverable import DeliverableSettings, SummarySettings
 from app.review.service import build_service
 from app.store.memory import memory_store
@@ -320,6 +324,8 @@ def test_llm_recommendation_is_called_once_and_cached(monkeypatch) -> None:
 
 
 def test_model_failure_keeps_rule_based_recommendation() -> None:
+    summary_module._failure_until.clear()
+
     def model(system: str, user: str) -> Completion:
         return Completion("", 0, 0, "summary-fake", error="provider unavailable")
 
@@ -328,3 +334,66 @@ def test_model_failure_keeps_rule_based_recommendation() -> None:
     assert summary.recommendation_from_llm is False
     assert "überarbeitet" in summary.recommendation
     assert store.caches.get_summary_text(summary.decision_set_hash, "summary-fake") is None
+
+
+def test_budget_exhaustion_keeps_the_rule_based_summary() -> None:
+    summary_module._failure_until.clear()
+
+    def model(system: str, user: str) -> Completion:
+        raise BudgetExceeded("spent")
+
+    _store, service = seeded_service(summary_model=model)
+
+    result = service.summary("review-summary")
+
+    assert result.recommendation_from_llm is False
+    assert "überarbeitet" in result.recommendation
+
+
+def test_failed_summary_call_is_single_flight_and_negative_cached() -> None:
+    summary_module._failure_until.clear()
+    calls = 0
+
+    def model(system: str, user: str) -> Completion:
+        nonlocal calls
+        calls += 1
+        return Completion("", 0, 0, "summary-fake", error="offline")
+
+    _store, service = seeded_service(summary_model=model)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda _index: service.summary("review-summary"), range(4)))
+    repeated = service.summary("review-summary")
+
+    assert calls == 1
+    assert all(not result.recommendation_from_llm for result in [*results, repeated])
+
+
+def test_malformed_model_reply_is_rejected_and_valid_text_is_plain_and_capped() -> None:
+    malformed = Completion('{"recommendation": "abgebrochen', 1, 1, "summary-fake")
+    assert summary_module._model_text(malformed) is None
+
+    long_markdown = "**Wichtig** [Link](https://example.test) <b>Text</b> " + "x" * 2000
+    valid = Completion(
+        text='{"recommendation": ' + json.dumps(long_markdown) + "}",
+        input_tokens=1,
+        output_tokens=1,
+        model="summary-fake",
+    )
+    text = summary_module._model_text(valid)
+
+    assert text is not None and len(text) == summary_module._RECOMMENDATION_MAX_CHARS
+    assert "**" not in text and "https://" not in text and "<b>" not in text
+
+
+def test_decision_hash_covers_a_non_risk_note_and_reviewer() -> None:
+    store, service = seeded_service(decide_uncertain=True)
+    before = service.summary("review-summary").decision_set_hash
+    dismissed = store.decisions.for_review("review-summary")[3]
+    store.decisions.put(
+        dismissed.model_copy(update={"note": "anderer Hinweis", "decided_by": "Clara Neu"}),
+        agent_version=Judge.agent_version,
+    )
+
+    after = service.summary("review-summary").decision_set_hash
+
+    assert after != before

@@ -27,8 +27,10 @@ remaining clause. A run out of allowance should stop.
 import os
 import random
 import re
+import threading
 import time
 from collections.abc import Callable, Iterator
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
@@ -334,6 +336,128 @@ def _complete_anthropic(
     )
 
 
+class _GeminiCompletionStream(Iterator[Completion]):
+    """A cancellable provider iterator, so an SSE disconnect can abort its HTTP request."""
+
+    def __init__(
+        self,
+        system: str,
+        user: str,
+        name: str,
+        max_tokens: int,
+        budget: RequestBudget | None,
+        client: Any,
+    ) -> None:
+        self._system = system
+        self._user = user
+        self._name = name
+        self._max_tokens = max_tokens
+        self._budget = budget
+        self._client = client
+        self._provider: Iterator[Any] | None = None
+        self._provider_closed = False
+        self._started = False
+        self._done = False
+        self._cancelled = threading.Event()
+        self._lock = threading.Lock()
+        self._input_tokens = 0
+        self._output_tokens = 0
+
+    def __iter__(self) -> "_GeminiCompletionStream":
+        return self
+
+    def __next__(self) -> Completion:
+        if self._done or self._cancelled.is_set():
+            self._finish(cancel=True)
+            raise StopIteration
+        if not self._started:
+            self._started = True
+            try:
+                resolved = _gemini_client(self._client)
+                if self._budget is not None:
+                    self._budget.reserve()
+                provider = resolved.models.generate_content_stream(
+                    model=self._name,
+                    contents=self._user,
+                    config={
+                        "system_instruction": self._system,
+                        "max_output_tokens": self._max_tokens,
+                    },
+                )
+                with self._lock:
+                    self._provider = iter(provider)
+            except BudgetExceeded:
+                self._done = True
+                raise
+            except Exception as exc:  # noqa: BLE001 - provider failure is result data
+                return self._error(exc)
+            if self._cancelled.is_set():
+                self._finish(cancel=True)
+                raise StopIteration
+
+        while not self._cancelled.is_set():
+            try:
+                assert self._provider is not None
+                response = next(self._provider)
+            except StopIteration:
+                if self._cancelled.is_set():
+                    self._finish(cancel=True)
+                    raise
+                result = Completion("", self._input_tokens, self._output_tokens, self._name)
+                self._finish()
+                return result
+            except Exception as exc:  # noqa: BLE001 - provider failure is result data
+                if self._cancelled.is_set():
+                    self._finish(cancel=True)
+                    raise StopIteration from None
+                return self._error(exc)
+            usage = getattr(response, "usage_metadata", None)
+            if usage is not None:
+                self._input_tokens = int(getattr(usage, "prompt_token_count", 0) or 0)
+                self._output_tokens = int(getattr(usage, "candidates_token_count", 0) or 0)
+            text = getattr(response, "text", "") or ""
+            if text:
+                return Completion(text, 0, 0, self._name)
+        self._finish(cancel=True)
+        raise StopIteration
+
+    def _error(self, exc: Exception) -> Completion:
+        log.warning("streamed completion failed: %s: %s", type(exc).__name__, exc)
+        result = Completion(
+            "",
+            self._input_tokens,
+            self._output_tokens,
+            self._name,
+            f"{type(exc).__name__}: {exc}",
+        )
+        self._finish(cancel=self._cancelled.is_set())
+        return result
+
+    def _finish(self, *, cancel: bool = False) -> None:
+        self._done = True
+        with self._lock:
+            provider = self._provider
+            if provider is None or self._provider_closed:
+                return
+            self._provider_closed = True
+        if cancel:
+            callback = getattr(provider, "cancel", None)
+            if callable(callback):
+                with suppress(Exception):
+                    callback()
+        callback = getattr(provider, "close", None)
+        if callable(callback):
+            with suppress(Exception):
+                callback()
+
+    def cancel(self) -> None:
+        """Thread-safe best-effort cancellation of the active provider response."""
+        self._cancelled.set()
+        self._finish(cancel=True)
+
+    close = cancel
+
+
 def complete_stream(
     system: str,
     user: str,
@@ -355,28 +479,4 @@ def complete_stream(
     if provider != GEMINI:
         raise NotImplementedError(f"complete_stream() does not support provider {provider!r}")
 
-    input_tokens = output_tokens = 0
-    try:
-        resolved = _gemini_client(client)
-        if budget is not None:
-            budget.reserve()
-        stream = resolved.models.generate_content_stream(
-            model=name,
-            contents=user,
-            config={"system_instruction": system, "max_output_tokens": max_tokens},
-        )
-        for response in stream:
-            usage = getattr(response, "usage_metadata", None)
-            if usage is not None:  # cumulative; the last response has the totals
-                input_tokens = int(getattr(usage, "prompt_token_count", 0) or 0)
-                output_tokens = int(getattr(usage, "candidates_token_count", 0) or 0)
-            text = getattr(response, "text", "") or ""
-            if text:
-                yield Completion(text, 0, 0, name)
-    except BudgetExceeded:
-        raise
-    except Exception as exc:  # noqa: BLE001 - a failed call is data, not a crash
-        log.warning("streamed completion failed: %s: %s", type(exc).__name__, exc)
-        yield Completion("", input_tokens, output_tokens, name, f"{type(exc).__name__}: {exc}")
-        return
-    yield Completion("", input_tokens, output_tokens, name)
+    return _GeminiCompletionStream(system, user, name, max_tokens, budget, client)

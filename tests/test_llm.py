@@ -1,6 +1,8 @@
+import threading
+
 import pytest
 from core.budget import BudgetExceeded, RequestBudget
-from core.llm import ANTHROPIC, GEMINI, Answer, complete, decide
+from core.llm import ANTHROPIC, GEMINI, Answer, complete, complete_stream, decide
 
 GEMINI_MODEL = {"provider": GEMINI, "name": "gemini-decision-1"}
 GEMINI_GEN = {"provider": GEMINI, "name": "gemini-3.6-flash", "max_output_tokens": 500}
@@ -385,3 +387,45 @@ def test_the_gemini_client_has_a_request_timeout(monkeypatch):
 
     assert seen["http_options"]["api_version"] == "v1beta"
     assert 0 < seen["http_options"]["timeout"] <= 120_000
+
+
+def test_stream_cancellation_reaches_the_blocked_provider() -> None:
+    class BlockingProvider:
+        def __init__(self) -> None:
+            self.entered = threading.Event()
+            self.released = threading.Event()
+            self.cancelled = False
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            self.entered.set()
+            self.released.wait(timeout=2)
+            raise StopIteration
+
+        def cancel(self):
+            self.cancelled = True
+            self.released.set()
+
+        close = cancel
+
+    provider = BlockingProvider()
+
+    class Models:
+        def generate_content_stream(self, **_kwargs):
+            return provider
+
+    client = type("Client", (), {"models": Models()})()
+    stream = complete_stream("system", "user", GEMINI_GEN, client=client)
+    consumed = []
+    worker = threading.Thread(target=lambda: consumed.extend(stream))
+    worker.start()
+    assert provider.entered.wait(timeout=1)
+
+    stream.cancel()
+    worker.join(timeout=1)
+
+    assert provider.cancelled is True
+    assert worker.is_alive() is False
+    assert consumed == []
