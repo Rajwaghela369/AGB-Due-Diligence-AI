@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.api.main import create_app
 from app.domain import ClauseSpan, ClauseVerdict, Document, Review, default_principal
-from app.review.deletion import delete_document, process_erasures
+from app.review.deletion import delete_document, delete_review, process_erasures
 from app.review.feedback import FeedbackService
 from app.review.interfaces import DeletionBlocked
 from app.review.service import build_service
@@ -188,3 +188,58 @@ def test_postgres_reference_counting_matches_memory(tmp_path) -> None:
     assert store.verdicts.get(shared, "agent") is not None
     assert store.verdicts.get(unique, "agent") is None
     store.deletion.delete_document(second_id, deleted_by=None, reason="user")
+
+
+def test_delete_review_keeps_the_document_and_its_verdicts() -> None:
+    store = memory_store()
+    seed(store, "one", ["a"], trace="review-trace")
+    holder, deleted, forgotten = service(store)
+
+    report = delete_review(holder, "review-one", default_principal())
+
+    assert store.reviews.get("review-one") is None
+    assert store.documents.get("one") is not None and store.verdicts.get("a", "agent")
+    assert report.removed["reviews"] == 1 and report.removed["clause_texts"] == 0
+    assert ("trace", "review-trace") in deleted and ("trace", "verdict-a") not in deleted
+    assert forgotten == ["review-one:0"]
+    assert store.deletion.tombstones("review-one")[0].kind == "review"
+
+
+def test_a_shared_source_file_keeps_its_blob_until_the_last_document_goes() -> None:
+    store = memory_store()
+    holder, _deleted, _forgotten = service(store)
+    for document_id in ("mine", "theirs"):
+        store.documents.save(
+            Document(
+                document_id=document_id,
+                filename="agb.pdf",
+                source_type="pdf",
+                parser_version="p1",
+                splitter_version="s1",
+                text_hash="same",
+                source_hash="same-bytes",
+                owner_id=document_id,
+            ),
+            [],
+            {},
+        )
+    store.files.put("same-bytes.pdf", b"pdf")
+
+    first = delete_document(holder, "mine", default_principal())
+    assert store.files.exists("same-bytes.pdf")
+    assert all(task.target != "blob" for task in first.erasures)
+    delete_document(holder, "theirs", default_principal())
+    assert not store.files.exists("same-bytes.pdf")
+
+
+def test_tombstone_records_who_and_counts_but_no_content() -> None:
+    store = memory_store()
+    seed(store, "one", ["secret clause"])
+    holder, _deleted, _forgotten = service(store)
+
+    report = delete_document(holder, "one", default_principal())
+
+    tombstone = report.tombstone.model_dump_json()
+    assert "secret clause" not in tombstone and "one.pdf" not in tombstone
+    assert report.tombstone.deleted_by == "local" and report.tombstone.reason == "user"
+    assert report.tombstone.removed["documents"] == 1
