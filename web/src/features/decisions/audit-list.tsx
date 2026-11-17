@@ -64,9 +64,16 @@ function Entry({ event }: { event: DecisionEvent }) {
       <p className="mt-1 text-xs text-muted-foreground">
         {t("audit.verdict")}: {verdictLabel(event.from_verdict)} → {verdictLabel(event.to_verdict)}
       </p>
-      {basisChanged && (
+      {(basisChanged || toBasis.length > 0) && (
         <p className="text-xs text-muted-foreground">
-          {t("audit.basis")}: <Basis ids={fromBasis} /> → <Basis ids={toBasis} />
+          {t("audit.basis")}:{" "}
+          {basisChanged ? (
+            <>
+              <Basis ids={fromBasis} /> → <Basis ids={toBasis} />
+            </>
+          ) : (
+            <Basis ids={toBasis} />
+          )}
         </p>
       )}
       {event.note ? <p className="mt-1">{event.note}</p> : null}
