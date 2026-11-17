@@ -217,3 +217,21 @@ RUN_ERROR             code = "chat_failed" | "daily_budget", message (German)
 No `chat_result` follows an error, and partial text is not a result: the UI shows the
 error and offers to ask again. A model failure costs nothing extra and is never retried
 by the server.
+
+## Privacy, owners and deletion (Phase 9)
+
+Phase 9 adds no event types. Three rules for the streams above:
+
+- **Events are not masked.** `run_events` and the SSE stream stay inside the system: they
+  go from our database to the signed-in owner's browser, which shows the clause anyway.
+  Masking (docs/Phase 9 Design.md, "Masking") applies to what leaves the server for a model
+  provider or Langfuse, never to what the owner sees.
+- **Only the owner streams.** With login on (Wave 2), `GET /reviews/{id}/events` and the
+  chat stream check `Review.owner_id` against the session like every other read; another
+  owner's review is 404, before any event is sent, exactly like an unknown id.
+- **Deletion never cuts a live stream.** `DELETE /documents/{id}` is refused with 409
+  `deletion_blocked` while a review of the document is queued or running, so a deletion
+  only ever removes the events of an idle review, whose log already ended in a terminal
+  event. A client that reconnects (`Last-Event-ID`) to a deleted review gets 404 and
+  should drop the review from its state. A deletion writes no event; its record is the
+  tombstone (docs/Phase 9 API.md, "Deletion").
