@@ -1,0 +1,5 @@
+position;nummer;ueberschrift;klausel;modell_ergebnis;modell_konfidenz;entscheidung;ergebnis;normen;begruendung;notiz;entschieden_von;entschieden_am;agent_version;entwurf
+0;1.1;§ 1 Regelung;Die Haftung für Körper- und Gesundheitsschäden ist vollständig ausgeschlossen.;potentially_void;0.8;übernommen;potentially_void;§ 309 Nr. 7 BGB;Haftungsausschluss unwirksam.;bestätigt;Anna Müller;2026-11-17T12:00:00Z;agent-summary-v1;nein
+1;2.1;§ 2 Regelung;Eine Rückzahlung ist auch bei einer wesentlichen Pflichtverletzung ausgeschlossen.;valid;0.6;geändert;potentially_void;§ 307 BGB;Modell hielt die Klausel für wirksam.;Risiko ergänzt;Bernd König;2026-11-17T12:00:00Z;agent-summary-v1;nein
+2;3.1;§ 3 Regelung;Für jede Reklamation gilt eine sehr kurze Ausschlussfrist.;uncertain;0.9;übernommen;uncertain;§ 307 BGB;Die Frist muss geprüft werden.;zur weiteren Prüfung übernommen;Anna Müller;2026-11-17T12:00:00Z;agent-summary-v1;nein
+3;4.1;§ 4 Regelung;Die gesetzliche Gewährleistung bleibt unberührt.;valid;0.99;verworfen;;;Die Klausel bestätigt das Gesetz.;nur deklaratorisch;Anna Müller;2026-11-17T12:00:00Z;agent-summary-v1;nein
