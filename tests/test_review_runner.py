@@ -327,7 +327,10 @@ def test_replaying_the_log_rebuilds_the_final_state_under_concurrency():
     }
     final = _finish(service, review.review_id)
     assert state["review"]["counts"] == final.counts.model_dump()
-    assert final.counts.done + final.counts.failed == 30
+    # Phase 7: the judged `uncertain` clauses wait for the lawyer instead of being done.
+    assert final.counts.done + final.counts.awaiting_decision + final.counts.failed == 30
+    assert final.counts.awaiting_decision == final.counts.uncertain > 0
+    assert final.status == "awaiting_decisions"
 
 
 def test_cache_hits_make_zero_judge_calls():

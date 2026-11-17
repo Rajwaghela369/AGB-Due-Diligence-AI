@@ -30,13 +30,31 @@ Contract (Phase 5, Wave 0):
   `ClauseFailed`. An explanation failure does not: the verdict and basis are
   kept, `reason_de=""`, `reason_unavailable=True`.
 - Nothing is persisted here; the runner owns persistence.
+
+Interrupts (Phase 7). `make_judge(..., checkpointer=saver)` compiles the graph with a
+LangGraph checkpointer, and `judge.interrupts` is then True: the runner passes
+`thread_id="{review_id}:{position}"`, and an `uncertain` verdict stops the graph after
+`self_check` with its state saved under that thread. The judge still returns the
+model's verdict at once; the clause simply has a live checkpoint now. Later,
+`judge.resume(clause, thread_id=..., verdict=..., basis=...)` continues it with the
+lawyer's decision (explaining on the lawyer's § if the decided verdict is
+potentially_void) and returns a `Resumed`, or None when the thread has nothing waiting
+(a cached verdict, or a checkpointer-less judge). Checkpoints are written once per
+invocation (`durability="exit"`), and a thread that ran to the end is deleted, so only
+waiting clauses keep a checkpoint.
 """
 
 import time
+import uuid
 from contextlib import nullcontext, suppress
+from dataclasses import dataclass
 from typing import Any, Protocol
 
+from core.logging import get_logger
+
 from app.domain import ClauseSpan, ClauseVerdict
+
+log = get_logger("agent.run")
 
 
 class ClauseFailed(RuntimeError):
@@ -47,10 +65,35 @@ class ExplainFailed(ClauseFailed):
     """The explanation could not be regenerated; the stored verdict is untouched."""
 
 
+@dataclass(frozen=True)
+class Resumed:
+    """What resuming an interrupted clause produced. Tokens are this resume's only."""
+
+    verdict: str | None  # the verdict the graph finished with (the lawyer's, unless dismissed)
+    explained: bool  # the explain step ran (a model call was attempted)
+    reason_de: str = ""
+    reason_unavailable: bool = False
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
 class Judge(Protocol):
     agent_version: str
+    interrupts: bool  # True when compiled with a checkpointer; then pass `thread_id`
 
-    def __call__(self, clause: ClauseSpan, *, parent: Any = None) -> ClauseVerdict: ...
+    def __call__(
+        self, clause: ClauseSpan, *, parent: Any = None, thread_id: str | None = None
+    ) -> ClauseVerdict: ...
+
+    def resume(
+        self, clause: ClauseSpan, *, thread_id: str, verdict: str | None, basis: list[str]
+    ) -> "Resumed | None":
+        """Continue the interrupted graph of `thread_id` with the lawyer's verdict and §.
+
+        None if nothing waits on that thread. Raises only for an infrastructure failure
+        (the checkpointer); a failed explanation is `reason_unavailable=True`.
+        """
+        ...
 
     def explain_only(self, clause: ClauseSpan, verdict: ClauseVerdict) -> ClauseVerdict:
         """Re-run only the explanation of a void verdict whose reasoning is missing.
@@ -70,6 +113,7 @@ def make_judge(
     router: Any = None,
     tracer: Any = None,
     caches: Any = None,
+    checkpointer: Any = None,
 ) -> Judge:
     """Build one thread-safe clause judge for the review runner.
 
@@ -83,9 +127,11 @@ def make_judge(
     from core.retrieval import Retrieved
     from core.retrieval import retrieve as default_retrieve
     from core.routing import classify_topic
+    from langgraph.types import Command
 
     from app.agent import prompts, verdicts
-    from app.agent.graph import build_graph
+    from app.agent.graph import build_graph, find_cited
+    from app.agent.state import AgentContext
     from app.agent.task import _agent_settings, _explain_model, index_hash
 
     app_config = app_config or load_yaml(CONFIGS / "app.yaml")
@@ -129,10 +175,20 @@ def make_judge(
         models={"judge": judge_model, "explain": explain_model},
         prompt_label=label,
         tracer=tracer,
+        checkpointer=checkpointer,
         **agent_settings,
     )
 
-    def judge_clause(clause: ClauseSpan, *, parent: Any = None) -> ClauseVerdict:
+    def forget(thread_id: str) -> None:
+        """Drop a thread that has nothing left to resume; a leftover costs only space."""
+        try:
+            checkpointer.delete_thread(thread_id)
+        except Exception:  # noqa: BLE001 - never fails a verdict
+            log.warning("could not delete checkpoint thread %s", thread_id, exc_info=True)
+
+    def judge_clause(
+        clause: ClauseSpan, *, parent: Any = None, thread_id: str | None = None
+    ) -> ClauseVerdict:
         span_tracer = parent or tracer
         name = f"clause {clause.number or clause.position}"
         context = nullcontext(None)
@@ -148,6 +204,10 @@ def make_judge(
         started = time.monotonic()
         try:
             with context as clause_observation:
+                config, durable = None, {}
+                if checkpointer is not None:
+                    config = {"configurable": {"thread_id": thread_id or uuid.uuid4().hex}}
+                    durable = {"durability": "exit"}  # one checkpoint write, not one per step
                 state = compiled.invoke(
                     {
                         "clause": {
@@ -156,10 +216,17 @@ def make_judge(
                             "text": clause.text,
                         },
                         "retries": 0,
-                        "tracer": clause_observation or tracer,
-                    }
+                    },
+                    config,
+                    context=AgentContext(tracer=clause_observation or tracer),
+                    **durable,
                 )
-                result = state["result"]
+                if "__interrupt__" in state:  # uncertain: the checkpoint waits for the lawyer
+                    result = state["__interrupt__"][0].value
+                else:
+                    result = state["result"]
+                    if config is not None:
+                        forget(config["configurable"]["thread_id"])
                 if result.get("verdict") is None:
                     raise ClauseFailed(str(result.get("error") or "no verdict returned"))
                 observation_ids = dict(result.get("observations", {}))
@@ -195,23 +262,15 @@ def make_judge(
 
     def explain_only(clause: ClauseSpan, verdict: ClauseVerdict) -> ClauseVerdict:
         """The explain step alone: find the cited norms again (cached, no Gemini), then explain."""
-        from app.agent.graph import AGB_CONTROL_PARAGRAPHS
-
         retrieval = app_config.get("retrieval", {})
-        top_k = int(retrieval.get("top_k", 10))
-        depth = int(retrieval.get("search_depth", 20))
-        wanted = set(verdict.legal_basis)
         try:
-            found = retrieve_clause(clause.text, route_clause(clause.text), retrieval, depth=depth)
-            cited = [c for c in found[:top_k] if c.chunk_id in wanted]
-            if len(cited) < len(wanted):  # the judge may have found it on the wider retry
-                wider = {
-                    **retrieval,
-                    "always_include_paragraphs": list(AGB_CONTROL_PARAGRAPHS),
-                    "search_depth": depth * 2,
-                }
-                found = retrieve_clause(clause.text, "", wider, depth=wider["search_depth"])
-                cited = [c for c in found[: int(top_k * 1.5)] if c.chunk_id in wanted]
+            cited = find_cited(
+                retrieve_clause,
+                clause.text,
+                route_clause(clause.text),
+                retrieval,
+                list(verdict.legal_basis),
+            )
             if not cited:
                 raise ExplainFailed("Die Rechtsgrundlage wurde nicht mehr gefunden.")
             completion = explain_clause({"title": clause.heading, "text": clause.text}, cited)
@@ -233,6 +292,35 @@ def make_judge(
             }
         )
 
+    def resume(
+        clause: ClauseSpan, *, thread_id: str, verdict: str | None, basis: list[str]
+    ) -> Resumed | None:
+        if checkpointer is None:
+            return None
+        config = {"configurable": {"thread_id": thread_id}}
+        waiting = compiled.get_state(config)
+        if not waiting.next:  # never interrupted, already resumed, or deleted
+            return None
+        before = waiting.values.get("draft") or {}
+        state = compiled.invoke(
+            Command(resume={"verdict": verdict, "basis": list(basis)}),
+            config,
+            context=AgentContext(tracer=tracer),
+            durability="exit",
+        )
+        result = state["result"]
+        forget(thread_id)
+        return Resumed(
+            verdict=result.get("verdict"),
+            explained=bool((state.get("draft") or {}).get("explained")),
+            reason_de=result.get("reason_de", ""),
+            reason_unavailable=bool(result.get("reason_unavailable", False)),
+            input_tokens=int(result.get("input_tokens", 0)) - int(before.get("input_tokens", 0)),
+            output_tokens=int(result.get("output_tokens", 0)) - int(before.get("output_tokens", 0)),
+        )
+
     judge_clause.agent_version = version  # type: ignore[attr-defined]
+    judge_clause.interrupts = checkpointer is not None  # type: ignore[attr-defined]
     judge_clause.explain_only = explain_only  # type: ignore[attr-defined]
+    judge_clause.resume = resume  # type: ignore[attr-defined]
     return judge_clause  # type: ignore[return-value]

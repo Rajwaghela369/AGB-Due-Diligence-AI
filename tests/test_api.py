@@ -669,6 +669,8 @@ def test_build_app_wires_the_real_service_contract(monkeypatch, with_langfuse):
     monkeypatch.setattr("app.store.files.LocalFileStore", fake_file_store)
     monkeypatch.setattr("app.store.postgres.postgres_store", lambda _files: store)
     monkeypatch.setattr("app.api.main.load_statutes", lambda _path: {})
+    checkpointer = SimpleNamespace(saver=object(), close=lambda: None)
+    monkeypatch.setattr("app.review.checkpoint.postgres_checkpointer", lambda: checkpointer)
 
     def fake_langfuse():
         calls["langfuse"] = True
@@ -703,7 +705,12 @@ def test_build_app_wires_the_real_service_contract(monkeypatch, with_langfuse):
     assert calls["settings_config"] is config
     assert calls["judge"] == (
         config,
-        {"limiter": limiter, "tracer": expected_tracer, "caches": store.caches},
+        {
+            "limiter": limiter,
+            "tracer": expected_tracer,
+            "caches": store.caches,
+            "checkpointer": checkpointer.saver,
+        },
     )
     args, kwargs = calls["service"]
     router = kwargs.pop("router")

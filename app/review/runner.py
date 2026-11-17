@@ -43,6 +43,14 @@ starts (`app.review.topics`) and stored on its clause rows; `review_clauses`
 puts them back on the clauses, so every path that loads a review's clauses
 scopes them the same way. A clause without a topic (no router, or the router
 failed) is judged.
+
+Waiting for the lawyer (Phase 7). A clause whose verdict is `uncertain` and that has no
+decision yet becomes `awaiting_decision` instead of `done`, whether the verdict was just
+judged or came from the cache; its `CUSTOM interrupt` follows the delta that says so. A
+live judge with a checkpointer has also stopped its graph under thread
+`{review_id}:{position}` (`thread_id`), so a decision can resume it; a cached verdict has
+no graph, and a decision explains only (`Service._resume_decided`). The worker is free
+at once either way. A run ends `awaiting_decisions` while any clause still waits.
 """
 
 import threading
@@ -68,12 +76,14 @@ from core.logging import bind, get_logger, update
 
 from app.agent.run import ClauseFailed
 from app.domain import (
+    CUSTOM_INTERRUPT,
     CUSTOM_PROGRESS,
     IDLE_REVIEW_STATUSES,
     ClauseSpan,
     ClauseStatus,
     ClauseVerdict,
     Decision,
+    Interrupt,
     Review,
     ReviewCounts,
 )
@@ -192,6 +202,28 @@ def load_entries(
         verdict = verdicts.get(clause.content_hash) if status in VERDICT_STATUSES else None
         entries[clause.position] = (status, error, verdict)
     return entries
+
+
+def thread_id(review_id: str, position: int) -> str:
+    """The checkpoint thread of one clause of one review (Phase 7 plan, 7.B)."""
+    return f"{review_id}:{position}"
+
+
+def settled_status(verdict: ClauseVerdict, decided: bool) -> ClauseStatus:
+    """The status a clause takes when its verdict arrives: an undecided `uncertain` waits."""
+    return "awaiting_decision" if verdict.verdict == "uncertain" and not decided else "done"
+
+
+def interrupt_event(position: int, verdict: ClauseVerdict) -> CustomEvent:
+    value = Interrupt(position=position, verdict=verdict.verdict, confidence=verdict.confidence)
+    return CustomEvent(name=CUSTOM_INTERRUPT, value=value.model_dump(mode="json"))
+
+
+def price(prices: dict[str, float], input_tokens: int, output_tokens: int) -> float:
+    """USD for a number of tokens at `prices` (USD per million tokens)."""
+    per_input = prices.get("input", 0.0)
+    per_output = prices.get("output", 0.0)
+    return (input_tokens * per_input + output_tokens * per_output) / 1e6
 
 
 def build_state(review: Review, entries: dict[int, tuple]) -> dict[str, Any]:
@@ -451,11 +483,17 @@ class ReviewRun:
                 if held is not None and held.content_hash == verdict.content_hash:
                     self._entries[position] = (status, error, verdict)
 
-    def note_decision(self, decision: Decision) -> ReviewCounts:
-        """Take a decision stored while this run is going into its counts; persist and
-        return them. The caller emits the events (docs/Events.md, decisions)."""
+    def note_decision(self, decision: Decision, cost_usd: float = 0.0) -> ReviewCounts:
+        """Take a decision stored while this run is going into its counts and cost; persist
+        and return them. A waiting clause becomes `done` here too, so the run neither ends
+        `awaiting_decisions` for it nor overwrites the stored counts with stale ones. The
+        caller emits the events (docs/Events.md, decisions)."""
         with self._cond:
             self._decisions[decision.position] = decision.model_copy(deep=True)
+            status, error, verdict = self._entries.get(decision.position, (None, None, None))
+            if status == "awaiting_decision":
+                self._entries[decision.position] = ("done", error, verdict)
+            self._cost += cost_usd
             return self._save_counts()
 
     def stop(self) -> None:
@@ -550,16 +588,17 @@ class ReviewRun:
             if self._stopping:
                 return  # stays queued for the resume
             hits = {p: self._cached_verdicts[self._clauses[p].content_hash] for p in batch}
+            settled = {p: self._settled(p, verdict) for p, verdict in hits.items()}
             try:
                 self.ctx.store.reviews.set_clause_statuses(
-                    self.review_id, {p: ("done", None) for p in hits}
+                    self.review_id, {p: (status, None) for p, status in settled.items()}
                 )
             except Exception:  # noqa: BLE001 - fall back to the clause-by-clause path
                 log.warning("bulk cache-hit write failed for %s", self.review_id, exc_info=True)
                 self._pending.extendleft(reversed(batch))
                 return
             for position, verdict in hits.items():
-                self._entries[position] = ("done", None, verdict)
+                self._entries[position] = (settled[position], None, verdict)
             self._cache_hits += len(hits)
             counts = self._save_counts()
             if not self._announced:
@@ -568,15 +607,21 @@ class ReviewRun:
                 {
                     "op": "replace",
                     "path": f"/clauses/{position}",
-                    "value": clause_entry("done", None, verdict),
+                    "value": clause_entry(settled[position], None, verdict),
                 }
                 for position, verdict in hits.items()
             ]
             delta.append(
                 {"op": "replace", "path": "/review/counts", "value": counts.model_dump(mode="json")}
             )
+            interrupts = [
+                interrupt_event(position, verdict)
+                for position, verdict in sorted(hits.items())
+                if settled[position] == "awaiting_decision"
+            ]
             self.ctx.bus.emit_many(
-                self.review_id, [StateDeltaEvent(delta=delta), self._progress_event()]
+                self.review_id,
+                [StateDeltaEvent(delta=delta), *interrupts, self._progress_event()],
             )
 
     def _work(self, pool: ThreadPoolExecutor) -> bool:
@@ -609,8 +654,11 @@ class ReviewRun:
                 self._closed = True
                 counts = count(self._entries, self._cache_hits, self._decisions)
                 result = {"counts": counts.model_dump(mode="json"), "cost_usd": self._cost}
+                waiting = any(s == "awaiting_decision" for s, _, _ in self._entries.values())
                 # Status first: a client that sees RUN_FINISHED and reloads must see it.
-                self.ctx.store.reviews.set_status(self.review_id, "finished")
+                self.ctx.store.reviews.set_status(
+                    self.review_id, "awaiting_decisions" if waiting else "finished"
+                )
                 self.ctx.bus.emit(
                     self.review_id,
                     RunFinishedEvent(
@@ -688,8 +736,11 @@ class ReviewRun:
                 self._set(position, "checking")
 
             produced = None
+            options = {}
+            if getattr(judge, "interrupts", False):  # an uncertain verdict leaves a checkpoint
+                options["thread_id"] = thread_id(self.review_id, position)
             try:
-                produced = judge(clause, parent=self._trace.span)
+                produced = judge(clause, parent=self._trace.span, **options)
                 stored = store.verdicts.save(produced)
             except Exception as exc:  # noqa: BLE001 - principle 3: the clause fails, not the run
                 if interrupted(exc):
@@ -712,7 +763,7 @@ class ReviewRun:
                 if outcome[0] == "done":
                     # Charge what this call cost, even if another verdict won the save.
                     self._cost += self._price(produced)
-                    self._set(position, "done", verdict=outcome[1])
+                    self._settle(position, outcome[1])
                 else:
                     self._set(position, "failed", error=outcome[1])
                 self.ctx.bus.emit(self.review_id, StepFinishedEvent(step_name=step))
@@ -732,7 +783,7 @@ class ReviewRun:
             return False
         with self._cond:
             self._cache_hits += 1
-            self._set(position, "done", verdict=cached)
+            self._settle(position, cached)
             self._progress()
         return True
 
@@ -761,6 +812,16 @@ class ReviewRun:
             {"op": "replace", "path": "/review/counts", "value": counts.model_dump(mode="json")},
         ]
         self.ctx.bus.emit(self.review_id, StateDeltaEvent(delta=delta))
+
+    def _settled(self, position: int, verdict: ClauseVerdict) -> ClauseStatus:
+        return settled_status(verdict, position in self._decisions)
+
+    def _settle(self, position: int, verdict: ClauseVerdict) -> None:
+        """A verdict arrived: `done`, or `awaiting_decision` followed by its interrupt."""
+        status = self._settled(position, verdict)
+        self._set(position, status, verdict=verdict)
+        if status == "awaiting_decision" and self._announced:
+            self.ctx.bus.emit(self.review_id, interrupt_event(position, verdict))
 
     def _save_counts(self) -> ReviewCounts:
         counts = count(self._entries, self._cache_hits, self._decisions)
@@ -807,6 +868,4 @@ class ReviewRun:
             return None
 
     def _price(self, verdict: ClauseVerdict) -> float:
-        per_input = self.ctx.prices.get("input", 0.0)
-        per_output = self.ctx.prices.get("output", 0.0)
-        return (verdict.input_tokens * per_input + verdict.output_tokens * per_output) / 1e6
+        return price(self.ctx.prices, verdict.input_tokens, verdict.output_tokens)

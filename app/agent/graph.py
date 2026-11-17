@@ -24,6 +24,18 @@ every chunk with no topic filter was measured and ranked worse (primary@5 0.258
 against 0.355). Nothing in this module reads the clause's own `topics` field -
 those labels are the annotators' answer key, not an input the agent is allowed
 to see.
+
+Waiting for the lawyer (Phase 7). Compiled with a checkpointer, the graph stops
+after `self_check` when the verdict is `uncertain`: an `await_decision` node calls
+LangGraph's `interrupt()` and the state is checkpointed under the caller's thread id.
+`interrupt()` inside a node was chosen over `interrupt_after=["self_check"]` because
+the stop is conditional (only `uncertain` waits) and because the node is also where
+the lawyer's answer comes back in: `Command(resume={"verdict", "basis"})` makes
+`interrupt()` return it, the node writes it into the draft, and the graph carries
+on exactly as for a model verdict - a decided `potentially_void` goes through
+`explain` (on the lawyer's §), everything else straight to `finish`. Without a
+checkpointer (offline evals, the harness) there is no `await_decision` edge at all
+and the graph behaves as it always did.
 """
 
 import uuid
@@ -35,15 +47,65 @@ from core.llm import DecisionResult, decide
 from core.retrieval import Retrieved, retrieve
 from core.schemas import VerdictRecord
 from langgraph.graph import END, StateGraph
+from langgraph.runtime import Runtime
+from langgraph.types import interrupt
 
 from app.agent import prompts
-from app.agent.state import AgentState
+from app.agent.state import AgentContext, AgentState
 
 # The AGB-control block. Always reachable on a retry, because these are the
 # norms that void a clause regardless of what the clause is about.
 AGB_CONTROL_PARAGRAPHS = (305, "305a", "305b", "305c", 306, "306a", 307, 308, 309, 310)
 
 VOID_QUESTION = "is_void"
+
+
+def widened(policy: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """The wider net of a retry: control norms in, twice the depth, half as many more.
+
+    One definition for the graph's retry and for every later search for a cited norm
+    (explain only, a resumed decision), so they all look where the judge looked.
+    """
+    depth = int(policy.get("search_depth", 20))
+    top_k = int(policy.get("top_k", 10))
+    wider = {
+        **policy,
+        "always_include_paragraphs": list(AGB_CONTROL_PARAGRAPHS),
+        "search_depth": depth * 2,
+    }
+    return wider, int(top_k * 1.5)
+
+
+def find_cited(
+    retriever: Callable,
+    text: str,
+    topic: str,
+    policy: dict[str, Any],
+    wanted: list[str],
+    *,
+    have: list[Retrieved] = (),  # type: ignore[assignment]
+) -> list[Retrieved]:
+    """The retrieved chunks for `wanted` ids, searching only for those not in `have`.
+
+    A model's basis is always among its candidates, so the live path never searches. A
+    lawyer may cite a § the judge never saw, and an explain-only call has no candidates
+    at all: those search the way the judge did (topic first, then the retry's wider net).
+    Ids that cannot be found are left out.
+    """
+    wanted_ids = set(wanted)
+    found = {c.chunk_id: c for c in have if c.chunk_id in wanted_ids}
+    if len(found) < len(wanted_ids):
+        depth = int(policy.get("search_depth", 20))
+        top_k = int(policy.get("top_k", 10))
+        for candidate in retriever(text, topic, policy, depth=depth)[:top_k]:
+            if candidate.chunk_id in wanted_ids:
+                found.setdefault(candidate.chunk_id, candidate)
+    if len(found) < len(wanted_ids):
+        wider, wider_k = widened(policy)
+        for candidate in retriever(text, "", wider, depth=wider["search_depth"])[:wider_k]:
+            if candidate.chunk_id in wanted_ids:
+                found.setdefault(candidate.chunk_id, candidate)
+    return list(found.values())
 
 
 @contextmanager
@@ -164,30 +226,40 @@ def build_graph(
     prompt_label: str = "production",
     run_id: str | None = None,
     tracer: Any = None,
+    checkpointer: Any = None,
 ):
-    """Compile the graph once. Every dependency is injectable so tests run offline."""
+    """Compile the graph once. Every dependency is injectable so tests run offline.
+
+    With a `checkpointer`, an `uncertain` verdict interrupts (see the module docstring);
+    invoke it with `config={"configurable": {"thread_id": ...}}`. Without one, nothing
+    interrupts.
+    """
     policy = policy or {}
     models = models or {}
     run_id = run_id or str(uuid.uuid4())
     top_k = int(policy.get("top_k", 10))
     depth = int(policy.get("search_depth", 20))
+    interrupts = checkpointer is not None
 
-    def invocation_tracer(state: AgentState) -> Any:
-        return state.get("tracer", tracer)
+    def invocation_tracer(runtime: Runtime[AgentContext] | None) -> Any:
+        context = runtime.context if runtime is not None else None
+        if context is not None and context.tracer is not None:
+            return context.tracer
+        return tracer
 
-    def route(state: AgentState) -> AgentState:
+    def route(state: AgentState, runtime: Runtime[AgentContext]) -> AgentState:
         clause = state["clause"]
         with _observe(
-            invocation_tracer(state), "route", input={"clause": clause["text"]}
+            invocation_tracer(runtime), "route", input={"clause": clause["text"]}
         ) as observation:
             topic = router(clause["text"]) if router else ""
             _update(observation, output={"topic": topic})
         return {"topic": topic}
 
-    def get_candidates(state: AgentState) -> AgentState:
+    def get_candidates(state: AgentState, runtime: Runtime[AgentContext]) -> AgentState:
         clause = state["clause"]
         with _observe(
-            invocation_tracer(state),
+            invocation_tracer(runtime),
             "retrieve",
             as_type="retriever",
             input={"query": clause["text"]},
@@ -214,11 +286,11 @@ def build_graph(
             },
         }
 
-    def judge(state: AgentState) -> AgentState:
+    def judge(state: AgentState, runtime: Runtime[AgentContext]) -> AgentState:
         clause, candidates = state["clause"], state["candidates"]
         questions = build_questions(candidates, prompt_label)
         with _observe(
-            invocation_tracer(state),
+            invocation_tracer(runtime),
             "judge",
             as_type="generation",
             input={
@@ -263,7 +335,7 @@ def build_graph(
             },
         }
 
-    def self_check(state: AgentState) -> AgentState:
+    def self_check(state: AgentState, runtime: Runtime[AgentContext]) -> AgentState:
         """Deterministic. Retry an ungrounded void call first, abstain second.
 
         Order matters: a void draft with no basis and low confidence should go
@@ -290,28 +362,46 @@ def build_graph(
         else:
             check = "accept"
 
-        with _observe(invocation_tracer(state), "self-check", input=state["draft"]) as observation:
+        with _observe(
+            invocation_tracer(runtime), "self-check", input=state["draft"]
+        ) as observation:
             _update(observation, output={"rule": check, "draft": draft})
         return {"draft": draft, "check": check}
 
-    def after_check(state: AgentState) -> str:
-        if state["check"] == "retry-ungrounded":
-            return "retry"
+    def explain_or_finish(state: AgentState) -> str:
         draft = state["draft"]
         if draft.get("verdict") == "potentially_void" and explain_enabled and explainer:
             return "explain"
         return "finish"
 
-    def retry(state: AgentState) -> AgentState:
+    def after_check(state: AgentState) -> str:
+        if state["check"] == "retry-ungrounded":
+            return "retry"
+        if interrupts and state["draft"].get("verdict") == "uncertain":
+            return "await_decision"
+        return explain_or_finish(state)
+
+    def await_decision(state: AgentState) -> AgentState:
+        """Wait for the lawyer. Runs twice: once to interrupt, once when resumed.
+
+        The interrupt's value is the model's result, so the caller gets its verdict
+        without the graph having finished. On resume, `interrupt()` returns the decided
+        `{"verdict", "basis"}`; a dismissal (verdict None) keeps the model's draft and
+        only closes the thread.
+        """
+        decided = interrupt(summarise(state))
+        draft = dict(state["draft"])
+        if decided.get("verdict") is not None:
+            draft["verdict"] = decided["verdict"]
+            draft["legal_basis"] = list(decided.get("basis") or [])
+            draft["reason_de"] = ""
+        return {"draft": draft, "decided": True}
+
+    def retry(state: AgentState, runtime: Runtime[AgentContext]) -> AgentState:
         """Widen the net once: deeper search, more candidates, control norms in."""
-        wider = {
-            **policy,
-            "always_include_paragraphs": list(AGB_CONTROL_PARAGRAPHS),
-            "search_depth": depth * 2,
-        }
-        wider_k = int(top_k * 1.5)
+        wider, wider_k = widened(policy)
         with _observe(
-            invocation_tracer(state),
+            invocation_tracer(runtime),
             "retry-retrieve",
             as_type="retriever",
             input={"query": state["clause"]["text"]},
@@ -329,24 +419,38 @@ def build_graph(
             },
         }
 
-    def explain(state: AgentState) -> AgentState:
+    def explain(state: AgentState, runtime: Runtime[AgentContext]) -> AgentState:
         """Generate the German reason. The Decisions API cannot, so this is a text call."""
         draft = dict(state["draft"])
-        cited = [c for c in state["candidates"] if c.chunk_id in draft["legal_basis"]]
+        clause = state["clause"]
+        cited = find_cited(
+            retriever,
+            clause["text"],
+            state.get("topic", ""),
+            policy,
+            draft["legal_basis"],
+            have=state.get("candidates", []),
+        )
         with _observe(
-            invocation_tracer(state),
+            invocation_tracer(runtime),
             "explain",
             as_type="generation",
-            input={"legal_basis": draft["legal_basis"]},
+            input={"legal_basis": draft["legal_basis"], "decided": bool(state.get("decided"))},
             model=models.get("explain", {}).get("name"),
         ) as observation:
-            completion = explainer(state["clause"], cited)
-            if completion.error:
+            draft["explained"] = True
+            completion = explainer(clause, cited) if cited else None
+            if completion is None:
+                # Nothing to explain from (a lawyer's § that cannot be found): no call.
+                draft["reason_unavailable"] = True
+                _update(observation, output={"error": "no cited norm found"}, level="WARNING")
+            elif completion.error:
                 # A missing reason is cosmetic; the verdict and its basis stand.
                 draft["reason_unavailable"] = True
                 _update(observation, output={"error": completion.error}, level="WARNING")
             else:
                 draft["reason_de"] = prompts.read_reason(completion.text)
+                draft["reason_unavailable"] = False
                 draft["input_tokens"] = int(draft.get("input_tokens", 0)) + completion.input_tokens
                 draft["output_tokens"] = (
                     int(draft.get("output_tokens", 0)) + completion.output_tokens
@@ -369,28 +473,13 @@ def build_graph(
             },
         }
 
-    def finish(state: AgentState) -> AgentState:
-        draft = state["draft"]
-        candidates = [candidate.chunk_id for candidate in state.get("candidates", [])]
-        result = {
-            "verdict": draft.get("verdict"),
-            "legal_basis": list(draft.get("legal_basis", [])),
-            "basis_scores": dict(draft.get("basis_scores", {})),
-            "candidates": candidates,
-            "reason_de": draft.get("reason_de", ""),
-            "confidence": float(draft.get("confidence", 0.0)),
-            "void_probability": draft.get("void_probability"),
-            "error": draft.get("error"),
-            "check": state.get("check"),
-            "input_tokens": int(draft.get("input_tokens", 0)),
-            "output_tokens": int(draft.get("output_tokens", 0)),
-            "reason_unavailable": bool(draft.get("reason_unavailable", False)),
-            "observations": state.get("observations", {}),
-        }
+    def finish(state: AgentState, runtime: Runtime[AgentContext]) -> AgentState:
+        result = summarise(state)
         trace_id = None
-        if invocation_tracer(state) is not None:
+        active_tracer = invocation_tracer(runtime)
+        if active_tracer is not None:
             try:
-                trace_id = invocation_tracer(state).get_current_trace_id()
+                trace_id = active_tracer.get_current_trace_id()
             except Exception:  # noqa: BLE001
                 trace_id = None
 
@@ -409,7 +498,7 @@ def build_graph(
         result["langfuse_trace_id"] = trace_id
         return {"result": result}
 
-    graph = StateGraph(AgentState)
+    graph = StateGraph(AgentState, context_schema=AgentContext)
     graph.add_node("route", route)
     graph.add_node("retrieve", get_candidates)
     graph.add_node("judge", judge)
@@ -422,12 +511,39 @@ def build_graph(
     graph.add_edge("route", "retrieve")
     graph.add_edge("retrieve", "judge")
     graph.add_edge("judge", "self_check")
-    graph.add_conditional_edges(
-        "self_check",
-        after_check,
-        {"retry": "retry", "explain": "explain", "finish": "finish"},
-    )
+    after_check_targets = {"retry": "retry", "explain": "explain", "finish": "finish"}
+    if interrupts:
+        graph.add_node("await_decision", await_decision)
+        after_check_targets["await_decision"] = "await_decision"
+        graph.add_conditional_edges(
+            "await_decision", explain_or_finish, {"explain": "explain", "finish": "finish"}
+        )
+    graph.add_conditional_edges("self_check", after_check, after_check_targets)
     graph.add_edge("retry", "judge")
     graph.add_edge("explain", "finish")
     graph.add_edge("finish", END)
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
+
+
+def summarise(state: AgentState) -> dict[str, Any]:
+    """The clause's result as the graph's output contract has it (without the trace id).
+
+    Also the value of an interrupt, so a waiting clause reports the model's verdict in
+    exactly the shape a finished one does.
+    """
+    draft = state.get("draft") or {}
+    return {
+        "verdict": draft.get("verdict"),
+        "legal_basis": list(draft.get("legal_basis", [])),
+        "basis_scores": dict(draft.get("basis_scores", {})),
+        "candidates": [candidate.chunk_id for candidate in state.get("candidates", [])],
+        "reason_de": draft.get("reason_de", ""),
+        "confidence": float(draft.get("confidence", 0.0)),
+        "void_probability": draft.get("void_probability"),
+        "error": draft.get("error"),
+        "check": state.get("check"),
+        "input_tokens": int(draft.get("input_tokens", 0)),
+        "output_tokens": int(draft.get("output_tokens", 0)),
+        "reason_unavailable": bool(draft.get("reason_unavailable", False)),
+        "observations": dict(state.get("observations", {})),
+    }

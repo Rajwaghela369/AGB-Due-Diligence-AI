@@ -43,6 +43,7 @@ from app.domain import (
     Reviewer,
     StoredEvent,
     Topic,
+    decided_verdict,
     kept_model_verdict,
 )
 from app.review.corrections import Corrections
@@ -57,8 +58,10 @@ from app.review.runner import (
     clause_entry,
     count,
     load_entries,
+    price,
     regenerate_reason,
     review_clauses,
+    thread_id,
 )
 from app.review.topics import Router, tag_topics
 from app.store.interfaces import Store
@@ -371,20 +374,7 @@ class Service:
                     self.store.reviews.set_clause_status(review_id, position, "done")
                 run = self._runs.get(review_id)
                 if run is not None:
-                    counts = run.note_decision(stored)
-                    if status_changed or resume_cost:
-                        current = self._review(review_id)
-                        entries = load_entries(
-                            self.store, current, review_clauses(self.store, current)
-                        )
-                        counts = count(
-                            entries,
-                            current.counts.cache_hits,
-                            self.store.decisions.for_review(review_id),
-                        )
-                        self.store.reviews.update_counts(
-                            review_id, counts, current.cost_usd + resume_cost
-                        )
+                    run.note_decision(stored, resume_cost)
                 else:
                     current = self._review(review_id)
                     entries = load_entries(self.store, current, review_clauses(self.store, current))
@@ -549,9 +539,73 @@ class Service:
         raises for a model failure: `reason_unavailable=True`. Emits no events and does not
         change the clause status; `decide` does both.
 
-        Until Wave 1 this makes no model call.
+        How (interrupt slice): the judge's `resume` continues the checkpoint if one waits
+        (an accept, a non-void override or a dismissal just closes it, with no model call);
+        it returns None for a cached verdict, whose graph never existed, and then only a
+        decided potentially_void calls `explain_only` on the decided verdict and §. A
+        resume that raises (the checkpoint store is down, the explain call blew up) is
+        logged and, for a void decision, reported as `reason_unavailable`; it is not
+        retried as explain-only, so one decision never pays for two explanations.
         """
-        return decision, 0.0
+        decided, basis = decided_verdict(decision)
+        wants_reason = decided == "potentially_void"
+        unavailable = decision.model_copy(update={"reason_de": "", "reason_unavailable": True})
+        resume = getattr(self.judge, "resume", None)
+        if resume is not None:
+            try:
+                resumed = resume(
+                    clause,
+                    thread_id=thread_id(review.review_id, clause.position),
+                    verdict=decided,
+                    basis=basis,
+                )
+            except Exception:  # noqa: BLE001 - a decision is never lost to the agent failing
+                log.warning(
+                    "resuming clause %s of %s failed",
+                    clause.position,
+                    review.review_id,
+                    exc_info=True,
+                )
+                return (unavailable if wants_reason else decision), 0.0
+            if resumed is not None:
+                cost = price(self._ctx.prices, resumed.input_tokens, resumed.output_tokens)
+                if not resumed.explained:
+                    return decision, cost
+                update = {
+                    "reason_de": resumed.reason_de,
+                    "reason_unavailable": resumed.reason_unavailable or not resumed.reason_de,
+                }
+                return decision.model_copy(update=update), cost
+        if not wants_reason:
+            return decision, 0.0
+        explain = getattr(self.judge, "explain_only", None)
+        if explain is None:
+            return unavailable, 0.0
+        target = verdict.model_copy(
+            update={
+                "verdict": "potentially_void",
+                "legal_basis": basis,
+                "reason_de": "",
+                "reason_unavailable": True,
+            }
+        )
+        try:
+            explained = explain(clause, target)  # one call through the shared limiter
+        except Exception:  # noqa: BLE001 - ExplainFailed, a closed limiter, anything
+            log.warning(
+                "explaining the decision on clause %s of %s failed",
+                clause.position,
+                review.review_id,
+                exc_info=True,
+            )
+            return unavailable, 0.0
+        cost = price(
+            self._ctx.prices,
+            explained.input_tokens - target.input_tokens,
+            explained.output_tokens - target.output_tokens,
+        )
+        update = {"reason_de": explained.reason_de, "reason_unavailable": not explained.reason_de}
+        return decision.model_copy(update=update), cost
 
     def resume_running(self) -> int:
         """Resume reviews left `running` by a restart; returns how many were resumed.
