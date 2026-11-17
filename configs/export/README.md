@@ -1,8 +1,8 @@
 # Export templates (Phase 8, 8.B)
 
 `app.review.export` renders the DD memo from the files in this folder
-(`export.template_dir` in `configs/app.yaml`). The export builder (Phase 8 Wave 1) adds
-them; until then the folder holds only this note.
+(`export.template_dir` in `configs/app.yaml`). `memo.docx` contains presentation styles and
+page settings only; the export code supplies all review-specific content.
 
 ## What goes here
 
