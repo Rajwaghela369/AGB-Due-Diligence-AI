@@ -116,11 +116,15 @@ test("upload, live review, reload without new judge calls, open a finding, 👎 
   await drawer.getByLabel("Kommentar (optional)").fill("Klausel ist hier ausnahmsweise wirksam.");
   await drawer.getByRole("button", { name: "Senden" }).click();
 
-  // The fake Langfuse recorded a score on the judge observation.
+  // The fake Langfuse recorded a score on the judge observation. The fake is shared by every
+  // spec on this server (decisions.spec.ts also writes scores), so look only at this vote's.
   await expect
     .poll(async () => {
       const response = await page.request.get(`${API}/__test__/scores`);
-      return ((await response.json()) as { scores: Array<Record<string, unknown>> }).scores;
+      const { scores } = (await response.json()) as { scores: Array<Record<string, unknown>> };
+      return scores.filter((score) =>
+        String(score.comment).includes("Klausel ist hier ausnahmsweise wirksam."),
+      );
     })
     .toEqual([
       expect.objectContaining({

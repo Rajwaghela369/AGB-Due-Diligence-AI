@@ -258,6 +258,7 @@
       "split": "Aufteilen",
       "done": "erledigt",
       "check": "Prüfung {{done}}/{{total}}",
+      "awaitingDecisions": "wartet auf Entscheidungen",
       "waiting": {
         "rate_limit": "wartet auf Rate-Limit",
         "daily_budget": "Tagesbudget erreicht"

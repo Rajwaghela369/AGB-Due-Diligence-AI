@@ -86,6 +86,9 @@ ui-snapshots:  ## Screenshot regression: every page x {1440, 1024, 820} px x {li
 ui-snapshots-update:  ## Re-record the screenshot baselines after an intended visual change
 	cd web && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec playwright test --project=snapshots --update-snapshots
 
+agreement:  ## Lawyer agreement per agent_version for the store in DATABASE_URL
+	$(PY) python -m scripts.agreement
+
 check: lint test web-check e2e  ## What CI runs (e2e needs `make e2e-install` once)
 
 api:  ## Run the API locally with reload, against Gotenberg from compose
