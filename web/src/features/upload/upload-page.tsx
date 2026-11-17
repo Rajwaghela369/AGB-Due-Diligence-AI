@@ -113,12 +113,7 @@ export function UploadPage() {
             accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             onChange={(event) => selectFile(event.target.files?.[0])}
           />
-          <Button
-            className="mt-4"
-            type="button"
-            variant="ghost"
-            onClick={() => input.current?.click()}
-          >
+          <Button className="mt-4" type="button" onClick={() => input.current?.click()}>
             {t("upload.chooseFile")}
           </Button>
           <button
@@ -160,6 +155,7 @@ export function UploadPage() {
         <legend className="px-1 font-medium">{t("upload.scope")}</legend>
         <label className="flex items-center gap-2">
           <input
+            className="accent-accent"
             type="checkbox"
             checked={liability}
             onChange={(event) => setLiability(event.target.checked)}
@@ -168,6 +164,7 @@ export function UploadPage() {
         </label>
         <label className="flex items-center gap-2">
           <input
+            className="accent-accent"
             type="checkbox"
             checked={warranty}
             onChange={(event) => setWarranty(event.target.checked)}
@@ -192,7 +189,6 @@ export function UploadPage() {
         )}
         {t("upload.start")}
       </Button>
-      <p className="text-sm text-muted-foreground">{t("app.disclaimer")}</p>
     </section>
   );
 }

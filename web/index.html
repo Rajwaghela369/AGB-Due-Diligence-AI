@@ -4,6 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f7f6f3" />
+    <script>
+      (function () {
+        var dark = false;
+        try {
+          var saved = localStorage.getItem("agb.theme");
+          dark =
+            saved === "dark" ||
+            (saved !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        } catch (_) {
+          dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        }
+        document.documentElement.classList.toggle("dark", dark);
+        document
+          .querySelector('meta[name="theme-color"]')
+          .setAttribute("content", dark ? "#181a19" : "#f7f6f3");
+      })();
+    </script>
     <title>AGB-Check</title>
   </head>
   <body>

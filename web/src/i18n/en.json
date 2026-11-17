@@ -150,6 +150,12 @@
       "description": "Upload a contract to start the first review."
     },
     "notReviewed": "Not reviewed yet",
+    "startReview": "Start review",
+    "aiCostHint": "The review uses AI requests and may incur costs.",
+    "scope": "Scope of review",
+    "cancel": "Cancel",
+    "closeDialog": "Close dialog",
+    "startError": "The review could not be started. Please try again.",
     "progress": "{{done}} of {{total}} clauses checked",
     "status": {
       "queued": "Waiting",

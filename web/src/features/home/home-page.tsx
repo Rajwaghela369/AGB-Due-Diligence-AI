@@ -1,12 +1,20 @@
 /** The home screen keeps stored reviews useful without opening a second review run. */
 import { useQuery } from "@tanstack/react-query";
-import { CalendarDays, FileText, Plus, RefreshCw } from "lucide-react";
+import { CalendarDays, FileText, Play, Plus, RefreshCw, X } from "lucide-react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
 import { api } from "../../api/client";
 import type { ClauseVerdict, DocumentListItem, Review } from "../../api/types.gen";
 import { Button } from "../../components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "../../components/ui/dialog";
 import { riskStyle } from "../review/risk";
 
 const POLL_MS = 3000;
@@ -58,8 +66,10 @@ export function HomePage() {
 
 /** A running review polls its own status; there is no stream on the home screen. */
 function DocumentRow({ item }: { item: DocumentListItem }) {
-  const { t } = useTranslation();
+  const { i18n, t } = useTranslation();
   const navigate = useNavigate();
+  const [scopeOpen, setScopeOpen] = useState(false);
+  const [scopeTrigger, setScopeTrigger] = useState<HTMLButtonElement | null>(null);
   const { document, latest_review: stored } = item;
   const polled = useQuery({
     queryKey: ["reviews", stored?.review_id, "status"],
@@ -72,10 +82,10 @@ function DocumentRow({ item }: { item: DocumentListItem }) {
   });
   const review = polled.data?.review ?? stored;
   return (
-    <li>
+    <li className="grid gap-4 p-5 sm:grid-cols-[minmax(12rem,1fr)_auto_auto] sm:items-center">
       <button
         type="button"
-        className="grid w-full gap-4 p-5 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default sm:grid-cols-[minmax(12rem,1fr)_auto_auto] sm:items-center"
+        className="contents text-left focus-visible:outline-none"
         disabled={!review}
         onClick={() => review && navigate(`/reviews/${review.review_id}`)}
       >
@@ -84,13 +94,152 @@ function DocumentRow({ item }: { item: DocumentListItem }) {
             <FileText aria-hidden="true" size={18} /> {document.filename}
           </span>
           <span className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
-            <CalendarDays aria-hidden="true" size={15} /> {formatDate(document.created_at)}
+            <CalendarDays aria-hidden="true" size={15} />{" "}
+            {formatDate(document.created_at, i18n.language)}
           </span>
         </span>
         {review ? <RiskCounts review={review} /> : <span>{t("home.notReviewed")}</span>}
         {review ? <Progress review={review} /> : null}
       </button>
+      {!review ? (
+        <Button
+          type="button"
+          onClick={(event) => {
+            setScopeTrigger(event.currentTarget);
+            setScopeOpen(true);
+          }}
+        >
+          <Play aria-hidden="true" size={16} />
+          {t("home.startReview")}
+        </Button>
+      ) : null}
+      {scopeOpen ? (
+        <StartReviewDialog
+          documentId={document.document_id}
+          filename={document.filename}
+          onClose={() => setScopeOpen(false)}
+          returnFocusTo={scopeTrigger}
+        />
+      ) : null}
     </li>
+  );
+}
+
+function StartReviewDialog({
+  documentId,
+  filename,
+  onClose,
+  returnFocusTo,
+}: {
+  documentId: string;
+  filename: string;
+  onClose: () => void;
+  returnFocusTo: HTMLButtonElement | null;
+}) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [liability, setLiability] = useState(true);
+  const [warranty, setWarranty] = useState(true);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState(false);
+  const open = useRef(true);
+  const close = () => {
+    open.current = false;
+    onClose();
+  };
+  const start = async () => {
+    setStarting(true);
+    setError(false);
+    try {
+      const scope = [liability && "liability", warranty && "warranty"].filter(Boolean) as Array<
+        "liability" | "warranty"
+      >;
+      const result = await api.reviews.start({ document_id: documentId, scope });
+      if (open.current) navigate(`/reviews/${result.review.review_id}`);
+    } catch {
+      setError(true);
+      setStarting(false);
+    }
+  };
+  return (
+    <Dialog
+      open
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && !starting) close();
+      }}
+    >
+      <DialogContent
+        aria-labelledby="start-review-title"
+        className="inset-1/2 z-50 h-fit w-[min(28rem,calc(100vw-2rem))] max-w-none -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-6 shadow-lg"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          returnFocusTo?.focus();
+        }}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <DialogTitle id="start-review-title" className="text-lg font-semibold">
+              {t("home.startReview")}
+            </DialogTitle>
+            <DialogDescription className="mt-1 text-sm text-muted-foreground">
+              {filename}
+            </DialogDescription>
+          </div>
+          <DialogClose asChild>
+            <Button
+              aria-label={t("home.closeDialog")}
+              disabled={starting}
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              <X aria-hidden="true" size={18} />
+            </Button>
+          </DialogClose>
+        </div>
+        <p className="mt-4 text-sm text-muted-foreground">{t("home.aiCostHint")}</p>
+        <fieldset className="mt-4 space-y-2">
+          <legend className="font-medium">{t("home.scope")}</legend>
+          <label className="flex items-center gap-2">
+            <input
+              checked={liability}
+              className="accent-accent"
+              type="checkbox"
+              onChange={(event) => setLiability(event.target.checked)}
+            />
+            {t("upload.liability")}
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              checked={warranty}
+              className="accent-accent"
+              type="checkbox"
+              onChange={(event) => setWarranty(event.target.checked)}
+            />
+            {t("upload.warranty")}
+          </label>
+        </fieldset>
+        {error ? (
+          <p role="alert" className="mt-4 text-sm text-risk">
+            {t("home.startError")}
+          </p>
+        ) : null}
+        <div className="mt-6 flex justify-end gap-2">
+          <Button disabled={starting} type="button" variant="ghost" onClick={close}>
+            {t("home.cancel")}
+          </Button>
+          <Button
+            autoFocus
+            disabled={starting || (!liability && !warranty)}
+            type="button"
+            onClick={() => void start()}
+          >
+            <Play aria-hidden="true" size={16} />
+            {t("home.startReview")}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -139,10 +288,14 @@ function Progress({ review }: { review: Review }) {
   );
 }
 
-function formatDate(value: string | null | undefined): string {
+function formatDate(value: string | null | undefined, language: string): string {
   if (!value) return "—";
   const date = new Date(value);
   return Number.isNaN(date.valueOf())
     ? "—"
-    : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
+    : new Intl.DateTimeFormat(language, {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }).format(date);
 }
