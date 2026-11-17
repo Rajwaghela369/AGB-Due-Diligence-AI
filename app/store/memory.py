@@ -34,6 +34,7 @@ from app.domain import (
     decided_verdict,
     kept_model_verdict,
 )
+from app.store.deletion import MemoryDeletionRepo
 
 
 def _now() -> datetime:
@@ -60,6 +61,18 @@ class MemoryFileStore:
     def exists(self, key: str) -> bool:
         with self._lock:
             return key in self._blobs
+
+    def delete(self, key: str) -> bool:
+        with self._lock:
+            return self._blobs.pop(key, None) is not None
+
+    def presign(self, key: str, expires_in: int) -> str | None:
+        return None  # like local disk: the API proxies the bytes
+
+    def keys(self) -> list[str]:
+        """Every stored key; lets deletion tests assert which blobs are left."""
+        with self._lock:
+            return sorted(self._blobs)
 
 
 class MemoryDocumentRepo:
@@ -129,9 +142,13 @@ class MemoryDocumentRepo:
                 out.append(copy)
             return out
 
-    def list(self, limit: int = 100) -> list[Document]:
+    def list(self, limit: int = 100, *, owner_id: str | None = None) -> list[Document]:
         with self._lock:
-            docs = sorted(self._documents.values(), key=lambda d: d.created_at, reverse=True)
+            docs = sorted(
+                (d for d in self._documents.values() if owner_id in (None, d.owner_id)),
+                key=lambda d: d.created_at,
+                reverse=True,
+            )
             return [d.model_copy(deep=True) for d in docs[:limit]]
 
     def text_count(self) -> int:
@@ -564,9 +581,11 @@ class MemoryStore:
     decisions: MemoryDecisionRepo = field(default_factory=MemoryDecisionRepo)
     feedback: MemoryFeedbackRepo = field(default_factory=MemoryFeedbackRepo)
     metrics: MemoryMetricsRepo = field(init=False)
+    deletion: MemoryDeletionRepo = field(init=False)
 
     def __post_init__(self) -> None:
         self.metrics = MemoryMetricsRepo(self.decisions)
+        self.deletion = MemoryDeletionRepo(self)
 
 
 def memory_store() -> MemoryStore:

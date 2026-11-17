@@ -17,6 +17,8 @@ from typing import Any
 
 from core.db import connection
 
+from app.domain import DEFAULT_OWNER_ID
+
 MIGRATIONS = Path(__file__).parent / "migrations"
 _NAME = re.compile(r"^(\d{3,})_[a-z0-9_]+\.sql$")
 _LOCK_KEY = 7_315_001  # arbitrary, fixed: "agb-check migrations"
@@ -41,8 +43,14 @@ def migration_files(directory: Path = MIGRATIONS) -> list[Path]:
 def apply_pending(
     connect: Callable[[], AbstractContextManager[Any]] = connection,
     directory: Path = MIGRATIONS,
+    *,
+    default_owner: str = DEFAULT_OWNER_ID,
 ) -> list[str]:
-    """Apply every migration not yet recorded; returns the versions applied now."""
+    """Apply every migration not yet recorded; returns the versions applied now.
+
+    `default_owner` (`auth.default_owner`) is visible to the migrations as the
+    transaction-local setting `agb.default_owner`: 006 gives existing rows that owner.
+    """
     with connect() as conn:
         # Lock first: two first-time starters must not both create the bookkeeping table.
         conn.execute("select pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
@@ -57,6 +65,7 @@ def apply_pending(
             ).fetchone()
             if done:
                 continue
+            conn.execute("select set_config('agb.default_owner', %s, true)", (default_owner,))
             conn.execute(path.read_text(encoding="utf-8"))
             conn.execute("insert into schema_migrations (version) values (%s)", (path.stem,))
             applied.append(path.stem)

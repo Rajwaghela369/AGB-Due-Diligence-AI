@@ -809,3 +809,43 @@ def test_postgres_refuses_to_change_decision_history(tmp_path, _migrated, statem
     with pytest.raises(psycopg.errors.InsufficientPrivilege), _connect() as conn:
         conn.execute(statement, (rid,) if "%s" in statement else ())
     assert len(store.decisions.history(rid)) == 1
+
+
+# --- Phase 9: owners ----------------------------------------------------------------
+
+
+def test_documents_keep_their_owner_and_source_hash(store):
+    mine, theirs, legacy = uid(), uid(), uid()
+    owner = f"owner-{uid()}"
+    source = uid()
+    store.documents.save(make_document(mine).model_copy(update={"owner_id": owner}), [], {})
+    store.documents.save(
+        make_document(theirs).model_copy(update={"owner_id": owner, "source_hash": source}),
+        [],
+        {},
+    )
+    store.documents.save(make_document(legacy), [], {})
+
+    assert store.documents.get(mine).owner_id == owner
+    assert store.documents.get(mine).source_hash == mine  # defaults to the document id
+    assert store.documents.get(theirs).source_hash == source
+    assert store.documents.get(legacy).owner_id == "local"
+    assert {d.document_id for d in store.documents.list(owner_id=owner)} == {mine, theirs}
+
+
+def test_reviews_keep_their_owner(store):
+    review = make_review().model_copy(update={"owner_id": f"owner-{uid()}"})
+
+    assert store.reviews.create(review).owner_id == review.owner_id
+    assert store.reviews.get(review.review_id).owner_id == review.owner_id
+    assert store.reviews.create(make_review()).owner_id == "local"
+
+
+def test_file_delete_is_idempotent(store):
+    if type(store.files).__name__ == "LocalFileStore":
+        pytest.skip("LocalFileStore.delete is Phase 9 Wave 1 (storage)")
+    key = f"documents/{uid()}.pdf"
+    store.files.put(key, b"x")
+
+    assert store.files.delete(key) is True
+    assert store.files.delete(key) is False and not store.files.exists(key)

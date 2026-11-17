@@ -79,7 +79,11 @@ class FakeDb:
             self._last = (1,) if params[0] in self.recorded else None
         elif text.startswith("insert into schema_migrations"):
             self.recorded.add(params[0])
-        elif "create table if not exists schema_migrations" in text or "advisory" in text:
+        elif (
+            "create table if not exists schema_migrations" in text
+            or "advisory" in text
+            or "set_config" in text
+        ):
             pass
         else:
             self.script_runs.append(text)

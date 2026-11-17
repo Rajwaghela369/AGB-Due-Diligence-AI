@@ -3,8 +3,8 @@
 Keys are chosen by the caller (the document id for a PDF), so a blob is
 immutable: `put` of an existing key changes nothing. Writes go to a temp file
 in the same directory and are renamed into place, so a reader or a crash never
-sees a half-written file. Phase 9 swaps this for EU object storage behind the
-same three methods.
+sees a half-written file. Phase 9 adds EU object storage (`app.store.s3`) behind the
+same protocol, chosen by `files.backend`; `delete` and `presign` are Phase 9 Wave 1.
 """
 
 import os
@@ -49,3 +49,10 @@ class LocalFileStore:
 
     def exists(self, key: str) -> bool:
         return self._path(key).is_file()
+
+    def delete(self, key: str) -> bool:
+        raise NotImplementedError("Phase 9 Wave 1: LocalFileStore.delete")
+
+    def presign(self, key: str, expires_in: int) -> str | None:
+        """Local disk cannot sign a URL: always None, and the API proxies the bytes."""
+        raise NotImplementedError("Phase 9 Wave 1: LocalFileStore.presign")
