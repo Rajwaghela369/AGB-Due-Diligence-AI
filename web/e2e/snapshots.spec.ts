@@ -47,7 +47,8 @@ test.beforeAll(async ({ browser }) => {
   await page.getByRole("button", { name: "Prüfung starten" }).click();
   await page.waitForURL(/\/reviews\/[0-9a-f-]+/);
   reviewId = new URL(page.url()).pathname.split("/").pop() as string;
-  // The judge is a keyword fake with a short delay: wait for the whole run to finish.
+  // The judge is a keyword fake with a short delay: wait for the whole run to end. Its one
+  // uncertain clause waits for the lawyer, so the run ends `awaiting_decisions` (Phase 7).
   await expect
     .poll(
       async () => {
@@ -56,7 +57,7 @@ test.beforeAll(async ({ browser }) => {
       },
       { timeout: 120_000 },
     )
-    .toBe("finished");
+    .toBe("awaiting_decisions");
   await page.close();
 });
 

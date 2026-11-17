@@ -95,7 +95,9 @@ test("upload, live review, reload without new judge calls, open a finding, 👎 
 
   // Reload after it finished: rebuilt from stored results, no judge call is made.
   const calls = await judgeCalls(page);
-  expect(calls).toBe(findings.filter((f) => f.status === "done").length);
+  // An uncertain verdict waits for the lawyer (Phase 7), but it was judged all the same.
+  const judged = findings.filter((f) => f.status === "done" || f.status === "awaiting_decision");
+  expect(calls).toBe(judged.length);
   await page.reload();
   await expect(page.getByText("1 potenziell unwirksam")).toBeVisible();
   await expect(page.getByTestId(`finding-card-${voidPosition}`)).toBeVisible();
