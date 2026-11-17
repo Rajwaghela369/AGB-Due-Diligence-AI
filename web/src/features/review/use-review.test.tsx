@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
-import type { ReactNode } from "react";
+import { StrictMode, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DocumentOut, FindingsOut, Review } from "../../api/types.gen";
 import { server } from "../../test/server";
+import { clauseTitle } from "./clause-title";
 import { useReviewUi } from "./store";
 import { useReview } from "./use-review";
 
@@ -77,6 +78,15 @@ function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
+function strictWrapper({ children }: { children: ReactNode }) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return (
+    <StrictMode>
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    </StrictMode>
+  );
+}
+
 describe("useReview", () => {
   it("exposes the document, the latest progress and a refresh that reopens the stream", async () => {
     const { result } = renderHook(() => useReview("r1"), { wrapper });
@@ -91,6 +101,56 @@ describe("useReview", () => {
     await act(() => result.current.refresh());
     await waitFor(() => expect(streamOpens).toBeGreaterThan(opens));
     expect(findingRequests).toBeGreaterThan(requests);
+  });
+
+  it("waits for stored findings and never streams a finished review", async () => {
+    server.use(
+      http.get("http://localhost/api/v1/reviews/r1/findings", () =>
+        HttpResponse.json({
+          review: { ...REVIEW, status: "finished" },
+          findings: [
+            {
+              position: 0,
+              status: "done",
+              clause: {
+                position: 0,
+                number: "3.5",
+                heading: "3 Lieferung",
+                text: "3.5 Lieferung erfolgt.",
+                content_hash: "hash",
+              },
+              verdict: null,
+            },
+          ],
+        } as FindingsOut),
+      ),
+    );
+
+    const { result } = renderHook(() => useReview("r1"), { wrapper: strictWrapper });
+    await waitFor(() => expect(result.current.isFinal).toBe(true));
+    await act(() => new Promise((resolve) => window.setTimeout(resolve, 10)));
+
+    expect(streamOpens).toBe(0);
+    expect(result.current.findings[0]?.clause.heading).toBe("· Lieferung");
+  });
+
+  it("opens one stream for a running review under Strict Mode", async () => {
+    renderHook(() => useReview("r1"), { wrapper: strictWrapper });
+
+    await waitFor(() => expect(streamOpens).toBe(1));
+  });
+});
+
+describe("clauseTitle", () => {
+  it.each([
+    ["§ 6", "§ 6 Haftung", "§ 6 · Haftung"],
+    ["6.1", "6 Lieferung", "6.1 · Lieferung"],
+    ["(2)", "§ 6 Haftung", "(2) · Haftung"],
+    ["a)", "6 Lieferung", "a) · Lieferung"],
+  ])("formats %s without repeating the heading number", (number, heading, expected) => {
+    expect(clauseTitle({ position: 0, number, heading, text: "Text", content_hash: "hash" })).toBe(
+      expected,
+    );
   });
 });
 

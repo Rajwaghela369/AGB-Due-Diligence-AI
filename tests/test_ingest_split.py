@@ -92,10 +92,11 @@ def test_pasted_text_uses_same_splitter_with_offsets_and_no_rects():
     text = "Haftung\n(1) Wir haften bei Vorsatz.\n(2) Im Übrigen nicht."
     clauses = split(words_from_text(text))
 
-    assert [clause.number for clause in clauses] == ["(1)", "(2)"]
-    assert all(clause.heading == "Haftung" for clause in clauses)
+    assert [clause.number for clause in clauses] == [None, "(1)", "(2)"]
+    assert clauses[0].in_scope is False
+    assert all(clause.heading is None for clause in clauses[1:])
     assert all(not clause.rects and clause.page is None for clause in clauses)
-    assert text[clauses[0].start : clauses[0].end] == "(1) Wir haften bei Vorsatz."
+    assert text[clauses[1].start : clauses[1].end] == "(1) Wir haften bei Vorsatz."
 
 
 def test_marker_on_its_own_line_still_numbers_the_following_prose():
@@ -115,3 +116,28 @@ def test_marker_on_its_own_line_still_numbers_the_following_prose():
         ("(1)", "(1) Wir haften bei Vorsatz."),
         ("a)", "a) Im Übrigen nicht."),
     ]
+
+
+def test_letterhead_and_document_title_form_an_out_of_scope_preamble():
+    clauses = split(
+        _words(
+            [
+                (1, 0, "PSG Procurement Services GmbH", 100),
+                (1, 1, "ALLGEMEINE GESCHÄFTSBEDINGUNGEN", 120),
+                (1, 2, "1 Allgemeines, Geltungsbereich", 160),
+                (1, 3, "1.1 Diese Bedingungen gelten ausschließlich.", 180),
+            ]
+        )
+    )
+
+    assert [(clause.number, clause.in_scope, clause.text) for clause in clauses] == [
+        (
+            None,
+            False,
+            "PSG Procurement Services GmbH ALLGEMEINE GESCHÄFTSBEDINGUNGEN",
+        ),
+        ("1.1", True, "1.1 Diese Bedingungen gelten ausschließlich."),
+    ]
+    assert not any(
+        clause.in_scope and clause.number is None and clause.text.istitle() for clause in clauses
+    )

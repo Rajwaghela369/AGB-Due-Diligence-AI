@@ -4,7 +4,7 @@
 // workspace with no new LLM calls. The live stream overlays clause status and verdicts
 // while a review runs. Components never fetch findings or open streams themselves.
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { api } from "../../api/client";
 import { useReviewStream, type ReviewProgress } from "../../api/events";
@@ -16,6 +16,7 @@ import type {
   Review,
   Status1,
 } from "../../api/types.gen";
+import { clauseTitle } from "./clause-title";
 
 export type { ReviewProgress };
 
@@ -59,6 +60,14 @@ export function useReview(reviewId: string | undefined): ReviewData {
   });
   const storedFinal =
     stored.data !== undefined && ["finished", "failed"].includes(stored.data.review.status);
+  const streamCandidate = stored.data !== undefined && !storedFinal ? reviewId : undefined;
+  const [streamReviewId, setStreamReviewId] = useState<string>();
+  useEffect(() => {
+    // Strict Mode replays mount effects. Deferring activation lets its cleanup cancel the
+    // throwaway pass before useReviewStream can open a second connection.
+    const timer = window.setTimeout(() => setStreamReviewId(streamCandidate), 0);
+    return () => window.clearTimeout(timer);
+  }, [streamCandidate]);
   const documentId = stored.data?.review.document_id;
   const documentQuery = useQuery({
     queryKey: reviewKeys.document(documentId ?? ""),
@@ -66,8 +75,8 @@ export function useReview(reviewId: string | undefined): ReviewData {
     enabled: documentId !== undefined,
     staleTime: Infinity,
   });
-  // A finished review is complete in storage; only an unfinished one needs the stream.
-  const live = useReviewStream(storedFinal ? undefined : reviewId);
+  // Stored findings decide whether live events are needed; never speculate before they load.
+  const live = useReviewStream(streamReviewId);
 
   const { refetch } = stored;
   const { reopen } = live;
@@ -80,7 +89,7 @@ export function useReview(reviewId: string | undefined): ReviewData {
   return useMemo(() => {
     const base: ReviewFinding[] = (stored.data?.findings ?? []).map((f) => ({
       position: f.position,
-      clause: f.clause,
+      clause: displayClause(f.clause),
       status: f.status,
       verdict: f.verdict ?? null,
       error: f.error ?? null,
@@ -116,4 +125,12 @@ export function useReview(reviewId: string | undefined): ReviewData {
     documentData,
     refresh,
   ]);
+}
+
+function displayClause(clause: ClauseSpan): ClauseSpan {
+  if (!clause.number || !clause.heading) return clause;
+  const title = clauseTitle(clause);
+  const prefix = `${clause.number} · `;
+  if (!title.startsWith(prefix) || title === `${prefix}${clause.heading}`) return clause;
+  return { ...clause, heading: `· ${title.slice(prefix.length)}` };
 }

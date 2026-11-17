@@ -154,4 +154,12 @@ describe("FindingsTable", () => {
     expect(fourth).toHaveTextContent("Wartet");
     expect(first!.querySelector("svg")).not.toBeNull();
   });
+
+  it("shows an em dash when a clause has no topic", () => {
+    const [finding] = makeFindings(1);
+    finding!.clause.topic = null;
+    render(<FindingsTable review={reviewData([finding!])} />);
+
+    expect(within(dataRows()[0]!).getByRole("gridcell", { name: "—" })).toBeInTheDocument();
+  });
 });

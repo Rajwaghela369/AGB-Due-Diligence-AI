@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
+import { clauseTitle } from "../review/clause-title";
 import type { ReviewData, ReviewFinding } from "../review/use-review";
 import { confidenceBand, riskStyle, toneOf } from "../review/risk";
 import { useReviewUi } from "../review/store";
@@ -211,13 +212,18 @@ function makeColumns(t: TFunction): ColumnDef<ReviewFinding>[] {
       id: "clause",
       accessorFn: (row) => row.clause.text,
       header: t("table.clause"),
-      cell: ({ row }) => <span className="font-serif">{row.original.clause.text}</span>,
+      cell: ({ row }) => (
+        <span className="font-serif" title={clauseTitle(row.original.clause)}>
+          {row.original.clause.text}
+        </span>
+      ),
     },
     {
       id: "topic",
       accessorFn: (row) => row.clause.topic ?? "",
       header: t("table.topic"),
       filterFn: (row, _, value) => value === "all" || row.original.clause.topic === value,
+      cell: ({ getValue }) => getValue<string>() || "—",
     },
     {
       id: "verdict",
