@@ -1,11 +1,32 @@
 {
   "summary": {
-    "title": "Summary"
+    "title": "Summary",
+    "topRisks": "Top risks",
+    "voidGroups": "Void clauses by legal basis",
+    "unnumbered": "No number"
   },
   "cost": {
-    "title": "Cost and time"
+    "title": "Cost and time",
+    "reviewCost": "Review cost",
+    "wallTime": "Wall time",
+    "cacheShare": "Cache hits",
+    "firstReview": "Initial-review cost",
+    "tokens": "Tokens (input / output)",
+    "latency": "Latency",
+    "cost": "Cost",
+    "unpriced": "Prices not configured"
   },
   "export": {
-    "title": "Export"
+    "title": "Export",
+    "action": "Export",
+    "description": "Create a due-diligence memo or table.",
+    "close": "Close dialog",
+    "format": "Format",
+    "draft": "Export as draft (include open findings)",
+    "blocked": "The final export is still blocked.",
+    "useDraft": "Export as a draft instead",
+    "cancel": "Cancel",
+    "exporting": "Creating export …",
+    "error": "The export could not be created."
   }
 }

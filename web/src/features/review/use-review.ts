@@ -16,6 +16,8 @@ import type {
   Finding,
   FindingStatus,
   Review,
+  ReviewOut,
+  ReviewSummary,
 } from "../../api/types.gen";
 import type { ClauseStatus } from "../../api/aliases";
 
@@ -46,6 +48,11 @@ export interface ReviewData {
   progress: ReviewProgress | null;
   /** The reviewed document (clauses, source type), fetched once and cached. */
   document: DocumentOut | null;
+  pricing?: ReviewOut["pricing"];
+  costEur?: ReviewOut["cost_eur"];
+  wallTimeMs?: ReviewOut["wall_time_ms"];
+  cacheHitRate?: ReviewOut["cache_hit_rate"];
+  summary?: ReviewSummary | null;
   /** Refetch the findings and reopen the stream, e.g. after retrying a clause. */
   refresh: () => Promise<void>;
 }
@@ -92,10 +99,17 @@ export function useReview(reviewId: string | undefined): ReviewData {
     enabled: documentId !== undefined,
     staleTime: Infinity,
   });
+  // Findings are the reload path; accounting is deliberately returned by ReviewOut instead.
+  const details = useQuery({
+    queryKey: ["reviews", reviewId ?? "", "details"],
+    queryFn: () => api.reviews.get(reviewId as string),
+    enabled: reviewId !== undefined,
+  });
   // Stored findings decide whether live events are needed; never speculate before they load.
   const live = useReviewStream(streamReviewId);
 
   const { refetch } = stored;
+  const { refetch: refetchDetails } = details;
   const { reopen } = live;
   const refresh = useCallback(async () => {
     await refetch();
@@ -104,6 +118,17 @@ export function useReview(reviewId: string | undefined): ReviewData {
 
   const documentData = documentQuery.data ?? null;
   const decisions = useDecisionCount((s) => s.counts[reviewId ?? ""] ?? 0);
+  // A terminal stream state is the RUN_FINISHED/RUN_ERROR refresh boundary for derived data.
+  const streamStatus = live.state?.review.status;
+  const summary = useQuery({
+    queryKey: ["reviews", reviewId ?? "", "summary", decisions, streamStatus],
+    queryFn: () => api.reviews.summary(reviewId as string),
+    enabled: reviewId !== undefined && stored.data !== undefined,
+    retry: false,
+  });
+  useEffect(() => {
+    if (streamStatus === "finished" || streamStatus === "failed") void refetchDetails();
+  }, [refetchDetails, streamStatus]);
   const [stale, setStale] = useState<{ decisions: number; state: unknown }>({
     decisions: 0,
     state: null,
@@ -129,7 +154,7 @@ export function useReview(reviewId: string | undefined): ReviewData {
         ? { ...f, status: entry.status, verdict: entry.verdict ?? f.verdict, error: entry.error }
         : f;
     });
-    const review = liveState?.review ?? stored.data?.review ?? null;
+    const review = liveState?.review ?? details.data?.review ?? stored.data?.review ?? null;
     return {
       review,
       findings,
@@ -140,6 +165,11 @@ export function useReview(reviewId: string | undefined): ReviewData {
         review !== null && ["finished", "awaiting_decisions", "failed"].includes(review.status),
       progress: live.progress,
       document: documentData,
+      pricing: details.data?.pricing,
+      costEur: details.data?.cost_eur,
+      wallTimeMs: details.data?.wall_time_ms,
+      cacheHitRate: details.data?.cache_hit_rate,
+      summary: summary.data ?? null,
       refresh,
     };
   }, [
@@ -150,6 +180,8 @@ export function useReview(reviewId: string | undefined): ReviewData {
     live.error,
     live.progress,
     documentData,
+    details.data,
+    summary.data,
     refresh,
   ]);
 }

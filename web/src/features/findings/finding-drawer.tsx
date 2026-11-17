@@ -12,6 +12,7 @@ import { DecisionPanel } from "../decisions/decision-panel";
 import { confidenceBand, riskStyle } from "../review/risk";
 import { useReviewUi } from "../review/store";
 import type { ReviewData, ReviewFinding } from "../review/use-review";
+import type { Pricing } from "../../api/types.gen";
 import { FeedbackControl } from "./feedback-control";
 import { RegenerateReason } from "./regenerate-reason";
 import { clauseTitle } from "./helpers";
@@ -63,7 +64,15 @@ function StatuteItem({ chunkId, defaultOpen }: { chunkId: string; defaultOpen: b
   );
 }
 
-function DrawerBody({ finding, reviewId }: { finding: ReviewFinding; reviewId: string }) {
+function DrawerBody({
+  finding,
+  reviewId,
+  pricing,
+}: {
+  finding: ReviewFinding;
+  reviewId: string;
+  pricing: Pricing | undefined;
+}) {
   const { t } = useTranslation();
   const style = riskStyle(finding);
   const Icon = style.icon;
@@ -147,7 +156,7 @@ function DrawerBody({ finding, reviewId }: { finding: ReviewFinding; reviewId: s
         </p>
       )}
 
-      <TechnicalDetails finding={finding} reviewId={reviewId} />
+      <TechnicalDetails finding={finding} reviewId={reviewId} pricing={pricing} />
     </div>
   );
 }
@@ -211,7 +220,12 @@ export function FindingDrawer({ review }: { review: ReviewData }) {
       </button>
       <h2 className="mb-4 text-base font-semibold">{clauseTitle(finding)}</h2>
       <p className="sr-only">{t("drawer.description")}</p>
-      <DrawerBody key={finding.position} finding={finding} reviewId={reviewId} />
+      <DrawerBody
+        key={finding.position}
+        finding={finding}
+        reviewId={reviewId}
+        pricing={review.pricing}
+      />
     </section>
   );
 }
