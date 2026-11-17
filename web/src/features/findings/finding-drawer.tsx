@@ -1,17 +1,12 @@
-// The detail drawer for the selected clause (Phase 6, 6.D and 6.F). It is a non-modal
-// Radix Dialog on purpose: the findings panel and the document stay clickable while it is
-// open, so selecting another clause just swaps the drawer's content. Esc closes it.
-import { ChevronDown, ChevronRight, X } from "lucide-react";
-import { useState } from "react";
+// The detail view for the selected clause (Phase 6, 6.D and 6.F). It is the detail half of a
+// master/detail panel: it replaces the findings list inside the right column, so the clause
+// in the document and its finding are always side by side. It is not a modal, so the
+// document stays clickable and selecting another clause just swaps the content. Esc or the
+// back button returns to the list.
+import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-} from "../../components/ui/dialog";
 import { confidenceBand, riskStyle } from "../review/risk";
 import { useReviewUi } from "../review/store";
 import type { ReviewData, ReviewFinding } from "../review/use-review";
@@ -83,7 +78,7 @@ function DrawerBody({ finding, reviewId }: { finding: ReviewFinding; reviewId: s
         {verdict && (
           <span className="ml-auto font-normal text-muted-foreground">
             {t("drawer.confidence")}:{" "}
-            {t(`findings.confidence.${confidenceBand(verdict.confidence)}`)}
+            {t(`drawer.confidenceBands.${confidenceBand(verdict.confidence)}`)}
           </span>
         )}
       </div>
@@ -141,43 +136,66 @@ function DrawerBody({ finding, reviewId }: { finding: ReviewFinding; reviewId: s
   );
 }
 
-/** Detail drawer for the selected clause: verdict, statute text, reasoning, feedback (6.D, 6.F). */
+/** Detail view for the selected clause: verdict, statute text, reasoning, feedback (6.D, 6.F). */
 export function FindingDrawer({ review }: { review: ReviewData }) {
   const { t } = useTranslation();
   const selected = useReviewUi((s) => s.selected);
   const select = useReviewUi((s) => s.select);
   const finding = selected === null ? undefined : review.byPosition.get(selected);
   const reviewId = review.review?.review_id;
+  const open = finding !== undefined && reviewId !== undefined;
 
+  // The card that opened the detail, so Back or Esc can hand focus back to it.
+  const trigger = useRef<HTMLElement | null>(null);
+  const backRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.closest('[data-testid="finding-drawer"]')) return;
+      trigger.current = target.closest('[data-testid^="finding-card-"]') ? target : null;
+    };
+    document.addEventListener("focusin", onFocusIn);
+    return () => document.removeEventListener("focusin", onFocusIn);
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    backRef.current?.focus({ preventScroll: true });
+    return () => {
+      const card = trigger.current;
+      if (card?.isConnected) card.focus({ preventScroll: true });
+    };
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      // Leave Esc to the shortcut sheet when it is open.
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      select(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, select]);
+
+  if (!finding || !reviewId) return null;
   return (
-    <Dialog
-      modal={false}
-      open={finding !== undefined && reviewId !== undefined}
-      onOpenChange={(open) => {
-        if (!open) select(null);
-      }}
+    <section
+      aria-label={clauseTitle(finding)}
+      data-testid="finding-drawer"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-lg border border-border bg-surface p-4"
     >
-      {finding && reviewId && (
-        <DialogContent
-          aria-label={clauseTitle(finding)}
-          data-testid="finding-drawer"
-          // Clicks on cards or the document must change the selection, not dismiss the drawer.
-          onInteractOutside={(event) => event.preventDefault()}
-          onOpenAutoFocus={(event) => event.preventDefault()}
-        >
-          <div className="mb-4 flex items-start justify-between gap-3">
-            <DialogTitle className="text-base font-semibold">{clauseTitle(finding)}</DialogTitle>
-            <DialogClose
-              aria-label={t("drawer.close")}
-              className="rounded-md p-1 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <X className="size-4" aria-hidden />
-            </DialogClose>
-          </div>
-          <DialogDescription className="sr-only">{t("drawer.description")}</DialogDescription>
-          <DrawerBody key={finding.position} finding={finding} reviewId={reviewId} />
-        </DialogContent>
-      )}
-    </Dialog>
+      <button
+        ref={backRef}
+        type="button"
+        onClick={() => select(null)}
+        className="mb-3 inline-flex w-fit items-center gap-1 rounded-md px-1.5 py-1 text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <ArrowLeft className="size-4" aria-hidden />
+        {t("findings.title")}
+      </button>
+      <h2 className="mb-4 text-base font-semibold">{clauseTitle(finding)}</h2>
+      <p className="sr-only">{t("drawer.description")}</p>
+      <DrawerBody key={finding.position} finding={finding} reviewId={reviewId} />
+    </section>
   );
 }

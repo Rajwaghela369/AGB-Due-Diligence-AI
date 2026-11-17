@@ -262,6 +262,16 @@ describe("card and drawer stay in sync", () => {
   });
 });
 
+describe("drawer confidence", () => {
+  it("shows the band label once, not 'Sicherheit: Hohe Sicherheit'", async () => {
+    renderWorkspace();
+    fireEvent.click(within(await card(0)).getAllByRole("button")[0]!);
+    const panel = await drawer();
+    expect(panel).toHaveTextContent("Sicherheit: Hoch");
+    expect(panel).not.toHaveTextContent("Hohe Sicherheit");
+  });
+});
+
 describe("statute text", () => {
   it("expands the first cited § and fetches the others on demand", async () => {
     renderWorkspace();

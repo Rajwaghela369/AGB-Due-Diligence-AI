@@ -53,7 +53,8 @@
       "out": "{{count}} out of scope"
     },
     "alreadyReviewed": "Already reviewed: results from the stored review, with no new AI requests.",
-    "views": "Views"
+    "views": "Views",
+    "panes": "Areas"
   },
   "findings": {
     "title": "Findings",
@@ -86,6 +87,7 @@
     "description": "Details for the selected clause with legal basis, reasoning and feedback.",
     "clause": "Clause",
     "confidence": "Confidence",
+    "confidenceBands": { "high": "High", "medium": "Medium", "low": "Low" },
     "legalBasis": "Legal basis",
     "noBasis": "No legal basis cited.",
     "statuteLoading": "Loading statute text …",

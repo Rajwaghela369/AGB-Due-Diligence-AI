@@ -73,3 +73,25 @@ button,
 a {
   -webkit-tap-highlight-color: transparent;
 }
+
+/* Review workspace (UF-A): the page never scrolls; the document and the findings column do.
+   The viewer and table size themselves for a standalone page, so they are made to fill the
+   workspace here, where the layout lives. */
+.workspace-fill [data-testid="viewer-scroll"] {
+  height: auto;
+  min-height: 0;
+  flex: 1 1 0;
+}
+
+.workspace-fill [data-testid="findings-table"] {
+  height: 100%;
+  overflow: auto;
+}
+
+/* Wide screens: the findings column grows. A plain rule, because Tailwind emits its
+   min-[1600px] variant before lg: and the lg: column width would win. */
+@media (min-width: 1600px) {
+  .workspace-fill .workspace-grid {
+    grid-template-columns: minmax(0, 1fr) 32rem;
+  }
+}
