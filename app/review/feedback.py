@@ -71,16 +71,20 @@ class FeedbackService:
             observations[step] = observation_id
             if observation_id is None or self.langfuse is None:
                 continue
-            self.langfuse.create_score(
-                name=f"feedback.{step}",
-                value=1 if request.vote == "up" else -1,
-                trace_id=verdict.trace_id,
-                observation_id=observation_id,
-                score_id=_stable_id(feedback_id, step),
-                data_type="NUMERIC",
-                comment=score_comment,
-            )
-            scored_steps.append(step)
+            try:
+                self.langfuse.create_score(
+                    name=f"feedback.{step}",
+                    value=1 if request.vote == "up" else -1,
+                    trace_id=verdict.trace_id,
+                    observation_id=observation_id,
+                    score_id=_stable_id(feedback_id, step),
+                    data_type="NUMERIC",
+                    comment=score_comment,
+                )
+            except Exception:  # noqa: BLE001 - tracing cannot reject durable feedback
+                log.warning("could not record Langfuse feedback score", exc_info=True)
+            else:
+                scored_steps.append(step)
 
         feedback = Feedback(
             feedback_id=feedback_id,
@@ -136,21 +140,67 @@ class FeedbackService:
             agent_version=review.agent_version,
             request_id=request_id,
         )
-        if request.action == "accept":
-            feedback = _FeedbackRequest(review_id, position, "up", [], None, [], request.note)
-            self.submit(feedback, author="decision", source="decision")
-        elif request.action == "override":
-            feedback = _FeedbackRequest(
-                review_id,
-                position,
-                "down",
-                ["verdict_wrong"],
-                request.corrected_verdict,
-                request.corrected_basis,
-                request.note,
-            )
-            self.submit(feedback, author="decision", source="decision")
+        self.record_decision(decision)
         return decision
+
+    def record_decision(self, decision: Decision) -> None:
+        """Score a stored decision through the same stable feedback identity.
+
+        Dismissal is deliberately its own score: it says the finding is irrelevant, not
+        that the model verdict was wrong. Moving between actions removes scores that no
+        longer describe the current decision.
+        """
+        _review, verdict = self._verdict(decision.review_id, decision.position)
+        feedback_id = _stable_id(decision.review_id, decision.position, "decision")
+        dismissed_id = _stable_id(feedback_id, "dismissed")
+        if decision.action == "dismiss":
+            previous = self.store.feedback.get(feedback_id)
+            if previous is not None:
+                for step in previous.observations:
+                    self._delete_score(feedback_id, step)
+            if self.langfuse is not None and verdict.observations.clause_span is not None:
+                try:
+                    self.langfuse.create_score(
+                        name="dismissed",
+                        value=1,
+                        trace_id=verdict.trace_id,
+                        observation_id=verdict.observations.clause_span,
+                        score_id=dismissed_id,
+                        data_type="NUMERIC",
+                        comment=decision.note,
+                    )
+                except Exception:  # noqa: BLE001 - tracing cannot reject a decision
+                    log.warning("could not record Langfuse dismissal score", exc_info=True)
+            return
+
+        self._delete_score_id(dismissed_id)
+        if decision.action == "accept":
+            request = _FeedbackRequest(
+                decision.review_id, decision.position, "up", [], None, [], decision.note
+            )
+        else:
+            corrected_basis = decision.corrected_basis or decision.model_basis
+            reasons = ["verdict_wrong"]
+            if corrected_basis != decision.model_basis:
+                reasons.append("basis_wrong")
+            request = _FeedbackRequest(
+                decision.review_id,
+                decision.position,
+                "down",
+                reasons,
+                decision.corrected_verdict,
+                corrected_basis if "basis_wrong" in reasons else [],
+                decision.note,
+            )
+        self.submit(request, author="decision", source="decision")
+
+    def _delete_score_id(self, score_id: str) -> None:
+        if self.langfuse is None:
+            return
+        try:
+            self.langfuse.api.scores.delete(score_id)
+        except Exception:  # noqa: BLE001 - tracing is best effort by contract
+            log.warning("could not delete stale Langfuse score %s", score_id, exc_info=True)
 
     def _verdict(self, review_id: str, position: int):
         review = self.store.reviews.get(review_id)

@@ -18,7 +18,7 @@ from app.api.errors import install_error_handlers
 from app.api.middleware import BodyLimitMiddleware, RequestLogMiddleware
 from app.api.rate_limit import IpRateLimiter
 from app.api.readiness import Probe, Readiness
-from app.api.routes import decisions, documents, health, reviews
+from app.api.routes import decisions, documents, health, metrics, reviews
 from app.api.routes import feedback as feedback_routes
 from app.api.routes import statutes as statute_routes
 from app.review.interfaces import ReviewService
@@ -78,7 +78,15 @@ def create_app(
     application.add_middleware(RequestLogMiddleware)
 
     install_error_handlers(application)
-    for route in (documents, reviews, feedback_routes, decisions, statute_routes, health):
+    for route in (
+        documents,
+        reviews,
+        feedback_routes,
+        decisions,
+        metrics,
+        statute_routes,
+        health,
+    ):
         application.include_router(route.router, prefix="/api/v1")
     return application
 
@@ -106,6 +114,7 @@ def build_app() -> FastAPI:
 
     from app.agent.run import make_judge
     from app.api.readiness import production_probes
+    from app.review.corrections import Corrections, CorrectionSettings
     from app.review.feedback import FeedbackService
     from app.review.limiter import build_limiter, review_settings
     from app.review.service import build_service
@@ -125,6 +134,7 @@ def build_app() -> FastAPI:
         tracer = langfuse_client.client()
     judge = make_judge(config, limiter=limiter, tracer=tracer, caches=store.caches)
     feedback = FeedbackService(store, tracer)
+    corrections = Corrections(tracer, CorrectionSettings.from_config(config))
     router_model = setting(config, "models.router.name", "jina-embeddings-v3")
     service = build_service(
         store,
@@ -137,6 +147,7 @@ def build_app() -> FastAPI:
         feedback=feedback,
         **review_settings(config),
     )
+    service.corrections = corrections
     return create_app(
         store=store,
         service=service,

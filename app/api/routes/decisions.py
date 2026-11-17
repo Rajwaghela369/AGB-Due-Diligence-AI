@@ -1,16 +1,12 @@
-"""A lawyer's final clause decision is an idempotent upsert, recorded in the audit trail.
-
-Interim (Phase 7 Wave 0): still `FeedbackService.decide`; Wave 1 (decisions-api) moves it to
-`ReviewService.decide` and adds `GET /reviews/{id}/audit` and `GET /metrics/agreement`, as
-docs/Phase 7 API.md specifies.
-"""
+"""Decision and audit routes keep HTTP concerns outside the review state machine."""
 
 from fastapi import APIRouter, Request
 
 from app.api.deps import request_id, reviewer, state
 from app.api.errors import ApiError
 from app.api.routes.reviews import review_out
-from app.api.schemas import DecisionIn, DecisionOut
+from app.api.schemas import AuditOut, DecisionIn, DecisionOut
+from app.review.interfaces import InvalidDecision, NotDecidable
 
 router = APIRouter()
 
@@ -25,15 +21,38 @@ def put_decision(
     dependencies = state(request)
     who = reviewer(request)
     try:
-        decision = dependencies.feedback.decide(
-            review_id, position, payload, decided_by=who.name, request_id=request_id(request)
+        finding = dependencies.service.decide(
+            review_id,
+            position,
+            payload,
+            who,
+            request_id=request_id(request),
         )
-    except LookupError as exc:
+    except KeyError as exc:
         raise ApiError(404, "not_found", "Prüfung, Klausel oder Urteil nicht gefunden.") from exc
-    except ValueError as exc:
+    except NotDecidable as exc:
+        raise ApiError(409, "not_decidable", str(exc)) from exc
+    except InvalidDecision as exc:
         raise ApiError(422, "invalid_decision", str(exc)) from exc
     service = dependencies.service
-    finding = next(f for f in service.findings(review_id) if f.position == position)
+    review = service.get(review_id)
+    if review is None:
+        raise ApiError(404, "not_found", "Prüfung nicht gefunden.")
     return DecisionOut(
-        decision=decision, finding=finding, review=review_out(request, service.get(review_id))
+        decision=finding.decision,
+        finding=finding,
+        review=review_out(request, review),
     )
+
+
+@router.get("/reviews/{review_id}/audit", response_model=AuditOut)
+def get_audit(
+    review_id: str,
+    request: Request,
+    position: int | None = None,
+) -> AuditOut:
+    try:
+        events = state(request).service.audit(review_id, position)
+    except KeyError as exc:
+        raise ApiError(404, "not_found", "Prüfung nicht gefunden.") from exc
+    return AuditOut(events=events)
