@@ -77,12 +77,16 @@ let stored: Finding[];
 let posts: FeedbackIn[];
 let statuteRequests: string[];
 let retries: number[];
+let explains: number[];
+let explainStatus: number;
 
 beforeEach(() => {
   stored = fixture();
   posts = [];
   statuteRequests = [];
   retries = [];
+  explains = [];
+  explainStatus = 200;
   useReviewUi.getState().reset();
   localStorage.clear();
   const real = globalThis.fetch;
@@ -119,6 +123,24 @@ beforeEach(() => {
       );
       return HttpResponse.json({ feedback_id: "f1", scored_steps: ["judge"] });
     }),
+    http.post("http://localhost/api/v1/reviews/r1/clauses/:pos/explain", ({ params }) => {
+      explains.push(Number(params.pos));
+      if (explainStatus !== 200) {
+        return HttpResponse.json(
+          { code: "explain_failed", message: "x" },
+          { status: explainStatus },
+        );
+      }
+      stored = stored.map((f) =>
+        f.position === Number(params.pos)
+          ? ({
+              ...f,
+              verdict: { ...f.verdict!, reason_unavailable: false, reason_de: "Neue Begründung." },
+            } as Finding)
+          : f,
+      );
+      return HttpResponse.json(stored[Number(params.pos)]);
+    }),
     http.post("http://localhost/api/v1/reviews/r1/clauses/:pos/retry", ({ params }) => {
       retries.push(Number(params.pos));
       return HttpResponse.json({ review: REVIEW });
@@ -151,6 +173,47 @@ function renderWorkspace() {
 
 const card = (position: number) => screen.findByTestId(`finding-card-${position}`);
 const drawer = () => screen.findByTestId("finding-drawer");
+
+describe("regenerating a missing reasoning", () => {
+  function voidWithoutReason() {
+    stored[0] = {
+      ...stored[0]!,
+      verdict: { ...stored[0]!.verdict!, reason_unavailable: true, reason_de: "" },
+    } as Finding;
+  }
+
+  it("offers the button for a void verdict and shows the new reasoning after one call", async () => {
+    voidWithoutReason();
+    renderWorkspace();
+    fireEvent.click(within(await card(0)).getAllByRole("button")[0]!);
+    const panel = await drawer();
+    fireEvent.click(within(panel).getByRole("button", { name: "Begründung erzeugen" }));
+
+    expect(await within(panel).findByText("Neue Begründung.")).toBeInTheDocument();
+    expect(explains).toEqual([0]);
+    expect(within(panel).queryByRole("button", { name: "Begründung erzeugen" })).toBeNull();
+  });
+
+  it("keeps the notice and the button when the call fails", async () => {
+    voidWithoutReason();
+    explainStatus = 502;
+    renderWorkspace();
+    fireEvent.click(within(await card(0)).getAllByRole("button")[0]!);
+    const panel = await drawer();
+    fireEvent.click(within(panel).getByRole("button", { name: "Begründung erzeugen" }));
+
+    expect(await within(panel).findByRole("alert")).toHaveTextContent(/nicht erzeugt/);
+    expect(within(panel).getByRole("button", { name: "Begründung erzeugen" })).toBeEnabled();
+  });
+
+  it("does not offer it when the verdict is not void", async () => {
+    renderWorkspace();
+    fireEvent.click(within(await card(2)).getAllByRole("button")[0]!);
+    const panel = await drawer();
+    expect(within(panel).getByText("Begründung nicht verfügbar")).toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: "Begründung erzeugen" })).toBeNull();
+  });
+});
 
 describe("filters and navigation", () => {
   it("lists cards in document order, hides out-of-scope clauses and counts per filter", async () => {
