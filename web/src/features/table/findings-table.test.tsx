@@ -158,11 +158,34 @@ describe("FindingsTable", () => {
   it("keeps every fixed-size column reachable in one scrolling region", () => {
     render(<FindingsTable review={reviewData(FINDINGS.slice(0, 1))} />);
 
-    const scroller = screen.getByRole("grid").parentElement!;
+    const scroller = screen.getByTestId("findings-scroll");
+    Object.defineProperties(scroller, {
+      clientWidth: { configurable: true, value: 900 },
+      scrollWidth: { configurable: true, value: 1120 },
+    });
     expect(scroller).toHaveClass("overflow-auto");
     expect(screen.getByRole("columnheader", { name: /Sicherheit/ }).parentElement).toHaveClass(
       "sticky",
     );
     expect(screen.getByRole("gridcell", { name: "Haftung" })).toBeInTheDocument();
+    expect(scroller.scrollWidth).toBeGreaterThan(scroller.clientWidth);
+  });
+
+  it("scrolls a selected row below the sticky header", () => {
+    const scrollTo = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: scrollTo,
+    });
+    useReviewUi.getState().select(20);
+    render(<FindingsTable review={reviewData(FINDINGS)} />);
+
+    const [{ top }] = scrollTo.mock.calls.at(-1)!;
+    const rowTop = 20 * 58;
+    const headerHeight = 48;
+
+    expect(top).toBe(618);
+    expect(rowTop - top).toBeGreaterThanOrEqual(headerHeight);
+    expect(screen.getByTestId("findings-table-header")).toHaveClass("sticky");
   });
 });

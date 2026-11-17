@@ -5,7 +5,8 @@ import type * as React from "react";
 import { cn } from "../../lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors " +
+  "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium " +
+    "transition-[background-color,color,border-color] duration-[120ms] " +
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
   {
     variants: {

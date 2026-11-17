@@ -18,6 +18,8 @@ import type { ReviewData, ReviewFinding } from "../review/use-review";
 import { confidenceBand, riskStyle, toneOf } from "../review/risk";
 import { useReviewUi } from "../review/store";
 
+const TABLE_HEADER_HEIGHT = 48;
+
 /** The same results as a sortable, filterable, virtualised grid (6.E). */
 export function FindingsTable({ review }: { review: ReviewData }) {
   const { t } = useTranslation();
@@ -75,6 +77,7 @@ export function FindingsTable({ review }: { review: ReviewData }) {
     getScrollElement: () => parent.current,
     estimateSize: () => 58,
     overscan: 8,
+    scrollPaddingStart: TABLE_HEADER_HEIGHT,
   });
   // A selection made in the document or the panel should bring its row into view.
   const { scrollToIndex } = virtual;
@@ -137,11 +140,13 @@ export function FindingsTable({ review }: { review: ReviewData }) {
       </div>
       <div
         ref={parent}
+        data-testid="findings-scroll"
         className="h-[min(60vh,38rem)] overflow-auto rounded-xl border border-border bg-surface"
       >
         <div className="min-w-[58rem]" role="grid" aria-rowcount={rows.length + 1}>
           <div
             role="row"
+            data-testid="findings-table-header"
             className="sticky top-0 z-10 grid border-b border-border bg-muted text-left text-sm font-medium"
             style={{ gridTemplateColumns: gridTemplate(table) }}
           >
