@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
+import { StatusBadge } from "../decisions/status-badge";
 import { clauseTitle } from "../review/clause-title";
 import type { ReviewData, ReviewFinding } from "../review/use-review";
 import { confidenceBand, riskStyle, toneOf } from "../review/risk";
@@ -34,6 +35,7 @@ export function FindingsTable({ review }: { review: ReviewData }) {
   const [search, setSearch] = useState("");
   const [verdict, setVerdict] = useState("all");
   const [topic, setTopic] = useState("all");
+  const [decision, setDecision] = useState("all");
   const selected = useReviewUi((state) => state.selected);
   const hovered = useReviewUi((state) => state.hovered);
   const select = useReviewUi((state) => state.select);
@@ -61,6 +63,7 @@ export function FindingsTable({ review }: { review: ReviewData }) {
       columnFilters: [
         { id: "verdict", value: verdict },
         { id: "topic", value: topic },
+        { id: "decision", value: decision },
       ],
     },
     sortDescFirst: false,
@@ -121,6 +124,20 @@ export function FindingsTable({ review }: { review: ReviewData }) {
             <option value="potentially_void">{t("risk.void")}</option>
             <option value="uncertain">{t("risk.review")}</option>
             <option value="valid">{t("risk.valid")}</option>
+          </select>
+        </label>
+        <label>
+          <span className="sr-only">{t("table.decision")}</span>
+          <select
+            className="h-9 rounded-md border border-border bg-surface px-2 text-sm"
+            value={decision}
+            onChange={(event) => setDecision(event.target.value)}
+          >
+            {(["all", "open", "accepted", "overridden", "dismissed"] as const).map((value) => (
+              <option key={value} value={value}>
+                {value === "all" ? t("table.allDecisions") : t(`decision.status.${value}`)}
+              </option>
+            ))}
           </select>
         </label>
         <label>
@@ -269,6 +286,19 @@ function makeColumns(t: TFunction): ColumnDef<ReviewFinding>[] {
       header: t("table.status"),
       cell: ({ row }) => <Status finding={row.original} />,
       size: 144,
+    },
+    {
+      id: "decision",
+      accessorFn: (row) => row.findingStatus,
+      header: t("table.decision"),
+      filterFn: (row, _, value) => value === "all" || row.original.findingStatus === value,
+      cell: ({ row }) =>
+        row.original.verdict ? (
+          <StatusBadge finding={row.original} className="border-0 px-0" />
+        ) : (
+          "—"
+        ),
+      size: 176,
     },
   ];
 }

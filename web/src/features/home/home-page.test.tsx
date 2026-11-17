@@ -167,4 +167,71 @@ describe("HomePage", () => {
     renderPage(<HomePage />);
     expect(await screen.findByRole("alert")).toHaveTextContent("konnten nicht geladen werden");
   });
+
+  it("shows decision progress per review and the lawyer agreement", async () => {
+    server.use(
+      http.get(`${ORIGIN}/api/v1/documents`, () =>
+        HttpResponse.json({
+          items: [
+            {
+              document: documentRecord(),
+              latest_review: review({
+                status: "awaiting_decisions",
+                counts: {
+                  total: 10,
+                  done: 10,
+                  failed: 0,
+                  potentially_void: 2,
+                  uncertain: 3,
+                  valid: 5,
+                  decided: 4,
+                  open_void: 1,
+                  open_review: 2,
+                },
+              }),
+            },
+          ],
+        }),
+      ),
+      http.get(`${ORIGIN}/api/v1/metrics/agreement`, () =>
+        HttpResponse.json({
+          agreement: {
+            agent_version: "v1",
+            decided: 12,
+            kept: 8,
+            overridden: 3,
+            dismissed: 1,
+            rate: 0.727,
+          },
+          current: true,
+        }),
+      ),
+    );
+    renderPage(<HomePage />);
+
+    const row = await screen.findByTestId("home-decision-progress");
+    expect(within(row).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "4");
+    expect(row).toHaveTextContent("4 von 10 entschieden");
+    expect(screen.getByText("Entscheidungen offen")).toBeInTheDocument();
+
+    const agreement = await screen.findByTestId("agreement");
+    expect(within(agreement).getByTestId("agreement-rate")).toHaveTextContent("73 %");
+    expect(agreement).toHaveTextContent("Entschieden: 12");
+    expect(agreement).toHaveTextContent("Übernommen: 8");
+    expect(agreement).toHaveTextContent("Überschrieben: 3");
+    expect(agreement).toHaveTextContent("Verworfen: 1");
+    expect(agreement).toHaveTextContent("Agent-Version v1");
+  });
+
+  it("says so when there are no decisions yet", async () => {
+    server.use(
+      http.get(`${ORIGIN}/api/v1/documents`, () => HttpResponse.json({ items: [] })),
+      http.get(`${ORIGIN}/api/v1/metrics/agreement`, () =>
+        HttpResponse.json({ agreement: { agent_version: "v1", decided: 0 }, current: true }),
+      ),
+    );
+    renderPage(<HomePage />);
+
+    expect(await screen.findByTestId("agreement")).toHaveTextContent("Noch keine Entscheidungen");
+  });
 });

@@ -34,4 +34,57 @@ describe("API client", () => {
       body: { code: "http_error", message: "Bad Gateway" },
     });
   });
+
+  it("sends the reviewer name percent-encoded, so an umlaut survives the Latin-1 header", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }),
+      );
+    const client = createApiClient({ baseUrl: "", fetch: fetchMock });
+
+    await client.reviews.decide("r1", 3, { action: "accept", note: "" }, "  Müller ");
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("/api/v1/reviews/r1/clauses/3/decision");
+    expect(init?.method).toBe("PUT");
+    expect((init?.headers as Record<string, string>)["X-Reviewer"]).toBe("M%C3%BCller");
+    expect(JSON.parse(init?.body as string)).toEqual({ action: "accept", note: "" });
+  });
+
+  it("sends no reviewer header without a name", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() => Promise.resolve(Response.json({})));
+    const client = createApiClient({ baseUrl: "", fetch: fetchMock });
+
+    await client.reviews.decide("r1", 3, { action: "dismiss" }, "");
+    await client.reviews.decide("r1", 3, { action: "dismiss" });
+
+    for (const [, init] of fetchMock.mock.calls)
+      expect(init?.headers as Record<string, string>).not.toHaveProperty("X-Reviewer");
+  });
+
+  it("reads the audit trail (optionally per finding) and the agreement", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() =>
+        Promise.resolve(
+          new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }),
+        ),
+      );
+    const client = createApiClient({ baseUrl: "", fetch: fetchMock });
+
+    await client.reviews.audit("r1");
+    await client.reviews.audit("r1", 4);
+    await client.metrics.agreement();
+    await client.metrics.agreement("v 1");
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/api/v1/reviews/r1/audit",
+      "/api/v1/reviews/r1/audit?position=4",
+      "/api/v1/metrics/agreement",
+      "/api/v1/metrics/agreement?agent_version=v%201",
+    ]);
+  });
 });

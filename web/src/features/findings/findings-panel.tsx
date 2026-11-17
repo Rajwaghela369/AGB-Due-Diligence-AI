@@ -6,16 +6,18 @@ import { useTranslation } from "react-i18next";
 
 import { cn } from "../../lib/utils";
 import { toneOf } from "../review/risk";
-import { useReviewUi, type FindingFilter } from "../review/store";
+import { useReviewUi, type FindingFilter, type StatusFilter } from "../review/store";
 import type { ReviewData, ReviewFinding } from "../review/use-review";
 import { ActivityFeed } from "./activity-feed";
 import { FindingCard } from "./finding-card";
 
 const FILTERS: FindingFilter[] = ["void", "review", "all"];
+const STATUS_FILTERS: StatusFilter[] = ["all", "open", "accepted", "overridden", "dismissed"];
 
-function matches(finding: ReviewFinding, filter: FindingFilter): boolean {
+function matches(finding: ReviewFinding, filter: FindingFilter, status: StatusFilter): boolean {
   const tone = toneOf(finding);
   if (tone === "out") return false;
+  if (status !== "all" && finding.findingStatus !== status) return false;
   return filter === "all" || tone === filter;
 }
 
@@ -24,6 +26,8 @@ export function FindingsPanel({ review }: { review: ReviewData }) {
   const { t } = useTranslation();
   const filter = useReviewUi((s) => s.filter);
   const setFilter = useReviewUi((s) => s.setFilter);
+  const statusFilter = useReviewUi((s) => s.statusFilter);
+  const setStatusFilter = useReviewUi((s) => s.setStatusFilter);
   const setNavigable = useReviewUi((s) => s.setNavigable);
   const selected = useReviewUi((s) => s.selected);
   // The drawer takes over this column while a clause is open (master/detail).
@@ -34,13 +38,16 @@ export function FindingsPanel({ review }: { review: ReviewData }) {
     () => [...review.findings].sort((a, b) => a.position - b.position),
     [review.findings],
   );
-  const visible = useMemo(() => ordered.filter((f) => matches(f, filter)), [ordered, filter]);
+  const visible = useMemo(
+    () => ordered.filter((f) => matches(f, filter, statusFilter)),
+    [ordered, filter, statusFilter],
+  );
   const counts = useMemo(
     () =>
       Object.fromEntries(
-        FILTERS.map((f) => [f, ordered.filter((x) => matches(x, f)).length]),
+        FILTERS.map((f) => [f, ordered.filter((x) => matches(x, f, statusFilter)).length]),
       ) as Record<FindingFilter, number>,
-    [ordered],
+    [ordered, statusFilter],
   );
 
   const key = visible.map((f) => f.position).join(",");
@@ -89,6 +96,21 @@ export function FindingsPanel({ review }: { review: ReviewData }) {
           ))}
         </div>
       </div>
+
+      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        {t("decision.statusFilter")}
+        <select
+          value={statusFilter}
+          onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+          className="h-8 rounded-md border border-border bg-surface px-2 text-sm text-foreground"
+        >
+          {STATUS_FILTERS.map((value) => (
+            <option key={value} value={value}>
+              {t(`decision.statusFilters.${value}`)}
+            </option>
+          ))}
+        </select>
+      </label>
 
       <div
         ref={listRef}

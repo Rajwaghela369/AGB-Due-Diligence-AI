@@ -12,6 +12,8 @@ import { useLocation, useParams } from "react-router-dom";
 
 import type { ClauseVerdict } from "../../api/types.gen";
 import { cn } from "../../lib/utils";
+import { DecisionProgress } from "../decisions/review-progress";
+import { ReviewerControl, ReviewerDialogHost } from "../decisions/reviewer-control";
 import { FindingDrawer } from "../findings/finding-drawer";
 import { FindingsPanel } from "../findings/findings-panel";
 import { FindingsTable } from "../table/findings-table";
@@ -108,6 +110,7 @@ export function ReviewWorkspace() {
         "min-[1600px]:max-w-[120rem] min-[1600px]:-translate-x-1/2",
       )}
     >
+      <ReviewerDialogHost />
       <div role="tablist" aria-label={t("workspace.panes")} className="flex gap-2 lg:hidden">
         {(
           [
@@ -144,6 +147,9 @@ export function ReviewWorkspace() {
               {t("workspace.alreadyReviewed")}
             </p>
           )}
+          <div className="mb-2">
+            <DecisionProgress review={review.review} />
+          </div>
           <ul className="mb-2 flex flex-wrap items-center gap-2 text-sm" data-testid="risk-summary">
             {SUMMARY.map(({ key, count, style }) => {
               const Icon = style.icon;
@@ -185,7 +191,8 @@ export function ReviewWorkspace() {
                 {t("workspace.viewTable")}
               </button>
             </div>
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-1">
+              <ReviewerControl />
               <WorkspaceHotkeys />
             </div>
           </div>

@@ -7,6 +7,8 @@ import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { AuditList } from "../decisions/audit-list";
+import { DecisionPanel } from "../decisions/decision-panel";
 import { confidenceBand, riskStyle } from "../review/risk";
 import { useReviewUi } from "../review/store";
 import type { ReviewData, ReviewFinding } from "../review/use-review";
@@ -66,6 +68,7 @@ function DrawerBody({ finding, reviewId }: { finding: ReviewFinding; reviewId: s
   const style = riskStyle(finding);
   const Icon = style.icon;
   const verdict = finding.verdict;
+  const decision = finding.decision;
 
   return (
     <div className="space-y-5">
@@ -117,7 +120,11 @@ function DrawerBody({ finding, reviewId }: { finding: ReviewFinding; reviewId: s
             <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t("drawer.reasoning")}
             </h3>
-            {verdict.reason_unavailable && verdict.verdict === "potentially_void" ? (
+            {decision?.reason_de ? (
+              <p className="text-sm leading-relaxed">{decision.reason_de}</p>
+            ) : decision?.reason_unavailable ? (
+              <p className="text-sm leading-relaxed">{t("drawer.reasonUnavailable")}</p>
+            ) : verdict.reason_unavailable && verdict.verdict === "potentially_void" ? (
               <RegenerateReason reviewId={reviewId} position={finding.position} />
             ) : verdict.reason_unavailable ? (
               <p className="text-sm leading-relaxed">{t("drawer.reasonUnavailable")}</p>
@@ -125,6 +132,10 @@ function DrawerBody({ finding, reviewId }: { finding: ReviewFinding; reviewId: s
               <p className="text-sm leading-relaxed">{verdict.reason_de}</p>
             )}
           </section>
+
+          <DecisionPanel reviewId={reviewId} finding={finding} />
+
+          <AuditList reviewId={reviewId} position={finding.position} />
 
           <FeedbackControl reviewId={reviewId} finding={finding} />
         </>

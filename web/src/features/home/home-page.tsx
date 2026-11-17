@@ -15,6 +15,9 @@ import {
   DialogDescription,
   DialogTitle,
 } from "../../components/ui/dialog";
+import { AgreementCard } from "../decisions/agreement-card";
+import { ProgressBar } from "../decisions/review-progress";
+import { progressOf } from "../decisions/progress";
 import { riskStyle } from "../review/risk";
 
 const POLL_MS = 3000;
@@ -43,6 +46,7 @@ export function HomePage() {
           {t("home.newReview")}
         </Button>
       </header>
+      <AgreementCard />
       {items.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border bg-surface p-10 text-center">
           <FileText aria-hidden="true" className="mx-auto mb-3 text-muted-foreground" size={30} />
@@ -274,16 +278,24 @@ function Progress({ review }: { review: Review }) {
   const done = (review.counts?.done ?? 0) + (review.counts?.failed ?? 0);
   const total = review.counts?.total ?? 0;
   const running = review.status === "running";
+  const decisions = progressOf(review);
   return (
-    <span className="flex items-center justify-end gap-2 text-sm">
-      {running ? <RefreshCw aria-hidden="true" className="animate-spin" size={16} /> : null}
-      <span>{t(`home.status.${review.status}`)}</span>
-      <span className="tabular-nums text-muted-foreground">
-        <span className="sr-only">{t("home.progress", { done, total })}</span>
-        <span aria-hidden="true">
-          {done}/{total}
+    <span className="flex flex-col items-end gap-1 text-sm">
+      <span className="flex items-center justify-end gap-2">
+        {running ? <RefreshCw aria-hidden="true" className="animate-spin" size={16} /> : null}
+        <span>{t(`home.status.${review.status}`)}</span>
+        <span className="tabular-nums text-muted-foreground">
+          <span className="sr-only">{t("home.progress", { done, total })}</span>
+          <span aria-hidden="true">
+            {done}/{total}
+          </span>
         </span>
       </span>
+      {decisions.decidable > 0 && (
+        <span className="flex w-44 items-center" data-testid="home-decision-progress">
+          <ProgressBar review={review} />
+        </span>
+      )}
     </span>
   );
 }

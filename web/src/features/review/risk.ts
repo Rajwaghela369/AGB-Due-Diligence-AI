@@ -50,6 +50,7 @@ export function toneOf(finding: Pick<ReviewFinding, "status" | "verdict">): Tone
   if (finding.status === "failed") return "failed";
   if (finding.status === "queued") return "queued";
   if (finding.status === "checking") return "checking";
+  if (finding.status === "awaiting_decision") return "review";
   switch (finding.verdict?.verdict) {
     case "potentially_void":
       return "void";

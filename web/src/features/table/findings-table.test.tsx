@@ -196,4 +196,25 @@ describe("FindingsTable", () => {
     expect(rowTop - top).toBeGreaterThanOrEqual(headerHeight);
     expect(screen.getByTestId("findings-table-header")).toHaveClass("sticky");
   });
+
+  it("shows the decision state in a column and filters by it", () => {
+    const decided = makeFindings(8).map((finding, index) => ({
+      ...finding,
+      findingStatus: (["open", "accepted", "overridden", "dismissed"] as const)[index % 4],
+      status: index === 4 ? ("awaiting_decision" as const) : finding.status,
+    }));
+    render(<FindingsTable review={reviewData(decided)} />);
+
+    expect(screen.getByRole("columnheader", { name: /Entscheidung/ })).toBeInTheDocument();
+    const badges = screen.getAllByTestId("decision-status");
+    // Every row with a verdict shows icon and label; the awaiting clause says so.
+    expect(badges.length).toBeGreaterThan(0);
+    for (const badge of badges) expect(badge.querySelector("svg")).not.toBeNull();
+    expect(badges.map((badge) => badge.textContent)).toContain("Entscheidung nötig");
+
+    fireEvent.change(screen.getByLabelText("Entscheidung"), { target: { value: "accepted" } });
+    const rows = dataRows();
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) expect(row).toHaveTextContent("Akzeptiert");
+  });
 });

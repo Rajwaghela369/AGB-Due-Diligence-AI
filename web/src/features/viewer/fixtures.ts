@@ -23,6 +23,7 @@ export function finding(
     verdict: kind === null ? null : verdict(kind),
     error: status === "failed" ? "boom" : null,
     decision: null,
+    findingStatus: "open",
     feedback: null,
     clause: {
       position,

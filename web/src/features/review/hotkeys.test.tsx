@@ -41,14 +41,48 @@ describe("workspace hotkeys", () => {
     expect(useReviewUi.getState().selected).toBeNull();
   });
 
-  it("opens the shortcut overview with ? and binds nothing for A, O or D", () => {
+  it("files a decision request for the selected finding with A, O and D", () => {
     render(<WorkspaceHotkeys />);
     for (const key of ["a", "o", "d"])
       fireEvent.keyDown(document.body, { key, code: `Key${key.toUpperCase()}` });
-    expect(useReviewUi.getState().selected).toBeNull();
+    // Nothing is selected, so nothing is requested.
+    expect(useReviewUi.getState().decisionRequest).toBeNull();
+
+    useReviewUi.getState().select(5);
+    fireEvent.keyDown(document.body, { key: "o", code: "KeyO" });
+    expect(useReviewUi.getState().decisionRequest).toMatchObject({
+      position: 5,
+      action: "override",
+    });
+    fireEvent.keyDown(document.body, { key: "d", code: "KeyD" });
+    expect(useReviewUi.getState().decisionRequest).toMatchObject({
+      position: 5,
+      action: "dismiss",
+    });
+    fireEvent.keyDown(document.body, { key: "a", code: "KeyA" });
+    expect(useReviewUi.getState().decisionRequest).toMatchObject({ position: 5, action: "accept" });
+  });
+
+  it("leaves A, O and D alone while a dialog is open", () => {
+    useReviewUi.getState().select(5);
+    render(
+      <>
+        <WorkspaceHotkeys />
+        <div role="dialog" aria-label="offen" />
+      </>,
+    );
+    fireEvent.keyDown(document.body, { key: "a", code: "KeyA" });
+    expect(useReviewUi.getState().decisionRequest).toBeNull();
+  });
+
+  it("opens the shortcut overview with ? and lists the decision keys", () => {
+    render(<WorkspaceHotkeys />);
     act(() => {
       fireEvent.keyDown(document.body, { key: "?", code: "Slash", shiftKey: true });
     });
-    expect(screen.getByRole("dialog", { name: "Tastenkürzel" })).toBeVisible();
+    const dialog = screen.getByRole("dialog", { name: "Tastenkürzel" });
+    expect(dialog).toBeVisible();
+    expect(dialog).toHaveTextContent("Fundstelle akzeptieren");
+    expect(dialog).toHaveTextContent("Fundstelle verwerfen");
   });
 });

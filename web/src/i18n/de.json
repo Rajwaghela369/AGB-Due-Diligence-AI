@@ -87,7 +87,11 @@
     "description": "Details zur ausgewählten Klausel mit Rechtsgrundlage, Begründung und Rückmeldung.",
     "clause": "Klausel",
     "confidence": "Sicherheit",
-    "confidenceBands": { "high": "Hoch", "medium": "Mittel", "low": "Gering" },
+    "confidenceBands": {
+      "high": "Hoch",
+      "medium": "Mittel",
+      "low": "Gering"
+    },
     "legalBasis": "Rechtsgrundlage",
     "noBasis": "Keine Rechtsgrundlage angegeben.",
     "statuteLoading": "Gesetzestext wird geladen …",
@@ -164,7 +168,8 @@
       "queued": "Wartet",
       "running": "Läuft",
       "finished": "Abgeschlossen",
-      "failed": "Fehlgeschlagen"
+      "failed": "Fehlgeschlagen",
+      "awaiting_decisions": "Entscheidungen offen"
     }
   },
   "upload": {
@@ -213,7 +218,9 @@
       "high": "Hoch",
       "medium": "Mittel",
       "low": "Niedrig"
-    }
+    },
+    "decision": "Entscheidung",
+    "allDecisions": "Alle Entscheidungen"
   },
   "viewer": {
     "toolbar": "Dokumentwerkzeuge",
@@ -268,6 +275,111 @@
     "escape": "Details schließen oder Suche leeren",
     "help": "Diese Übersicht ein- und ausblenden",
     "keys": "Taste",
-    "action": "Aktion"
+    "action": "Aktion",
+    "accept": "Fundstelle akzeptieren",
+    "override": "Fundstelle überschreiben",
+    "dismiss": "Fundstelle verwerfen"
+  },
+  "decision": {
+    "title": "Entscheidung",
+    "status": {
+      "open": "Offen",
+      "accepted": "Akzeptiert",
+      "overridden": "Überschrieben",
+      "dismissed": "Verworfen",
+      "awaiting": "Entscheidung nötig"
+    },
+    "accept": "Akzeptieren",
+    "dismiss": "Verwerfen",
+    "note": "Notiz (optional)",
+    "awaitingHint": "Die KI ist sich bei dieser Klausel nicht sicher. Bitte entscheiden Sie selbst.",
+    "statusFilter": "Entscheidung",
+    "statusFilters": {
+      "all": "Alle",
+      "open": "Offen",
+      "accepted": "Akzeptiert",
+      "overridden": "Überschrieben",
+      "dismissed": "Verworfen"
+    },
+    "verdict": {
+      "valid": "Wirksam",
+      "potentially_void": "Potenziell unwirksam",
+      "uncertain": "Zu prüfen"
+    },
+    "current": {
+      "accept": "Akzeptiert",
+      "dismiss": "Verworfen (nicht relevant)",
+      "override": "Überschrieben: {{verdict}}"
+    },
+    "override": {
+      "open": "Überschreiben",
+      "verdict": "Ihr Urteil",
+      "basis": "Rechtsgrundlage",
+      "noBasis": "Keine Vorschläge vorhanden.",
+      "basisHint": "Ohne Auswahl bleibt der § der KI.",
+      "model": "Urteil der KI",
+      "needVerdict": "Bitte wählen Sie ein Urteil.",
+      "needChange": "Bitte wählen Sie ein anderes Urteil oder einen anderen §.",
+      "confirm": "Überschreiben bestätigen",
+      "cancel": "Abbrechen"
+    },
+    "error": {
+      "generic": "Die Entscheidung konnte nicht gespeichert werden. Bitte erneut versuchen."
+    }
+  },
+  "audit": {
+    "title": "Verlauf",
+    "loading": "Verlauf wird geladen …",
+    "loadError": "Der Verlauf konnte nicht geladen werden.",
+    "empty": "Noch keine Entscheidung.",
+    "unknown": "Unbekannt",
+    "unauthenticated": "nicht angemeldet",
+    "action": {
+      "accept": "Akzeptiert",
+      "override": "Überschrieben",
+      "dismiss": "Verworfen"
+    },
+    "verdict": "Urteil",
+    "basis": "§",
+    "agentVersion": "Agent-Version",
+    "noVerdict": "keines"
+  },
+  "progress": {
+    "label": "Fortschritt der Entscheidungen",
+    "text": "{{decided}} von {{total}} entschieden",
+    "open": "Offene Fundstellen",
+    "openVoid": "Potenziell unwirksam offen: {{count}}",
+    "openReview": "Zu prüfen offen: {{count}}",
+    "decided": "Entschieden: {{count}}",
+    "complete": "Prüfung abschließen",
+    "completeDisabled": "Erst möglich, wenn alle unwirksamen und zu prüfenden Fundstellen entschieden sind.",
+    "confirmTitle": "Prüfung abschließen?",
+    "confirmText": "Alle Fundstellen sind entschieden. Der Export folgt in einer späteren Version; Sie kehren zur Übersicht zurück.",
+    "confirm": "Abschließen",
+    "cancel": "Abbrechen"
+  },
+  "agreement": {
+    "title": "Übereinstimmung mit Ihren Entscheidungen",
+    "version": "Agent-Version {{version}}",
+    "none": "Noch keine Entscheidungen.",
+    "unavailable": "Die Übereinstimmung ist nicht verfügbar.",
+    "decided": "Entschieden: {{count}}",
+    "kept": "Übernommen: {{count}}",
+    "overridden": "Überschrieben: {{count}}",
+    "dismissed": "Verworfen: {{count}}",
+    "explain": "Anteil der Entscheidungen, bei denen das Urteil der KI übernommen wurde; verworfene Fundstellen zählen nicht."
+  },
+  "reviewer": {
+    "title": "Ihr Name",
+    "description": "Er wird mit jeder Entscheidung im Verlauf gespeichert. Es gibt noch keine Anmeldung.",
+    "label": "Name",
+    "hint": "Der Name wird in diesem Browser gespeichert.",
+    "save": "Speichern",
+    "skip": "Ohne Namen fortfahren",
+    "close": "Schließen",
+    "none": "Kein Name festgelegt",
+    "set": "Namen festlegen",
+    "change": "Name ändern (aktuell: {{name}})",
+    "unauthenticated": "nicht angemeldet"
   }
 }
