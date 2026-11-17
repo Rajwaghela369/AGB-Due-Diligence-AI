@@ -13,14 +13,31 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   timeout: 60_000,
-  expect: { timeout: 10_000 },
   reporter: [["list"]],
   use: {
     baseURL: `http://127.0.0.1:${WEB_PORT}`,
     locale: "de-DE",
     trace: "retain-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  // Screenshot regression runs as its own project (`make ui-snapshots`) so `make e2e` stays a
+  // behavioural gate and does not depend on the committed pixel baselines.
+  projects: [
+    {
+      name: "chromium",
+      testIgnore: "**/snapshots.spec.ts",
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "snapshots",
+      testMatch: "**/snapshots.spec.ts",
+      use: { ...devices["Desktop Chrome"] },
+    },
+  ],
+  expect: {
+    timeout: 10_000,
+    toHaveScreenshot: { maxDiffPixelRatio: 0.002 },
+  },
+  snapshotPathTemplate: "{testDir}/__screenshots__/{arg}{-snapshotSuffix}{ext}",
   webServer: [
     {
       command: `uv run uvicorn app.api.testing:build_test_app --factory --host 127.0.0.1 --port ${API_PORT}`,
