@@ -1,7 +1,7 @@
 # Single entry point: CI runs exactly these targets, so local and CI never diverge.
 .PHONY: help install smoke kb eval-data eval-data-dry recheck baseline baseline-held-out \
 	baseline-smoke eval eval-held-out eval-smoke seed-prompts lint format test web web-gen \
-	web-check e2e e2e-install check clean api api-up api-down
+	web-check e2e e2e-install ui-snapshots ui-snapshots-update check clean api api-up api-down
 
 PY := uv run
 
@@ -75,6 +75,12 @@ e2e-install:  ## One-time: download the Chromium build Playwright drives
 
 e2e:  ## Phase 6 gate in a browser: real API on fake model clients (ports 8010 and 5180)
 	cd web && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm e2e
+
+ui-snapshots:  ## Screenshot regression: every page x {1440, 1024, 820} px x {light, dark}, offline
+	cd web && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec playwright test --project=snapshots
+
+ui-snapshots-update:  ## Re-record the screenshot baselines after an intended visual change
+	cd web && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec playwright test --project=snapshots --update-snapshots
 
 check: lint test web-check e2e  ## What CI runs (e2e needs `make e2e-install` once)
 
