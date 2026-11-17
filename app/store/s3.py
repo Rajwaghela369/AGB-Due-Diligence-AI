@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+import hashlib
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -31,6 +32,14 @@ from botocore.exceptions import ClientError
 from app.store.interfaces import FileStore
 
 FilesBackend = Literal["local", "s3"]
+MAX_PRESIGN_SECONDS = 3600
+
+
+def validate_presign_seconds(value: int) -> int:
+    """Keep bearer download URLs short enough to revoke access promptly."""
+    if not 1 <= value <= MAX_PRESIGN_SECONDS:
+        raise ValueError(f"files.s3.presign_seconds must be between 1 and {MAX_PRESIGN_SECONDS}")
+    return value
 
 
 @dataclass(frozen=True)
@@ -66,8 +75,7 @@ class S3Settings:
             raise ValueError("files.s3.server_side_encryption must be 'AES256' or 'aws:kms'")
         if settings.download not in {"proxy", "redirect"}:
             raise ValueError("files.s3.download must be 'proxy' or 'redirect'")
-        if settings.presign_seconds <= 0:
-            raise ValueError("files.s3.presign_seconds must be positive")
+        validate_presign_seconds(settings.presign_seconds)
         return settings
 
 
@@ -120,6 +128,15 @@ class S3FileStore:
             "NotFound",
         }
 
+    @staticmethod
+    def _conditional_conflict(exc: ClientError) -> bool:
+        return str(exc.response.get("Error", {}).get("Code", "")) in {
+            "ConditionalRequestConflict",
+            "PreconditionFailed",
+            "409",
+            "412",
+        }
+
     def put(self, key: str, data: bytes) -> str:
         try:
             self._s3.put_object(
@@ -130,11 +147,12 @@ class S3FileStore:
                 ServerSideEncryption=self.settings.server_side_encryption,
             )
         except ClientError as exc:
-            if str(exc.response.get("Error", {}).get("Code", "")) not in {
-                "PreconditionFailed",
-                "412",
-            }:
+            if not self._conditional_conflict(exc):
                 raise
+            # Both a normal immutable re-upload (412) and two writers racing (409) are
+            # successful only if the winner really stored the same content.
+            if hashlib.sha256(self.get(key)).digest() != hashlib.sha256(data).digest():
+                raise RuntimeError(f"immutable object conflict for {key!r}") from exc
         return key
 
     def get(self, key: str) -> bytes:
@@ -156,19 +174,24 @@ class S3FileStore:
         return True
 
     def delete(self, key: str) -> bool:
-        object_key = self._object_key(key)
         try:
-            self._s3.head_object(Bucket=self.settings.bucket, Key=object_key)
+            self._s3.delete_object(Bucket=self.settings.bucket, Key=self._object_key(key))
         except ClientError as exc:
             if self._missing(exc):
                 return False
             raise
-        self._s3.delete_object(Bucket=self.settings.bucket, Key=object_key)
+        # S3 delete is idempotent and does not require ListBucket permission. AWS returns
+        # 204 for an absent key too, so it cannot distinguish that case without a HEAD.
         return True
 
+    def encryption(self, key: str) -> str | None:
+        """Return S3's recorded encryption mode for migration verification."""
+        response = self._s3.head_object(Bucket=self.settings.bucket, Key=self._object_key(key))
+        value = response.get("ServerSideEncryption")
+        return str(value) if value is not None else None
+
     def presign(self, key: str, expires_in: int) -> str | None:
-        if expires_in <= 0:
-            raise ValueError("expires_in must be positive")
+        validate_presign_seconds(expires_in)
         return self._s3.generate_presigned_url(
             "get_object",
             Params={"Bucket": self.settings.bucket, "Key": self._object_key(key)},
@@ -189,6 +212,10 @@ def file_store_from_config(config: Mapping[str, Any], root: Path) -> FileStore:
         from core.settings import load_settings
 
         settings = load_settings()
+        if not settings.s3_access_key_id or not settings.s3_secret_access_key:
+            raise ValueError(
+                "S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be set when files.backend is 's3'"
+            )
         return S3FileStore(
             S3Settings.from_config(config),
             access_key_id=settings.s3_access_key_id or None,

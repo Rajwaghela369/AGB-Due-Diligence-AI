@@ -25,13 +25,17 @@ def migrate(source: LocalFileStore, destination: S3FileStore) -> tuple[int, int]
     """Copy absent blobs, then verify all source blobs; return (copied, already_present)."""
     copied = 0
     already_present = 0
-    for path in sorted(item for item in source.root.rglob("*") if item.is_file()):
+    for path in sorted(
+        item for item in source.root.rglob("*") if item.is_file() and not item.name.startswith(".tmp-")
+    ):
         key = path.relative_to(source.root).as_posix()
         expected = source.get(key)
         if destination.exists(key):
             already_present += 1
         else:
             destination.put(key, expected)
+            if destination.encryption(key) != destination.settings.server_side_encryption:
+                raise RuntimeError(f"encryption verification failed for {key!r}")
             copied += 1
         actual = destination.get(key)
         if len(actual) != len(expected) or _digest(actual) != _digest(expected):

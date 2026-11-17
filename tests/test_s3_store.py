@@ -51,17 +51,45 @@ def test_existing_put_is_a_noop_and_missing_values_follow_file_contract():
         stubber.add_client_error(
             "put_object", service_error_code="PreconditionFailed", http_status_code=412
         )
+        stubber.add_response(
+            "get_object",
+            {"Body": StreamingBody(BytesIO(b"contents"), 8)},
+            {"Bucket": "files", "Key": "source/a.pdf"},
+        )
         stubber.add_client_error("get_object", service_error_code="NoSuchKey", http_status_code=404)
         stubber.add_client_error("head_object", service_error_code="404", http_status_code=404)
-        stubber.add_client_error(
-            "head_object", service_error_code="NoSuchKey", http_status_code=404
-        )
+        stubber.add_response("delete_object", {}, {"Bucket": "files", "Key": "source/missing.pdf"})
 
         assert store.put("a.pdf", b"contents") == "a.pdf"
         with pytest.raises(FileNotFoundError):
             store.get("missing.pdf")
         assert store.exists("missing.pdf") is False
         assert store.delete("missing.pdf") is False
+
+
+def test_concurrent_conditional_put_is_a_noop_only_when_the_blob_matches():
+    client = _client()
+    store = _store(client)
+    with Stubber(client) as stubber:
+        stubber.add_client_error(
+            "put_object", service_error_code="ConditionalRequestConflict", http_status_code=409
+        )
+        stubber.add_response(
+            "get_object",
+            {"Body": StreamingBody(BytesIO(b"contents"), 8)},
+            {"Bucket": "files", "Key": "source/a.pdf"},
+        )
+
+        assert store.put("a.pdf", b"contents") == "a.pdf"
+
+
+def test_delete_does_not_head_an_absent_key_without_list_bucket_permission():
+    client = _client()
+    store = _store(client)
+    with Stubber(client) as stubber:
+        stubber.add_response("delete_object", {}, {"Bucket": "files", "Key": "source/missing.pdf"})
+
+        assert store.delete("missing.pdf") is True
 
 
 def test_get_delete_and_presign_use_the_configured_prefix():
@@ -73,7 +101,6 @@ def test_get_delete_and_presign_use_the_configured_prefix():
             {"Body": StreamingBody(BytesIO(b"contents"), 8)},
             {"Bucket": "files", "Key": "source/a.pdf"},
         )
-        stubber.add_response("head_object", {}, {"Bucket": "files", "Key": "source/a.pdf"})
         stubber.add_response("delete_object", {}, {"Bucket": "files", "Key": "source/a.pdf"})
 
         assert store.get("a.pdf") == b"contents"
@@ -81,8 +108,10 @@ def test_get_delete_and_presign_use_the_configured_prefix():
 
     client.generate_presigned_url = lambda *args, **kwargs: "https://signed.invalid/a.pdf"
     assert store.presign("a.pdf", 60) == "https://signed.invalid/a.pdf"
-    with pytest.raises(ValueError, match="positive"):
+    with pytest.raises(ValueError, match="between"):
         store.presign("a.pdf", 0)
+    with pytest.raises(ValueError, match="between"):
+        store.presign("a.pdf", 3601)
 
 
 @pytest.mark.parametrize("key", ["", "/a.pdf", "../a.pdf", "a//b.pdf", "a/../b.pdf"])
@@ -100,12 +129,23 @@ def test_factory_reads_credentials_only_from_environment(monkeypatch, tmp_path):
     assert store._secret_access_key == "secret-from-env"
 
 
+@pytest.mark.parametrize("missing", ["S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"])
+def test_s3_backend_requires_explicit_credentials(monkeypatch, tmp_path, missing):
+    monkeypatch.setenv("S3_ACCESS_KEY_ID", "present")
+    monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "present")
+    monkeypatch.delenv(missing)
+
+    with pytest.raises(ValueError, match=missing):
+        file_store_from_config({"files": {"backend": "s3"}}, tmp_path)
+
+
 @pytest.mark.parametrize(
     ("s3", "message"),
     [
         ({"server_side_encryption": "none"}, "server_side_encryption"),
         ({"download": "public"}, "download"),
         ({"presign_seconds": 0}, "presign_seconds"),
+        ({"presign_seconds": 3601}, "presign_seconds"),
     ],
 )
 def test_s3_config_rejects_unsafe_or_invalid_values(s3, message, tmp_path):
@@ -131,6 +171,41 @@ def test_migration_copies_verifies_and_is_resumable(tmp_path):
         def get(self, key):
             return self.blobs[key]
 
+        class settings:
+            server_side_encryption = "AES256"
+
+        def encryption(self, key):
+            return self.settings.server_side_encryption
+
     destination = Destination()
     assert migrate(source, destination) == (1, 0)
     assert migrate(source, destination) == (0, 1)
+
+
+def test_migration_skips_crash_leftover_temp_files_and_checks_encryption(tmp_path):
+    source = LocalFileStore(tmp_path / "source")
+    source.put("a.pdf", b"alpha")
+    (source.root / ".tmp-interrupted").write_bytes(b"partial")
+
+    class Destination:
+        settings = type("Settings", (), {"server_side_encryption": "AES256"})()
+
+        def __init__(self):
+            self.blobs = {}
+
+        def exists(self, key):
+            return key in self.blobs
+
+        def put(self, key, data):
+            self.blobs[key] = data
+            return key
+
+        def get(self, key):
+            return self.blobs[key]
+
+        def encryption(self, key):
+            return self.settings.server_side_encryption
+
+    destination = Destination()
+    assert migrate(source, destination) == (1, 0)
+    assert destination.blobs == {"a.pdf": b"alpha"}

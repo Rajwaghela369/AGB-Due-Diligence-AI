@@ -24,6 +24,7 @@ from app.domain import (
     Review,
     StepObservations,
     StoredEvent,
+    Principal,
 )
 from app.ingest import IngestError
 from app.review.deliverable import deliverable_settings
@@ -261,7 +262,7 @@ def test_upload_reupload_paste_and_file_cache_headers(api):
     assert second.json()["reused"] is True
     assert all(clause["start"] is not None for clause in paste.json()["clauses"])
     assert file_response.content.startswith(b"%PDF-")
-    assert file_response.headers["cache-control"].endswith("immutable")
+    assert file_response.headers["cache-control"] == "private, no-store"
     assert file_response.headers["etag"].startswith('"')
     assert paste_file.status_code == 200
     assert paste_file.headers["content-type"] == "text/plain; charset=utf-8"
@@ -286,6 +287,26 @@ def test_file_redirect_uses_a_short_lived_s3_url_when_configured(api):
     assert response.status_code == 307
     assert response.headers["location"].startswith("https://storage.example/")
     assert response.headers["cache-control"] == "no-store"
+
+
+def test_file_redirect_checks_the_document_owner_before_presigning(api, monkeypatch):
+    application, store, _service, _langfuse = api
+    _save_document(store)
+
+    class SignedFiles:
+        def presign(self, *_args):
+            raise AssertionError("a different owner must never receive a bearer URL")
+
+    store.files = SignedFiles()
+    application.state.settings = {"files": {"s3": {"download": "redirect"}}}
+    monkeypatch.setattr(
+        "app.api.routes.documents.principal", lambda _request: Principal(subject="another-owner")
+    )
+    with TestClient(application) as client:
+        response = client.get("/api/v1/documents/doc-1/file", follow_redirects=False)
+
+    assert response.status_code == 404
+    assert "location" not in response.headers
 
 
 @pytest.mark.parametrize(
