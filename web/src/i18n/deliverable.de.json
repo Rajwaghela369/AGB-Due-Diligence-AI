@@ -1,5 +1,7 @@
 {
   "summary": {
+    "collapse": "Zusammenfassung einklappen",
+    "expand": "Zusammenfassung ausklappen",
     "title": "Zusammenfassung",
     "topRisks": "Wichtigste Risiken",
     "voidGroups": "Unwirksame Klauseln nach Rechtsgrundlage",

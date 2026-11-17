@@ -1,5 +1,7 @@
 {
   "summary": {
+    "collapse": "Collapse summary",
+    "expand": "Expand summary",
     "title": "Summary",
     "topRisks": "Top risks",
     "voidGroups": "Void clauses by legal basis",
