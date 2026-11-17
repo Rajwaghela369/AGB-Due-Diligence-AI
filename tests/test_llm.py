@@ -359,3 +359,29 @@ def test_complete_stops_after_three_retryable_failures(monkeypatch):
 def test_complete_rejects_an_unknown_provider():
     with pytest.raises(NotImplementedError, match="'openai'"):
         complete("s", "u", SCHEMA, {"provider": "openai", "name": "gpt"}, client=object())
+
+
+def test_the_gemini_client_has_a_request_timeout(monkeypatch):
+    """A hung response must fail, not block a worker and its clause lock forever."""
+    import sys
+    import types
+
+    from core import llm
+
+    seen = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+    import google.genai  # noqa: F401 - load the real package so its parent can be patched
+
+    fake_genai = types.SimpleNamespace(Client=FakeClient)
+    monkeypatch.setitem(sys.modules, "google.genai", fake_genai)
+    monkeypatch.setattr(sys.modules["google"], "genai", fake_genai)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    llm._gemini_client()
+
+    assert seen["http_options"]["api_version"] == "v1beta"
+    assert 0 < seen["http_options"]["timeout"] <= 120_000

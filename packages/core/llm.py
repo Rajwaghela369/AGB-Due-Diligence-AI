@@ -24,6 +24,7 @@ when it ran out, it degraded, and returned a verdict-shaped error for every
 remaining clause. A run out of allowance should stop.
 """
 
+import os
 import random
 import re
 import time
@@ -84,6 +85,9 @@ def _failed_completion(model: str, exc: Exception) -> Completion:
     return Completion("", 0, 0, model, f"{type(exc).__name__}: {exc}")
 
 
+GEMINI_TIMEOUT_MS = int(os.environ.get("GEMINI_TIMEOUT_MS", "60000"))
+
+
 def _gemini_client(client: Any = None) -> Any:
     if client is not None:
         return client
@@ -95,8 +99,14 @@ def _gemini_client(client: Any = None) -> Any:
     api_key = load_settings().gemini_api_key
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is not set; copy .env.example to .env")
-    # The Decisions API lives on v1beta only.
-    return genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
+    # The Decisions API lives on v1beta only. The timeout is per HTTP request, in
+    # milliseconds: without one, a response that never comes blocked a worker (and the
+    # clause's single-flight lock) indefinitely, as seen live on 2026-11-17. A timeout
+    # surfaces as an error the retry and failure paths already handle.
+    return genai.Client(
+        api_key=api_key,
+        http_options={"api_version": "v1beta", "timeout": GEMINI_TIMEOUT_MS},
+    )
 
 
 def _anthropic_client(client: Any = None) -> Any:
