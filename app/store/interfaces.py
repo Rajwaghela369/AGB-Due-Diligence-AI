@@ -199,6 +199,7 @@ class MetricsRepo(Protocol):
 class FeedbackRepo(Protocol):
     def put(self, feedback: Feedback) -> Feedback: ...  # upsert on feedback_id
     def get(self, feedback_id: str) -> Feedback | None: ...
+    def delete(self, feedback_id: str) -> None: ...  # a dismissal supersedes the decision's vote
     def for_review(self, review_id: str) -> dict[int, Feedback]: ...  # latest per position
 
 

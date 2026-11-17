@@ -82,6 +82,24 @@ def test_override_upserts_one_item_and_reoverride_updates_it() -> None:
     assert item["metadata"]["review_link"] == "/reviews/review"
 
 
+def test_non_override_redecision_archives_the_stale_item() -> None:
+    langfuse = FakeLangfuse()
+    writer = Corrections(
+        langfuse,
+        CorrectionSettings(enabled=True, allowed_sources=frozenset({"pdf"})),
+    )
+    document, review, clause, verdict, override = objects()
+    writer.upsert(document, review, clause, verdict, override)
+
+    accept = override.model_copy(
+        update={"action": "accept", "corrected_verdict": None, "corrected_basis": []}
+    )
+    writer.upsert(document, review, clause, verdict, accept, previous_action="override")
+
+    item = langfuse.items[correction_id(clause.content_hash, review.review_id)]
+    assert item["status"] == "ARCHIVED"
+
+
 @pytest.mark.parametrize(
     "settings",
     [

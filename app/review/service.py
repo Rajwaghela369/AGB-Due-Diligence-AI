@@ -343,6 +343,7 @@ class Service:
                 if verdict is None:
                     raise NotDecidable(f"clause {position} has no verdict")
                 self._validate_decision(decision, verdict)
+                previous = self.store.decisions.for_review(review_id).get(position)
                 stored = Decision(
                     review_id=review_id,
                     position=position,
@@ -356,7 +357,7 @@ class Service:
                 )
 
             resume_cost = 0.0
-            if status == "awaiting_decision":
+            if status == "awaiting_decision" and previous is None:
                 stored, resume_cost = self._resume_decided(review, clause, verdict, stored)
 
             with self._lock:
@@ -367,16 +368,15 @@ class Service:
                     authenticated=reviewer.authenticated,
                     request_id=request_id,
                 )
-                if self.feedback is not None:
-                    self.feedback.record_decision(stored)
                 status_changed = status == "awaiting_decision"
                 if status_changed:
                     self.store.reviews.set_clause_status(review_id, position, "done")
+                current = self._review(review_id)
+                idle = current.status in IDLE_REVIEW_STATUSES
                 run = self._runs.get(review_id)
-                if run is not None:
+                if not idle and run is not None:
                     run.note_decision(stored, resume_cost)
                 else:
-                    current = self._review(review_id)
                     entries = load_entries(self.store, current, review_clauses(self.store, current))
                     counts = count(
                         entries,
@@ -386,17 +386,31 @@ class Service:
                     self.store.reviews.update_counts(
                         review_id, counts, current.cost_usd + resume_cost
                     )
-                    if current.status != "failed":
+                    if idle and current.status != "failed":
                         next_status = (
                             "awaiting_decisions" if counts.awaiting_decision else "finished"
                         )
                         self.store.reviews.set_status(review_id, next_status)
-                self._emit_decision(review_id, position, status_changed, run)
+                self._emit_decision(review_id, position, status_changed, idle)
                 review = self._review(review_id)
 
+            if self.feedback is not None:
+                try:
+                    self.feedback.record_decision(
+                        stored, previous_action=previous.action if previous else None
+                    )
+                except Exception:  # noqa: BLE001 - feedback cannot reject a decision
+                    log.warning("could not record feedback for decision", exc_info=True)
             self._score_agreement(review)
             if self.corrections is not None:
-                self.corrections.upsert(document, review, clause, verdict, stored)
+                self.corrections.upsert(
+                    document,
+                    review,
+                    clause,
+                    verdict,
+                    stored,
+                    previous_action=previous.action if previous else None,
+                )
             return next(item for item in self.findings(review_id) if item.position == position)
 
     def audit(self, review_id: str, position: int | None = None) -> list[DecisionEvent]:
@@ -426,11 +440,13 @@ class Service:
             if unknown:
                 raise InvalidDecision(f"unknown legal basis: {', '.join(unknown)}")
         corrected_basis = decision.corrected_basis or verdict.legal_basis
-        if decision.corrected_verdict == verdict.verdict and corrected_basis == verdict.legal_basis:
+        if decision.corrected_verdict == verdict.verdict and set(corrected_basis) == set(
+            verdict.legal_basis
+        ):
             raise InvalidDecision("override must change the verdict or legal basis")
 
     def _emit_decision(
-        self, review_id: str, position: int, status_changed: bool, run: ReviewRun | None
+        self, review_id: str, position: int, status_changed: bool, idle: bool
     ) -> None:
         review = self._review(review_id)
         clauses = review_clauses(self.store, review)
@@ -462,7 +478,7 @@ class Service:
                 "waiting_reason": self._waiting_reason(),
             },
         )
-        if run is not None:
+        if not idle:
             self.bus.emit_many(review_id, [change, progress])
             return
 

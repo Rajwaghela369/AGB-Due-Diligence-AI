@@ -484,6 +484,11 @@ class MemoryFeedbackRepo:
             row = self._rows.get(feedback_id)
             return row.model_copy(deep=True) if row else None
 
+    def delete(self, feedback_id: str) -> None:
+        """Remove feedback whose source decision was superseded by a dismissal."""
+        with self._lock:
+            self._rows.pop(feedback_id, None)
+
     def for_review(self, review_id: str) -> dict[int, Feedback]:
         with self._lock:
             latest: dict[int, Feedback] = {}

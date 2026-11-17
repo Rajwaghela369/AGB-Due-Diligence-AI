@@ -723,6 +723,17 @@ def test_feedback_get_by_id(store):
     assert store.feedback.get(fid).vote == "up"
 
 
+def test_feedback_delete_is_idempotent(store):
+    rid, fid = uid(), uid()
+    store.feedback.put(_feedback(rid, 3, "up", fid))
+
+    store.feedback.delete(fid)
+    store.feedback.delete(fid)
+
+    assert store.feedback.get(fid) is None
+    assert store.feedback.for_review(rid) == {}
+
+
 def test_feedback_for_review_is_the_latest_vote_per_position(store):
     rid = uid()
     store.feedback.put(_feedback(rid, 0, "up"))

@@ -829,6 +829,11 @@ class PostgresFeedbackRepo(_Repo):
             )
         return Feedback(**rows[0]) if rows else None
 
+    def delete(self, feedback_id: str) -> None:
+        """Remove feedback whose source decision was superseded by a dismissal."""
+        with self._connect() as conn:
+            conn.execute("delete from feedback where feedback_id = %s", (feedback_id,))
+
     def for_review(self, review_id: str) -> dict[int, Feedback]:
         with self._connect() as conn:
             rows = _rows(

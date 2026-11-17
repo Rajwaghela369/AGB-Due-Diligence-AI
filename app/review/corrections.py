@@ -55,15 +55,28 @@ class Corrections:
         clause: ClauseSpan,
         verdict: ClauseVerdict,
         decision: Decision,
+        *,
+        previous_action: str | None = None,
     ) -> None:
         if (
             not self.settings.enabled
             or self.langfuse is None
             or document.source_type not in self.settings.allowed_sources
-            or decision.action != "override"
         ):
             return
         item_id = correction_id(clause.content_hash, review.review_id)
+        if decision.action != "override":
+            if previous_action != "override":
+                return
+            try:
+                self.langfuse.create_dataset_item(
+                    id=item_id,
+                    dataset_name=self.settings.dataset,
+                    status="ARCHIVED",
+                )
+            except Exception:  # noqa: BLE001 - dataset publishing cannot reject a decision
+                log.warning("could not archive correction %s", item_id, exc_info=True)
+            return
         try:
             self.langfuse.create_dataset(
                 name=self.settings.dataset,

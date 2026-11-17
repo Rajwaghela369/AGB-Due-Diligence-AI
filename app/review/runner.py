@@ -422,6 +422,14 @@ class ReviewRun:
         store = self.ctx.store
         entries = load_entries(store, self.review, list(self._clauses.values()))
         decisions = store.decisions.for_review(self.review_id)
+        repaired = {
+            position
+            for position, (status, _, _) in entries.items()
+            if status == "awaiting_decision" and position in decisions
+        }
+        for position in repaired:
+            _status, error, verdict = entries[position]
+            entries[position] = ("done", error, verdict)
         if self._requested is None:  # start or resume: everything not yet judged
             todo = [p for p, (s, _, _) in sorted(entries.items()) if s in ("queued", "checking")]
         else:
@@ -449,6 +457,7 @@ class ReviewRun:
                 for pos, (status, _, _) in entries.items()
                 if status == "out_of_scope"
             }
+            statuses.update({position: ("done", None) for position in repaired})
             for pos in todo:
                 self._entries[pos] = ("queued", None, None)
                 statuses[pos] = ("queued", None)

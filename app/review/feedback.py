@@ -125,6 +125,7 @@ class FeedbackService:
         if request.action == "override" and request.corrected_verdict is None:
             raise ValueError("override requires corrected_verdict")
         review, verdict = self._verdict(review_id, position)
+        previous = self.store.decisions.for_review(review_id).get(position)
         decision = self.store.decisions.put(
             Decision(
                 review_id=review_id,
@@ -140,10 +141,10 @@ class FeedbackService:
             agent_version=review.agent_version,
             request_id=request_id,
         )
-        self.record_decision(decision)
+        self.record_decision(decision, previous_action=previous.action if previous else None)
         return decision
 
-    def record_decision(self, decision: Decision) -> None:
+    def record_decision(self, decision: Decision, *, previous_action: str | None = None) -> None:
         """Score a stored decision through the same stable feedback identity.
 
         Dismissal is deliberately its own score: it says the finding is irrelevant, not
@@ -158,6 +159,7 @@ class FeedbackService:
             if previous is not None:
                 for step in previous.observations:
                     self._delete_score(feedback_id, step)
+                self.store.feedback.delete(feedback_id)
             if self.langfuse is not None and verdict.observations.clause_span is not None:
                 try:
                     self.langfuse.create_score(
@@ -173,7 +175,8 @@ class FeedbackService:
                     log.warning("could not record Langfuse dismissal score", exc_info=True)
             return
 
-        self._delete_score_id(dismissed_id)
+        if previous_action == "dismiss":
+            self._delete_score_id(dismissed_id)
         if decision.action == "accept":
             request = _FeedbackRequest(
                 decision.review_id, decision.position, "up", [], None, [], decision.note
@@ -181,7 +184,7 @@ class FeedbackService:
         else:
             corrected_basis = decision.corrected_basis or decision.model_basis
             reasons = ["verdict_wrong"]
-            if corrected_basis != decision.model_basis:
+            if set(corrected_basis) != set(decision.model_basis):
                 reasons.append("basis_wrong")
             request = _FeedbackRequest(
                 decision.review_id,

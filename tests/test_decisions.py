@@ -7,6 +7,7 @@ import time
 from types import SimpleNamespace
 from urllib.parse import quote
 
+import pytest
 from core.hashing import content_hash
 from core.schemas import LawChunk
 from fastapi.testclient import TestClient
@@ -15,6 +16,7 @@ from app.api.main import create_app
 from app.domain import (
     ClauseSpan,
     ClauseVerdict,
+    Decision,
     DecisionIn,
     Document,
     Review,
@@ -22,6 +24,7 @@ from app.domain import (
     StepObservations,
 )
 from app.review.feedback import FeedbackService
+from app.review.interfaces import InvalidDecision
 from app.review.limiter import build_limiter
 from app.review.service import build_service
 from app.store.memory import memory_store
@@ -30,9 +33,12 @@ from app.store.memory import memory_store
 class FakeLangfuse:
     def __init__(self) -> None:
         self.scores: dict[str, dict] = {}
-        self.api = SimpleNamespace(
-            scores=SimpleNamespace(delete=lambda score_id: self.scores.pop(score_id, None))
-        )
+        self.deleted: list[str] = []
+        self.api = SimpleNamespace(scores=SimpleNamespace(delete=self.delete_score))
+
+    def delete_score(self, score_id: str) -> None:
+        self.deleted.append(score_id)
+        self.scores.pop(score_id, None)
 
     def create_score(self, **kwargs) -> None:
         self.scores[kwargs["score_id"]] = kwargs
@@ -60,7 +66,7 @@ def statute() -> LawChunk:
     )
 
 
-def seeded_service(*, status: str = "done"):
+def seeded_service(*, status: str = "done", basis: list[str] | None = None):
     store = memory_store()
     clause = ClauseSpan(
         position=0,
@@ -95,7 +101,7 @@ def seeded_service(*, status: str = "done"):
             content_hash=clause.content_hash,
             agent_version=review.agent_version,
             verdict="potentially_void",
-            legal_basis=["bgb-309-7"],
+            legal_basis=basis or ["bgb-309-7"],
             confidence=0.9,
             trace_id="trace-review-1",
             observations=StepObservations(
@@ -165,6 +171,7 @@ def test_all_actions_validation_audit_header_and_idle_events() -> None:
         "RUN_FINISHED",
     ] * 3
     assert any(score["name"] == "dismissed" for score in langfuse.scores.values())
+    assert store.feedback.for_review("review-1") == {}
 
 
 def test_not_decidable_is_409() -> None:
@@ -207,6 +214,23 @@ def test_basis_only_override_scores_judge_and_retrieval() -> None:
     }
 
 
+def test_reordered_basis_is_not_an_override() -> None:
+    _store, service, _feedback, _langfuse = seeded_service(basis=["bgb-309-7", "bgb-307"])
+    service.statutes["bgb-307"] = object()
+
+    with pytest.raises(InvalidDecision, match="must change"):
+        service.decide(
+            "review-1",
+            0,
+            DecisionIn(
+                action="override",
+                corrected_verdict="potentially_void",
+                corrected_basis=["bgb-307", "bgb-309-7"],
+            ),
+            Reviewer(),
+        )
+
+
 def test_awaiting_clause_resumes_outside_service_lock_and_finishes_review() -> None:
     _store, service, _feedback, _langfuse = seeded_service(status="awaiting_decision")
     calls = []
@@ -237,6 +261,7 @@ class RunningJudge:
     def __init__(self) -> None:
         self.second_started = threading.Event()
         self.release = threading.Event()
+        self.uncertain_first = False
 
     def __call__(self, clause, *, parent=None):
         if clause.position == 1:
@@ -245,7 +270,7 @@ class RunningJudge:
         return ClauseVerdict(
             content_hash=clause.content_hash,
             agent_version=self.agent_version,
-            verdict="valid",
+            verdict="uncertain" if clause.position == 0 and self.uncertain_first else "valid",
             confidence=0.9,
             observations=StepObservations(clause_span=f"span-{clause.position}"),
         )
@@ -293,3 +318,166 @@ def test_decision_during_run_uses_run_counts_and_bus() -> None:
     assert store.reviews.get(review.review_id).counts.decided == 1
     judge.release.set()
     assert service.wait(review.review_id, 2)
+
+
+def test_awaiting_decision_during_run_finishes_with_resume_cost() -> None:
+    store = memory_store()
+    clauses = [
+        ClauseSpan(position=i, text=f"Klausel {i}", content_hash=content_hash(f"Klausel {i}"))
+        for i in range(2)
+    ]
+    store.documents.save(
+        Document(
+            document_id="doc-awaiting-running",
+            filename="terms.pdf",
+            source_type="pdf",
+            parser_version="p1",
+            splitter_version="s1",
+            text_hash="text",
+        ),
+        clauses,
+        {clause.content_hash: clause.text for clause in clauses},
+    )
+    judge = RunningJudge()
+    judge.uncertain_first = True
+    service = build_service(
+        store,
+        judge,
+        build_limiter({}),
+        max_concurrency=1,
+        poll_seconds=0.01,
+        feedback=FeedbackService(store, None),
+    )
+    review = service.start("doc-awaiting-running", ["liability"])
+    deadline = time.monotonic() + 2
+    while store.reviews.clause_statuses(review.review_id).get(0, (None,))[0] != (
+        "awaiting_decision"
+    ):
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+    assert judge.second_started.wait(2)
+
+    service._resume_decided = lambda review, clause, verdict, decision: (decision, 0.25)
+    service.decide(
+        review.review_id,
+        0,
+        DecisionIn(action="override", corrected_verdict="valid"),
+        Reviewer(),
+    )
+    judge.release.set()
+    assert service.wait(review.review_id, 2)
+
+    finished = service.get(review.review_id)
+    assert finished.status == "finished"
+    assert finished.counts.awaiting_decision == 0
+    assert finished.cost_usd == 0.25
+
+
+@pytest.mark.parametrize("active_status", ["queued", "running"])
+def test_decision_without_a_run_never_ends_an_active_review(active_status) -> None:
+    store, service, _feedback, _langfuse = seeded_service()
+    store.reviews.set_status("review-1", active_status)
+
+    service.decide("review-1", 0, DecisionIn(action="accept"), Reviewer())
+
+    assert service.get("review-1").status == active_status
+    assert [event.type for event in store.events.since("review-1")] == [
+        "STATE_DELTA",
+        "CUSTOM",
+    ]
+
+
+def test_idle_status_wins_over_a_stale_registered_run() -> None:
+    store, service, _feedback, _langfuse = seeded_service()
+
+    class StaleRun:
+        def note_decision(self, *_args):
+            pytest.fail("an idle review must not use its stale run")
+
+    service._runs["review-1"] = StaleRun()
+    service.decide("review-1", 0, DecisionIn(action="accept"), Reviewer())
+
+    assert service.get("review-1").status == "finished"
+    assert [event.type for event in store.events.since("review-1")] == [
+        "RUN_STARTED",
+        "STATE_SNAPSHOT",
+        "STATE_DELTA",
+        "RUN_FINISHED",
+    ]
+
+
+def test_feedback_failure_after_lock_does_not_fail_decision() -> None:
+    store, service, _feedback, _langfuse = seeded_service()
+
+    class BrokenFeedback:
+        langfuse = None
+
+        def record_decision(self, decision, *, previous_action=None):
+            assert not service._lock._is_owned()
+            raise OSError("feedback store unavailable")
+
+    service.feedback = BrokenFeedback()
+    finding = service.decide("review-1", 0, DecisionIn(action="accept"), Reviewer())
+
+    assert finding.decision.action == "accept"
+    assert store.decisions.for_review("review-1")[0].action == "accept"
+
+
+def test_only_a_previous_dismissal_score_is_deleted() -> None:
+    _store, service, _feedback, langfuse = seeded_service()
+    service.decide("review-1", 0, DecisionIn(action="accept"), Reviewer())
+    assert langfuse.deleted == []
+
+    service.decide("review-1", 0, DecisionIn(action="dismiss"), Reviewer())
+    before = list(langfuse.deleted)
+    service.decide("review-1", 0, DecisionIn(action="accept"), Reviewer())
+
+    assert len(langfuse.deleted) == len(before) + 1
+
+
+def test_stored_decision_on_awaiting_clause_is_not_resumed_twice() -> None:
+    store, service, _feedback, _langfuse = seeded_service(status="awaiting_decision")
+    verdict = store.verdicts.get(
+        store.documents.clauses("doc-1")[0].content_hash, Judge.agent_version
+    )
+    store.decisions.put(
+        Decision(
+            review_id="review-1",
+            position=0,
+            action="accept",
+            model_verdict=verdict.verdict,
+            model_basis=verdict.legal_basis,
+        ),
+        agent_version=Judge.agent_version,
+    )
+    service._resume_decided = lambda *args: pytest.fail("decision was resumed twice")
+
+    finding = service.decide("review-1", 0, DecisionIn(action="accept"), Reviewer())
+
+    assert finding.status == "done"
+
+
+def test_restart_repairs_awaiting_clause_that_already_has_a_decision() -> None:
+    store, service, _feedback, _langfuse = seeded_service(status="awaiting_decision")
+    verdict = store.verdicts.get(
+        store.documents.clauses("doc-1")[0].content_hash, Judge.agent_version
+    )
+    store.decisions.put(
+        Decision(
+            review_id="review-1",
+            position=0,
+            action="accept",
+            model_verdict=verdict.verdict,
+            model_basis=verdict.legal_basis,
+        ),
+        agent_version=Judge.agent_version,
+    )
+    store.reviews.set_status("review-1", "running")
+
+    assert service.resume_running() == 1
+    assert service.wait("review-1", 2)
+
+    review = service.get("review-1")
+    assert store.reviews.clause_statuses("review-1")[0][0] == "done"
+    assert review.status == "finished"
+    assert review.counts.awaiting_decision == 0
