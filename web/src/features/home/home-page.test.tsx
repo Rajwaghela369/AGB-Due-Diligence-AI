@@ -158,6 +158,21 @@ describe("HomePage", () => {
     expect(screen.getByText("4 von 4 Klauseln geprüft")).toBeInTheDocument();
   }, 12000);
 
+  it("keeps the cost block outside the row button", async () => {
+    server.use(
+      http.get(`${ORIGIN}/api/v1/documents`, () =>
+        HttpResponse.json({
+          items: [{ document: documentRecord(), latest_review: review(), wall_time_ms: 2500 }],
+        }),
+      ),
+    );
+    renderPage(<HomePage />);
+    const button = (await screen.findByText("vertrag.pdf")).closest("button")!;
+    expect(button.querySelector("dl")).toBeNull();
+    expect(button).not.toHaveAccessibleName(/Laufzeit/);
+    expect(screen.getByText("2,5 s")).toBeInTheDocument();
+  });
+
   it("shows an error when the list fails", async () => {
     server.use(
       http.get(`${ORIGIN}/api/v1/documents`, () =>

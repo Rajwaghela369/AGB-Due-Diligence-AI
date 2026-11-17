@@ -32,7 +32,7 @@ export function TechnicalDetails({
   reviewId: string;
   pricing: Pricing | undefined;
 }) {
-  const { t } = useTranslation();
+  const { i18n, t } = useTranslation();
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   const stepVote = useFeedback(reviewId);
@@ -88,10 +88,11 @@ export function TechnicalDetails({
               <div className="grid gap-1 rounded-md bg-muted p-2" data-testid="clause-cost">
                 <p>{t("cost.firstReview")}</p>
                 <p>
-                  {t("cost.tokens")}: {formatTokens(verdict.input_tokens, verdict.output_tokens)}
+                  {t("cost.tokens")}:{" "}
+                  {formatTokens(verdict.input_tokens, verdict.output_tokens, i18n.language)}
                 </p>
                 <p>
-                  {t("cost.latency")}: {formatDuration(verdict.latency_ms, "de")}
+                  {t("cost.latency")}: {formatDuration(verdict.latency_ms, i18n.language)}
                 </p>
                 <p>
                   {t("cost.cost")}:{" "}
@@ -102,7 +103,7 @@ export function TechnicalDetails({
                       : clauseCostUsd(pricing, verdict.input_tokens, verdict.output_tokens) *
                           pricing.eur_per_usd,
                     pricing,
-                    "de",
+                    i18n.language,
                   ) ?? t("cost.unpriced")}
                 </p>
               </div>

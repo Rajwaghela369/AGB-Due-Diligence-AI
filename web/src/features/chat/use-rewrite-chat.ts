@@ -109,6 +109,7 @@ export function useRewriteChat(reviewId: string, position: number) {
       let text = "";
       let result: ChatResult | null = null;
       let error: ChatError | null = null;
+      let finished = false;
       try {
         const response = await api.reviews.chat(
           reviewId,
@@ -124,11 +125,16 @@ export function useRewriteChat(reviewId: string, position: number) {
             patch({ text });
           } else if (message.event === "CUSTOM" && payload.name === "chat_result") {
             result = payload.value as ChatResult;
+          } else if (message.event === "RUN_FINISHED") {
+            finished = true;
           } else if (message.event === "RUN_ERROR") {
+            // An error invalidates any result received before it.
+            result = null;
+            finished = false;
             error = { code: payload.code ?? "chat_failed", message: payload.message ?? "" };
           }
         }
-        if (result) patch({ status: "done", text: result.text, result });
+        if (result && finished && !error) patch({ status: "done", text: result.text, result });
         else patch({ status: "error", error: error ?? { code: "interrupted", message: "" } });
       } catch (caught) {
         if (abort.signal.aborted) patch({ status: "stopped" });

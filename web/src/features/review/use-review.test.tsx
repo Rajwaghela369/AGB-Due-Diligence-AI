@@ -8,7 +8,7 @@ import type { DocumentOut, FindingsOut, Review } from "../../api/types.gen";
 import { server } from "../../test/server";
 import { clauseTitle } from "./clause-title";
 import { useReviewUi } from "./store";
-import { useReview } from "./use-review";
+import { useDecisionCount, useReview } from "./use-review";
 
 const REVIEW = {
   review_id: "r1",
@@ -133,6 +133,44 @@ describe("useReview", () => {
     expect(streamOpens).toBe(0);
     // The stored heading is never rewritten; titles are formatted at render time.
     expect(result.current.findings[0]?.clause.heading).toBe("3 Lieferung");
+  });
+
+  it("refetches the details after awaiting_decisions and after a decision", async () => {
+    let detailRequests = 0;
+    let detailStatus = "running";
+    server.use(
+      http.get("http://localhost/api/v1/reviews/r1", () => {
+        detailRequests += 1;
+        return HttpResponse.json({
+          review: { ...REVIEW, status: detailStatus },
+          pricing: { confirmed: true },
+          wall_time_ms: detailRequests * 1000,
+          cost_eur: null,
+          cache_hit_rate: 0,
+        });
+      }),
+      http.get("http://localhost/api/v1/reviews/r1/events", () =>
+        sse([
+          {
+            id: 1,
+            type: "STATE_SNAPSHOT",
+            data: {
+              snapshot: { review: { ...REVIEW, status: "awaiting_decisions" }, clauses: {} },
+            },
+          },
+          { id: 2, type: "RUN_FINISHED", data: {} },
+        ]),
+      ),
+    );
+    detailStatus = "awaiting_decisions";
+    const { result } = renderHook(() => useReview("r1"), { wrapper });
+    await waitFor(() => expect(detailRequests).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(result.current.wallTimeMs).toBe(detailRequests * 1000));
+
+    const before = detailRequests;
+    act(() => useDecisionCount.getState().bump("r1"));
+    await waitFor(() => expect(detailRequests).toBeGreaterThan(before));
+    await waitFor(() => expect(result.current.wallTimeMs).toBe(detailRequests * 1000));
   });
 
   it("opens one stream for a running review under Strict Mode", async () => {

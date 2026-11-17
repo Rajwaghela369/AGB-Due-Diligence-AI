@@ -347,6 +347,33 @@ describe("RewriteChat", () => {
     expect(screen.getAllByRole("alert")[1]).toHaveTextContent("Die Verbindung wurde unterbrochen.");
   });
 
+  it("commits a chat_result only once RUN_FINISHED arrives", async () => {
+    // The connection drops right after CUSTOM: no terminal event, so no answer.
+    answers.push(() => sse(bodyOf(successFrames().slice(0, 6))));
+    // RUN_ERROR after the result invalidates it.
+    answers.push(() =>
+      sse(
+        bodyOf([
+          ...successFrames().slice(0, 6),
+          frame("RUN_ERROR", { type: "RUN_ERROR", code: "daily_budget", message: "x" }),
+        ]),
+      ),
+    );
+    renderChat();
+    fireEvent.click(screen.getByRole("button", { name: "Formuliere 6.1 rechtskonform um" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Die Verbindung wurde unterbrochen.",
+    );
+    expect(screen.queryByTestId("chat-disclaimer")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Erneut fragen" }));
+    await waitFor(() => expect(screen.getAllByRole("alert")).toHaveLength(2));
+    expect(screen.getAllByRole("alert")[1]).toHaveTextContent(
+      "Das Tagesbudget für Modellaufrufe ist erschöpft.",
+    );
+    expect(screen.queryByTestId("chat-disclaimer")).toBeNull();
+  });
+
   it("stops a streaming answer", async () => {
     const stream = controlledBody();
     answers.push(() => sse(stream.body));

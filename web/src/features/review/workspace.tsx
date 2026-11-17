@@ -114,7 +114,13 @@ export function ReviewWorkspace() {
     >
       <ReviewerDialogHost />
       {review.summary && (
-        <SummaryBlock reviewId={review.review.review_id} summary={review.summary} />
+        // The summary must not push the panes out of the fixed-height workspace: it scrolls.
+        <div
+          tabIndex={0}
+          className="max-h-[22dvh] shrink-0 overflow-y-auto rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <SummaryBlock reviewId={review.review.review_id} summary={review.summary} />
+        </div>
       )}
       <div role="tablist" aria-label={t("workspace.panes")} className="flex gap-2 lg:hidden">
         {(
