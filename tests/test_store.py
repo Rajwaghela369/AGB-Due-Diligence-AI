@@ -272,6 +272,17 @@ def test_embedding_insert_or_reuse(store):
     assert store.caches.get_embedding(h, "other-model") is None
 
 
+def test_topic_cache_insert_or_reuse_per_model(store):
+    a, b = uid(), uid()
+    store.caches.put_topics("jina-v3", {a: "liability", b: "other"})
+    store.caches.put_topics("jina-v3", {a: "warranty"})  # first writer wins
+    store.caches.put_topics("jina-v3", {})
+
+    assert store.caches.get_topics([a, b, uid()], "jina-v3") == {a: "liability", b: "other"}
+    assert store.caches.get_topics([a], "jina-v4") == {}
+    assert store.caches.get_topics([], "jina-v3") == {}
+
+
 def test_retrieval_insert_or_reuse_and_key(store):
     h = content_hash(uid())
     first = [{"chunk_id": "bgb-307", "score": 0.9}]
@@ -394,6 +405,32 @@ def test_set_clause_statuses_upserts_many_in_one_call(store):
     }
 
 
+def test_clause_topics_live_on_the_review_rows(store):
+    review = store.reviews.create(make_review())
+    rid = review.review_id
+    store.reviews.set_clause_status(rid, 0, "done")
+    store.reviews.set_clause_topics(rid, {0: "liability", 1: "other"})
+    store.reviews.set_clause_topics(rid, {})
+
+    assert store.reviews.clause_topics(rid) == {0: "liability", 1: "other"}
+    # The topic never changes a status; a row it creates starts queued.
+    assert store.reviews.clause_statuses(rid) == {0: ("done", None), 1: ("queued", None)}
+    store.reviews.set_clause_status(rid, 1, "out_of_scope")
+    assert store.reviews.clause_topics(rid) == {0: "liability", 1: "other"}
+    assert store.reviews.clause_topics(store.reviews.create(make_review()).review_id) == {}
+
+
+def test_awaiting_decisions_is_idle_and_stamps_finished_at(store):
+    review = store.reviews.create(make_review())
+    store.reviews.set_status(review.review_id, "running")
+    store.reviews.set_status(review.review_id, "awaiting_decisions")
+
+    got = store.reviews.get(review.review_id)
+    assert got.status == "awaiting_decisions" and got.finished_at is not None
+    assert store.reviews.active_for(review.document_id, review.agent_version) is None
+    assert review.review_id not in {r.review_id for r in store.reviews.running()}
+
+
 # --- events -------------------------------------------------------------------
 
 
@@ -493,28 +530,165 @@ def test_concurrent_append_and_append_many_stay_gap_free_and_contiguous(store):
 # --- decisions and feedback ------------------------------------------------------
 
 
+def _decision(rid, position, action="accept", model="potentially_void", **kw) -> Decision:
+    return Decision(
+        review_id=rid,
+        position=position,
+        action=action,
+        model_verdict=model,
+        model_basis=kw.pop("model_basis", ["bgb-309-7-a"]),
+        **kw,
+    )
+
+
 def test_decision_upsert_on_review_and_position(store):
     rid = uid()
-    store.decisions.put(Decision(review_id=rid, position=3, action="accept"))
+    store.decisions.put(_decision(rid, 3), agent_version="v1")
 
     updated = store.decisions.put(
-        Decision(
-            review_id=rid,
-            position=3,
-            action="override",
+        _decision(
+            rid,
+            3,
+            "override",
             corrected_verdict="valid",
             corrected_basis=["bgb-307"],
             note="Anwalt: zulässig",
             decided_by="anna",
-        )
+            reason_de="Zulässig nach § 307.",
+        ),
+        agent_version="v1",
     )
-    store.decisions.put(Decision(review_id=rid, position=1, action="dismiss"))
+    store.decisions.put(_decision(rid, 1, "dismiss"), agent_version="v1")
 
     got = store.decisions.for_review(rid)
     assert list(got) == [1, 3]
     assert got[3].action == "override" and got[3].corrected_basis == ["bgb-307"]
     assert got[3].decided_at is not None and updated.note == "Anwalt: zulässig"
+    assert got[3].model_verdict == "potentially_void" and got[3].model_basis == ["bgb-309-7-a"]
+    assert got[3].reason_de == "Zulässig nach § 307." and not got[3].reason_unavailable
     assert store.decisions.for_review(uid()) == {}
+
+
+def test_a_decision_needs_the_model_verdict(store):
+    with pytest.raises(ValueError):
+        store.decisions.put(
+            Decision(review_id=uid(), position=0, action="accept"), agent_version="v1"
+        )
+
+
+def test_three_decisions_leave_three_history_rows_and_one_current(store):
+    rid = uid()
+    first = store.decisions.put(
+        _decision(rid, 2, decided_by="Anna Müller"),
+        agent_version="v1",
+        request_id="req-1",
+    )
+    store.decisions.put(
+        _decision(rid, 2, "override", corrected_verdict="valid", note="doch wirksam"),
+        agent_version="v1",
+        request_id="req-2",
+    )
+    store.decisions.put(_decision(rid, 2, "dismiss"), agent_version="v1", authenticated=True)
+    store.decisions.put(_decision(rid, 5), agent_version="v1")
+
+    assert list(store.decisions.for_review(rid)) == [2, 5]
+    history = store.decisions.history(rid, 2)
+    assert [e.action for e in history] == ["accept", "override", "dismiss"]
+    assert [e.previous_action for e in history] == [None, "accept", "override"]
+    assert history[0].event_id < history[1].event_id < history[2].event_id
+    # from: what was in force before; to: what is in force after.
+    assert (history[0].from_verdict, history[0].to_verdict) == (
+        "potentially_void",
+        "potentially_void",
+    )
+    assert history[0].from_basis == history[0].to_basis == ["bgb-309-7-a"]
+    # An override without a corrected basis keeps the model's §.
+    assert (history[1].from_verdict, history[1].to_verdict) == ("potentially_void", "valid")
+    assert history[1].to_basis == ["bgb-309-7-a"]
+    assert (history[2].from_verdict, history[2].to_verdict, history[2].to_basis) == (
+        "valid",
+        None,
+        [],
+    )
+    assert history[0].decided_by == "Anna Müller" and history[0].at == first.decided_at
+    assert [e.request_id for e in history] == ["req-1", "req-2", None]
+    assert [e.authenticated for e in history] == [False, False, True]
+    assert history[1].note == "doch wirksam" and history[0].agent_version == "v1"
+    assert [e.position for e in store.decisions.history(rid)] == [2, 2, 2, 5]
+    assert store.decisions.history(uid()) == []
+
+
+def test_concurrent_decisions_chain_their_history(store):
+    rid = uid()
+    verdicts = ["valid", "uncertain"] * 5
+
+    def decide(verdict):
+        store.decisions.put(
+            _decision(rid, 0, "override", corrected_verdict=verdict), agent_version="v1"
+        )
+
+    threads = [threading.Thread(target=decide, args=(v,)) for v in verdicts]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    history = store.decisions.history(rid, 0)
+    assert len(history) == len(verdicts)
+    # Each event starts where the one before it ended: no lost update in the chain.
+    for before, after in zip(history, history[1:], strict=False):
+        assert after.from_verdict == before.to_verdict
+    current = store.decisions.for_review(rid)[0]
+    assert current.corrected_verdict == history[-1].to_verdict
+
+
+def test_agreement_counts_current_decisions_per_version_and_verdict(store):
+    version = f"v-{uid()}"
+    review = make_review(version=version, status="finished")
+    store.reviews.create(review)
+    rid = review.review_id
+    put = store.decisions.put
+    put(_decision(rid, 0, "accept", model="potentially_void"), agent_version=version)
+    put(  # § changed only: still agreement
+        _decision(
+            rid,
+            1,
+            "override",
+            model="potentially_void",
+            corrected_verdict="potentially_void",
+            corrected_basis=["bgb-307"],
+        ),
+        agent_version=version,
+    )
+    put(
+        _decision(rid, 2, "override", model="potentially_void", corrected_verdict="valid"),
+        agent_version=version,
+    )
+    put(_decision(rid, 3, "dismiss", model="uncertain"), agent_version=version)
+    put(_decision(rid, 4, "accept", model="valid"), agent_version=version)
+    # Re-deciding replaces: position 4 was accepted, now overridden.
+    put(
+        _decision(rid, 4, "override", model="valid", corrected_verdict="potentially_void"),
+        agent_version=version,
+    )
+
+    [agreement] = store.metrics.agreement(version)
+    assert agreement.agent_version == version
+    assert (agreement.decided, agreement.kept, agreement.overridden, agreement.dismissed) == (
+        5,
+        2,
+        2,
+        1,
+    )
+    assert agreement.rate == pytest.approx(0.5)
+    void = agreement.by_verdict.potentially_void
+    assert (void.decided, void.kept, void.overridden, void.rate) == (3, 2, 1, pytest.approx(2 / 3))
+    uncertain = agreement.by_verdict.uncertain
+    assert (uncertain.decided, uncertain.dismissed, uncertain.rate) == (1, 1, None)
+    assert agreement.by_verdict.valid.overridden == 1
+    assert agreement.last_decided_at is not None
+    assert store.metrics.agreement(f"v-{uid()}") == []
+    assert version in {a.agent_version for a in store.metrics.agreement()}
 
 
 def _feedback(rid, position, vote="down", fid=None, **kw) -> Feedback:
@@ -573,3 +747,27 @@ def test_feedback_upsert_keeps_review_and_position_and_stores_observations(store
     assert (changed.review_id, changed.position) == (rid, 2)
     assert changed.observations == {"judge": "o2", "retrieval": None}
     assert store.feedback.for_review(rid)[2].observations == changed.observations
+
+
+@pytest.mark.skipif(not DATABASE_URL, reason="TEST_DATABASE_URL not set")
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "update decision_events set note = 'changed' where review_id = %s",
+        "delete from decision_events where review_id = %s",
+        "truncate decision_events",
+    ],
+)
+def test_postgres_refuses_to_change_decision_history(tmp_path, _migrated, statement):
+    import psycopg
+
+    from app.store.files import LocalFileStore
+    from app.store.postgres import postgres_store
+
+    store = postgres_store(LocalFileStore(tmp_path), _connect)
+    rid = uid()
+    store.decisions.put(_decision(rid, 0), agent_version="v1")
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), _connect() as conn:
+        conn.execute(statement, (rid,) if "%s" in statement else ())
+    assert len(store.decisions.history(rid)) == 1

@@ -23,11 +23,16 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from app.domain import (
+    IDLE_REVIEW_STATUSES,
     REASON_STEP,
+    Agreement,
+    AgreementByVerdict,
+    AgreementCounts,
     ClauseSpan,
     ClauseStatus,
     ClauseVerdict,
     Decision,
+    DecisionEvent,
     Document,
     Feedback,
     Review,
@@ -35,6 +40,8 @@ from app.domain import (
     ReviewStatus,
     StepObservations,
     StoredEvent,
+    agreement_rate,
+    decided_verdict,
 )
 from app.store.files import LocalFileStore
 from app.store.interfaces import FileStore
@@ -414,6 +421,31 @@ class PostgresCacheRepo(_Repo):
                 (content_hash, index_hash, policy_hash, Jsonb(candidates)),
             )
 
+    def get_topics(self, content_hashes: list[str], model: str) -> dict[str, str]:
+        hashes = list(dict.fromkeys(content_hashes))
+        if not hashes:
+            return {}
+        with self._connect() as conn:
+            rows = _rows(
+                conn,
+                "select content_hash, topic from topics where content_hash = any(%s)"
+                " and model = %s",
+                (hashes, model),
+            )
+        return {r["content_hash"]: r["topic"] for r in rows}
+
+    def put_topics(self, model: str, topics: dict[str, str]) -> None:
+        if not topics:
+            return
+        hashes = list(topics)
+        with self._connect() as conn:
+            conn.execute(
+                "insert into topics (content_hash, model, topic)"
+                " select h, %s::text, t from unnest(%s::text[], %s::text[]) as u(h, t)"
+                " on conflict (content_hash, model) do nothing",
+                (model, hashes, [topics[h] for h in hashes]),
+            )
+
 
 _REVIEW_COLUMNS = (
     "review_id, document_id, agent_version, scope, status, counts, cost_usd, trace_id, error,"
@@ -503,10 +535,10 @@ class PostgresReviewRepo(_Repo):
                 "update reviews set status = %s, error = %s,"
                 " started_at = case when %s::text = 'running'"
                 " then coalesce(started_at, clock_timestamp()) else started_at end,"
-                " finished_at = case when %s::text in ('finished', 'failed') then clock_timestamp()"
+                " finished_at = case when %s::text = any(%s::text[]) then clock_timestamp()"
                 " else finished_at end"
                 " where review_id = %s",
-                (status, error, status, status, review_id),
+                (status, error, status, status, list(IDLE_REVIEW_STATUSES), review_id),
             )
 
     def update_counts(self, review_id: str, counts: ReviewCounts, cost_usd: float) -> None:
@@ -565,6 +597,28 @@ class PostgresReviewRepo(_Repo):
             )
         return {r["position"]: (r["status"], r["error"]) for r in rows}
 
+    def set_clause_topics(self, review_id: str, topics: dict[int, str]) -> None:
+        if not topics:
+            return
+        positions = list(topics)
+        with self._connect() as conn:
+            conn.execute(
+                "insert into review_clauses (review_id, position, status, topic)"
+                " select %s::text, p, 'queued', t from unnest(%s::int[], %s::text[]) as u(p, t)"
+                " on conflict (review_id, position) do update set topic = excluded.topic",
+                (review_id, positions, [topics[p] for p in positions]),
+            )
+
+    def clause_topics(self, review_id: str) -> dict[int, str]:
+        with self._connect() as conn:
+            rows = _rows(
+                conn,
+                "select position, topic from review_clauses"
+                " where review_id = %s and topic is not null order by position",
+                (review_id,),
+            )
+        return {r["position"]: r["topic"] for r in rows}
+
 
 class PostgresEventRepo(_Repo):
     def append(self, review_id: str, type: str, payload: dict) -> StoredEvent:
@@ -615,21 +669,49 @@ class PostgresEventRepo(_Repo):
 
 
 _DECISION_COLUMNS = (
-    "review_id, position, action, corrected_verdict, corrected_basis, note, decided_by, decided_at"
+    "review_id, position, action, corrected_verdict, corrected_basis, note, decided_by,"
+    " decided_at, model_verdict, model_basis, reason_de, reason_unavailable"
+)
+_DECISION_EVENT_COLUMNS = (
+    "event_id, review_id, position, action, previous_action, from_verdict, from_basis,"
+    " to_verdict, to_basis, note, decided_by, authenticated, agent_version, request_id, at"
 )
 
 
 class PostgresDecisionRepo(_Repo):
-    def put(self, decision: Decision) -> Decision:
+    def put(
+        self,
+        decision: Decision,
+        *,
+        agent_version: str,
+        authenticated: bool = False,
+        request_id: str | None = None,
+    ) -> Decision:
+        if decision.model_verdict is None:
+            raise ValueError("a decision needs the model's verdict")
         with self._connect() as conn:
+            # One writer per clause at a time, so `from_*` is always the row this replaces.
+            conn.execute(
+                "select pg_advisory_xact_lock(hashtextextended(%s, 2))",
+                (f"{decision.review_id}:{decision.position}",),
+            )
+            previous = _row(
+                conn,
+                f"select {_DECISION_COLUMNS} from decisions where review_id = %s and position = %s",
+                (decision.review_id, decision.position),
+            )
             row = _row(
                 conn,
                 f"insert into decisions ({_DECISION_COLUMNS})"
-                " values (%s, %s, %s, %s, %s, %s, %s, coalesce(%s, clock_timestamp()))"
+                " values (%s, %s, %s, %s, %s, %s, %s, coalesce(%s, clock_timestamp()),"
+                " %s, %s, %s, %s)"
                 " on conflict (review_id, position) do update set"
                 " action = excluded.action, corrected_verdict = excluded.corrected_verdict,"
                 " corrected_basis = excluded.corrected_basis, note = excluded.note,"
-                " decided_by = excluded.decided_by, decided_at = excluded.decided_at"
+                " decided_by = excluded.decided_by, decided_at = excluded.decided_at,"
+                " model_verdict = excluded.model_verdict, model_basis = excluded.model_basis,"
+                " reason_de = excluded.reason_de,"
+                " reason_unavailable = excluded.reason_unavailable"
                 f" returning {_DECISION_COLUMNS}",
                 (
                     decision.review_id,
@@ -640,9 +722,51 @@ class PostgresDecisionRepo(_Repo):
                     decision.note,
                     decision.decided_by,
                     decision.decided_at,
+                    decision.model_verdict,
+                    decision.model_basis,
+                    decision.reason_de,
+                    decision.reason_unavailable,
                 ),
             )
-        return Decision(**row)
+            stored = Decision(**row)
+            if previous is None:
+                from_verdict, from_basis = stored.model_verdict, list(stored.model_basis)
+            else:
+                from_verdict, from_basis = decided_verdict(Decision(**previous))
+            to_verdict, to_basis = decided_verdict(stored)
+            conn.execute(
+                "insert into decision_events (review_id, position, action, previous_action,"
+                " from_verdict, from_basis, to_verdict, to_basis, note, decided_by,"
+                " authenticated, agent_version, request_id, at)"
+                " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    stored.review_id,
+                    stored.position,
+                    stored.action,
+                    previous["action"] if previous else None,
+                    from_verdict,
+                    from_basis,
+                    to_verdict,
+                    to_basis,
+                    stored.note,
+                    stored.decided_by,
+                    authenticated,
+                    agent_version,
+                    request_id,
+                    stored.decided_at,
+                ),
+            )
+        return stored
+
+    def history(self, review_id: str, position: int | None = None) -> list[DecisionEvent]:
+        with self._connect() as conn:
+            rows = _rows(
+                conn,
+                f"select {_DECISION_EVENT_COLUMNS} from decision_events where review_id = %s"
+                " and (%s::int is null or position = %s::int) order by event_id",
+                (review_id, position, position),
+            )
+        return [DecisionEvent(**r) for r in rows]
 
     def for_review(self, review_id: str) -> dict[int, Decision]:
         with self._connect() as conn:
@@ -716,6 +840,41 @@ class PostgresFeedbackRepo(_Repo):
         return {r["position"]: Feedback(**r) for r in rows}
 
 
+class PostgresMetricsRepo(_Repo):
+    def agreement(self, agent_version: str | None = None) -> list[Agreement]:
+        with self._connect() as conn:
+            rows = _rows(
+                conn,
+                "select agent_version, model_verdict, decided, kept, overridden, dismissed,"
+                " last_decided_at from decision_agreement"
+                " where %s::text is null or agent_version = %s::text",
+                (agent_version, agent_version),
+            )
+        tallies: dict[str, Agreement] = {}
+        for row in rows:
+            total = tallies.setdefault(
+                row["agent_version"], Agreement(agent_version=row["agent_version"])
+            )
+            per_class = AgreementCounts(
+                decided=row["decided"],
+                kept=row["kept"],
+                overridden=row["overridden"],
+                dismissed=row["dismissed"],
+                rate=agreement_rate(row["kept"], row["overridden"]),
+            )
+            if row["model_verdict"] in AgreementByVerdict.model_fields:
+                setattr(total.by_verdict, row["model_verdict"], per_class)
+            total.decided += per_class.decided
+            total.kept += per_class.kept
+            total.overridden += per_class.overridden
+            total.dismissed += per_class.dismissed
+            if total.last_decided_at is None or row["last_decided_at"] > total.last_decided_at:
+                total.last_decided_at = row["last_decided_at"]
+        for total in tallies.values():
+            total.rate = agreement_rate(total.kept, total.overridden)
+        return sorted(tallies.values(), key=lambda a: a.last_decided_at, reverse=True)
+
+
 @dataclass
 class PostgresStore:
     """Satisfies `app.store.interfaces.Store`."""
@@ -728,6 +887,7 @@ class PostgresStore:
     events: PostgresEventRepo
     decisions: PostgresDecisionRepo
     feedback: PostgresFeedbackRepo
+    metrics: PostgresMetricsRepo
     _pool: _ConnectionPool | None = None
 
     def close(self) -> None:
@@ -751,5 +911,6 @@ def postgres_store(files: FileStore | None = None, connect: Connect | None = Non
         events=PostgresEventRepo(connect),
         decisions=PostgresDecisionRepo(connect),
         feedback=PostgresFeedbackRepo(connect),
+        metrics=PostgresMetricsRepo(connect),
         _pool=pool,
     )

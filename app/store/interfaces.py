@@ -12,10 +12,12 @@ from collections.abc import Iterator
 from typing import Protocol
 
 from app.domain import (
+    Agreement,
     ClauseSpan,
     ClauseStatus,
     ClauseVerdict,
     Decision,
+    DecisionEvent,
     Document,
     Feedback,
     Review,
@@ -92,6 +94,14 @@ class CacheRepo(Protocol):
         self, content_hash: str, index_hash: str, policy_hash: str, candidates: list
     ) -> None: ...
 
+    def get_topics(self, content_hashes: list[str], model: str) -> dict[str, str]:
+        """Router topics already classified under `model`, keyed by content hash."""
+        ...
+
+    def put_topics(self, model: str, topics: dict[str, str]) -> None:
+        """Store `{content_hash: topic}`; insert-or-reuse per (content_hash, model)."""
+        ...
+
 
 class ReviewRepo(Protocol):
     def create(self, review: Review) -> Review: ...
@@ -126,6 +136,16 @@ class ReviewRepo(Protocol):
 
     def clause_statuses(self, review_id: str) -> dict[int, tuple[ClauseStatus, str | None]]: ...
 
+    def set_clause_topics(self, review_id: str, topics: dict[int, str]) -> None:
+        """Store the router topic per position on the review's clause rows, in one
+        transaction. A row that does not exist yet is created `queued`; an existing row
+        keeps its status. An empty mapping is a no-op."""
+        ...
+
+    def clause_topics(self, review_id: str) -> dict[int, str]:
+        """The topics `set_clause_topics` stored; positions without one are absent."""
+        ...
+
 
 class EventRepo(Protocol):
     def append(self, review_id: str, type: str, payload: dict) -> StoredEvent:
@@ -141,8 +161,39 @@ class EventRepo(Protocol):
 
 
 class DecisionRepo(Protocol):
-    def put(self, decision: Decision) -> Decision: ...  # upsert on (review_id, position)
+    def put(
+        self,
+        decision: Decision,
+        *,
+        agent_version: str,
+        authenticated: bool = False,
+        request_id: str | None = None,
+    ) -> Decision:
+        """Upsert the current decision on (review_id, position) and append its
+        `DecisionEvent`, in one transaction, serialised per (review_id, position).
+
+        The event's `from_*` and `previous_action` come from the row being replaced (read
+        inside the transaction), or from `decision.model_verdict`/`model_basis` for the first
+        decision; `to_*` from `decided_verdict(decision)`; `at` equals the stored
+        `decided_at` (now when None). Raises ValueError if `decision.model_verdict` is None.
+        Returns the stored decision.
+        """
+        ...
+
     def for_review(self, review_id: str) -> dict[int, Decision]: ...
+
+    def history(self, review_id: str, position: int | None = None) -> list[DecisionEvent]:
+        """The review's decision events (one position's, if given), oldest first."""
+        ...
+
+
+class MetricsRepo(Protocol):
+    def agreement(self, agent_version: str | None = None) -> list[Agreement]:
+        """Lawyer agreement per agent version over current decisions (the
+        `decision_agreement` view), most recently decided version first; only `agent_version`
+        if given. A version without decisions is absent. Decisions without a
+        `model_verdict` (made before migration 003 and not backfilled) are left out."""
+        ...
 
 
 class FeedbackRepo(Protocol):
@@ -162,3 +213,4 @@ class Store(Protocol):
     events: EventRepo
     decisions: DecisionRepo
     feedback: FeedbackRepo
+    metrics: MetricsRepo

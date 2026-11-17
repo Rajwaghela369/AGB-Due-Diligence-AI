@@ -15,16 +15,24 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from app.domain import (
+    IDLE_REVIEW_STATUSES,
+    Agreement,
+    AgreementByVerdict,
+    AgreementCounts,
     ClauseSpan,
     ClauseStatus,
     ClauseVerdict,
     Decision,
+    DecisionEvent,
     Document,
     Feedback,
     Review,
     ReviewCounts,
     ReviewStatus,
     StoredEvent,
+    agreement_rate,
+    decided_verdict,
+    kept_model_verdict,
 )
 
 
@@ -181,6 +189,7 @@ class MemoryCacheRepo:
         self._lock = threading.RLock()
         self._embeddings: dict[tuple[str, str], list[float]] = {}
         self._retrievals: dict[tuple[str, str, str], list] = {}
+        self._topics: dict[tuple[str, str], str] = {}
 
     def get_embedding(self, content_hash: str, model: str) -> list[float] | None:
         with self._lock:
@@ -204,6 +213,19 @@ class MemoryCacheRepo:
                 (content_hash, index_hash, policy_hash), deepcopy(candidates)
             )
 
+    def get_topics(self, content_hashes: list[str], model: str) -> dict[str, str]:
+        with self._lock:
+            return {
+                content_hash: topic
+                for content_hash in dict.fromkeys(content_hashes)
+                if (topic := self._topics.get((content_hash, model))) is not None
+            }
+
+    def put_topics(self, model: str, topics: dict[str, str]) -> None:
+        with self._lock:
+            for content_hash, topic in topics.items():
+                self._topics.setdefault((content_hash, model), topic)
+
 
 class MemoryReviewRepo:
     def __init__(self) -> None:
@@ -211,6 +233,7 @@ class MemoryReviewRepo:
         self._reviews: dict[str, Review] = {}
         self._order: dict[str, int] = {}  # insertion order breaks created_at ties
         self._clauses: dict[str, dict[int, tuple[ClauseStatus, str | None]]] = {}
+        self._topics: dict[str, dict[int, str]] = {}
 
     def create(self, review: Review) -> Review:
         with self._lock:
@@ -287,7 +310,7 @@ class MemoryReviewRepo:
             review.error = error
             if status == "running" and review.started_at is None:
                 review.started_at = _now()
-            if status in ("finished", "failed"):
+            if status in IDLE_REVIEW_STATUSES:
                 review.finished_at = _now()
 
     def update_counts(self, review_id: str, counts: ReviewCounts, cost_usd: float) -> None:
@@ -322,6 +345,21 @@ class MemoryReviewRepo:
         with self._lock:
             return dict(sorted(self._clauses.get(review_id, {}).items()))
 
+    def set_clause_topics(self, review_id: str, topics: dict[int, str]) -> None:
+        if not topics:
+            return
+        with self._lock:
+            if review_id not in self._reviews:
+                raise KeyError(review_id)  # Postgres: foreign key violation
+            rows = self._clauses.setdefault(review_id, {})
+            for position in topics:
+                rows.setdefault(position, ("queued", None))
+            self._topics.setdefault(review_id, {}).update(topics)
+
+    def clause_topics(self, review_id: str) -> dict[int, str]:
+        with self._lock:
+            return dict(sorted(self._topics.get(review_id, {}).items()))
+
 
 class MemoryEventRepo:
     def __init__(self) -> None:
@@ -355,13 +393,67 @@ class MemoryDecisionRepo:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._rows: dict[tuple[str, int], Decision] = {}
+        self._events: list[DecisionEvent] = []  # append-only, in event_id order
+        self._agent_versions: dict[str, str] = {}  # review_id -> agent_version, for metrics
 
-    def put(self, decision: Decision) -> Decision:
+    def put(
+        self,
+        decision: Decision,
+        *,
+        agent_version: str,
+        authenticated: bool = False,
+        request_id: str | None = None,
+    ) -> Decision:
+        if decision.model_verdict is None:
+            raise ValueError("a decision needs the model's verdict")
         with self._lock:
+            key = (decision.review_id, decision.position)
+            previous = self._rows.get(key)
             stored = decision.model_copy(deep=True)
             stored.decided_at = stored.decided_at or _now()
-            self._rows[(decision.review_id, decision.position)] = stored
+            if previous is None:
+                from_verdict, from_basis = decision.model_verdict, list(decision.model_basis)
+            else:
+                from_verdict, from_basis = decided_verdict(previous)
+            to_verdict, to_basis = decided_verdict(stored)
+            self._events.append(
+                DecisionEvent(
+                    event_id=len(self._events) + 1,
+                    review_id=stored.review_id,
+                    position=stored.position,
+                    action=stored.action,
+                    previous_action=previous.action if previous else None,
+                    from_verdict=from_verdict,
+                    from_basis=from_basis,
+                    to_verdict=to_verdict,
+                    to_basis=to_basis,
+                    note=stored.note,
+                    decided_by=stored.decided_by,
+                    authenticated=authenticated,
+                    agent_version=agent_version,
+                    request_id=request_id,
+                    at=stored.decided_at,
+                )
+            )
+            self._rows[key] = stored
+            self._agent_versions[stored.review_id] = agent_version
             return stored.model_copy(deep=True)
+
+    def history(self, review_id: str, position: int | None = None) -> list[DecisionEvent]:
+        with self._lock:
+            return [
+                event.model_copy(deep=True)
+                for event in self._events
+                if event.review_id == review_id and position in (None, event.position)
+            ]
+
+    def current(self) -> list[tuple[str, Decision]]:
+        """Every current decision with its review's agent version (for the metrics fake)."""
+        with self._lock:
+            return [
+                (self._agent_versions[rid], d.model_copy(deep=True))
+                for (rid, _), d in self._rows.items()
+            ]
 
     def for_review(self, review_id: str) -> dict[int, Decision]:
         with self._lock:
@@ -404,6 +496,44 @@ class MemoryFeedbackRepo:
             return {pos: fb.model_copy(deep=True) for pos, fb in sorted(latest.items())}
 
 
+class MemoryMetricsRepo:
+    """The `decision_agreement` view over the decision fake.
+
+    The view joins decisions to `reviews` for the agent version; the fake takes it from the
+    version each decision was stored under, which is the same thing for every caller.
+    """
+
+    def __init__(self, decisions: MemoryDecisionRepo) -> None:
+        self._decisions = decisions
+
+    def agreement(self, agent_version: str | None = None) -> list[Agreement]:
+        tallies: dict[str, Agreement] = {}
+        for version, decision in self._decisions.current():
+            if decision.model_verdict is None or agent_version not in (None, version):
+                continue
+            total = tallies.setdefault(version, Agreement(agent_version=version))
+            per_class = getattr(total.by_verdict, decision.model_verdict)
+            for counts in (total, per_class):
+                counts.decided += 1
+                kept = kept_model_verdict(decision)
+                if kept is None:
+                    counts.dismissed += 1
+                elif kept:
+                    counts.kept += 1
+                else:
+                    counts.overridden += 1
+            if total.last_decided_at is None or decision.decided_at > total.last_decided_at:
+                total.last_decided_at = decision.decided_at
+        for total in tallies.values():
+            counts_list: list[AgreementCounts] = [
+                total,
+                *(getattr(total.by_verdict, name) for name in AgreementByVerdict.model_fields),
+            ]
+            for counts in counts_list:
+                counts.rate = agreement_rate(counts.kept, counts.overridden)
+        return sorted(tallies.values(), key=lambda a: a.last_decided_at, reverse=True)
+
+
 @dataclass
 class MemoryStore:
     """Satisfies `app.store.interfaces.Store`."""
@@ -416,6 +546,10 @@ class MemoryStore:
     events: MemoryEventRepo = field(default_factory=MemoryEventRepo)
     decisions: MemoryDecisionRepo = field(default_factory=MemoryDecisionRepo)
     feedback: MemoryFeedbackRepo = field(default_factory=MemoryFeedbackRepo)
+    metrics: MemoryMetricsRepo = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.metrics = MemoryMetricsRepo(self.decisions)
 
 
 def memory_store() -> MemoryStore:
