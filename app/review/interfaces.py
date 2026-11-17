@@ -38,6 +38,11 @@ class ReviewService(Protocol):
         """
         ...
 
+    def explain_clause(self, review_id: str, position: int) -> Finding:
+        """Regenerate a void verdict's missing reasoning (one model call); ValueError if not
+        applicable."""
+        ...
+
     def resume_running(self) -> int:
         """Resume reviews left `running` by a restart; returns how many."""
         ...

@@ -62,6 +62,17 @@ class VerdictRepo(Protocol):
         """Return the stored verdicts among `content_hashes`, keyed by content hash."""
         ...
 
+    def set_reason(
+        self,
+        content_hash: str,
+        agent_version: str,
+        reason_de: str,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> ClauseVerdict | None:
+        """Fill a missing reasoning; None if the verdict is absent or already has one."""
+        ...
+
     def save(self, verdict: ClauseVerdict) -> ClauseVerdict:
         """Insert or reuse on (content_hash, agent_version); returns the stored row."""
         ...

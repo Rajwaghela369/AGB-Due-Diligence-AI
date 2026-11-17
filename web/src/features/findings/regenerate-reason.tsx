@@ -6,35 +6,14 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { ApiError } from "../../api/client";
-import type { ErrorBody, Finding } from "../../api/types.gen";
+import { ApiError, api } from "../../api/client";
 import { reviewKeys } from "../review/use-review";
-
-const baseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-
-// The shared client is a fixed contract without this endpoint yet, so the call lives here.
-async function explainClause(reviewId: string, position: number): Promise<Finding> {
-  const response = await fetch(
-    `${baseUrl}/api/v1/reviews/${encodeURIComponent(reviewId)}/clauses/${position}/explain`,
-    { method: "POST" },
-  );
-  if (!response.ok) {
-    let body: ErrorBody = { code: "http_error", message: response.statusText };
-    try {
-      body = (await response.json()) as ErrorBody;
-    } catch {
-      // A proxy can answer with HTML; the caller still gets one stable error shape.
-    }
-    throw new ApiError(response.status, body);
-  }
-  return (await response.json()) as Finding;
-}
 
 export function RegenerateReason({ reviewId, position }: { reviewId: string; position: number }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const mutation = useMutation({
-    mutationFn: () => explainClause(reviewId, position),
+    mutationFn: () => api.reviews.explainClause(reviewId, position),
     onSettled: () => queryClient.invalidateQueries({ queryKey: reviewKeys.findings(reviewId) }),
   });
   const conflict = mutation.error instanceof ApiError && mutation.error.status === 409;

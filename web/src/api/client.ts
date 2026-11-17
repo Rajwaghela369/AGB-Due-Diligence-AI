@@ -8,6 +8,7 @@ import type {
   ErrorBody,
   FeedbackIn,
   FeedbackOut,
+  Finding,
   FindingsOut,
   Health,
   PasteIn,
@@ -92,6 +93,12 @@ export function createApiClient(options: ApiClientOptions = {}) {
       },
       findings(reviewId: string): Promise<FindingsOut> {
         return request(`/reviews/${encodeURIComponent(reviewId)}/findings`);
+      },
+      /** Re-run only the explanation for a void verdict without one: one paid model call. */
+      explainClause(reviewId: string, position: number): Promise<Finding> {
+        return request(`/reviews/${encodeURIComponent(reviewId)}/clauses/${position}/explain`, {
+          method: "POST",
+        });
       },
       retryClause(reviewId: string, position: number): Promise<ReviewOut> {
         return request(`/reviews/${encodeURIComponent(reviewId)}/clauses/${position}/retry`, {
