@@ -23,7 +23,7 @@ from typing import Any
 from ag_ui.core import BaseEvent
 from core.logging import get_logger
 
-from app.domain import EVENT_SCHEMA_VERSION, StoredEvent
+from app.domain import EVENT_SCHEMA_VERSION, IDLE_REVIEW_STATUSES, StoredEvent
 from app.store.interfaces import Store
 
 log = get_logger("review.events")
@@ -189,13 +189,13 @@ class EventBus:
             self._unregister(review_id, channel)
 
     def _review_terminal(self, review_id: str) -> bool:
-        """The stored review is finished or failed (or unknown: nothing more will come)."""
+        """No run of the stored review is going (or it is unknown: nothing more will come)."""
         try:
             review = self._store.reviews.get(review_id)
         except Exception:  # noqa: BLE001 - cannot tell; keep the stream open
             log.warning("could not read review %s", review_id, exc_info=True)
             return False
-        return review is None or review.status in ("finished", "failed")
+        return review is None or review.status in IDLE_REVIEW_STATUSES
 
     def _register(self, review_id: str) -> _Channel:
         with self._lock:

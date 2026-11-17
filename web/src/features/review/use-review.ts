@@ -8,21 +8,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { api } from "../../api/client";
 import { useReviewStream, type ReviewProgress } from "../../api/events";
-import type {
-  ClauseSpan,
-  ClauseVerdict,
-  DocumentOut,
-  Finding,
-  Review,
-  Status1,
-} from "../../api/types.gen";
+import type { ClauseSpan, ClauseVerdict, DocumentOut, Finding, Review } from "../../api/types.gen";
+import type { ClauseStatus } from "../../api/aliases";
 
 export type { ReviewProgress };
 
 export interface ReviewFinding {
   position: number;
   clause: ClauseSpan;
-  status: Status1;
+  status: ClauseStatus;
   verdict: ClauseVerdict | null;
   error: string | null;
   decision: Finding["decision"];

@@ -107,10 +107,20 @@ class FeedbackService:
         except Exception:  # noqa: BLE001 - tracing is best effort by contract
             log.warning("could not delete stale Langfuse score %s", score_id, exc_info=True)
 
-    def decide(self, review_id: str, position: int, request: Any) -> Decision:
+    def decide(
+        self,
+        review_id: str,
+        position: int,
+        request: Any,
+        *,
+        decided_by: str | None = None,
+        request_id: str | None = None,
+    ) -> Decision:
+        """Phase 5 decision path, kept working until Phase 7 Wave 1 moves the route to
+        `ReviewService.decide` (which also maintains counts, events and resumes)."""
         if request.action == "override" and request.corrected_verdict is None:
             raise ValueError("override requires corrected_verdict")
-        self._verdict(review_id, position)
+        review, verdict = self._verdict(review_id, position)
         decision = self.store.decisions.put(
             Decision(
                 review_id=review_id,
@@ -119,7 +129,12 @@ class FeedbackService:
                 corrected_verdict=request.corrected_verdict,
                 corrected_basis=request.corrected_basis,
                 note=request.note,
-            )
+                decided_by=decided_by,
+                model_verdict=verdict.verdict,
+                model_basis=verdict.legal_basis,
+            ),
+            agent_version=review.agent_version,
+            request_id=request_id,
         )
         if request.action == "accept":
             feedback = _FeedbackRequest(review_id, position, "up", [], None, [], request.note)

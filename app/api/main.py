@@ -13,7 +13,7 @@ from core.schemas import LawChunk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.deps import setting
+from app.api.deps import REVIEWER_HEADER, setting
 from app.api.errors import install_error_handlers
 from app.api.middleware import BodyLimitMiddleware, RequestLogMiddleware
 from app.api.rate_limit import IpRateLimiter
@@ -67,7 +67,7 @@ def create_app(
         CORSMiddleware,
         allow_origins=list(setting(settings, "api.cors_origins", [])),
         allow_methods=["GET", "POST", "PUT"],
-        allow_headers=["Content-Type", "Last-Event-ID"],
+        allow_headers=["Content-Type", "Last-Event-ID", REVIEWER_HEADER],
         expose_headers=["X-Request-Id"],
         max_age=600,
     )
@@ -96,9 +96,12 @@ def load_statutes(path: Path) -> dict[str, LawChunk]:
 
 def build_app() -> FastAPI:
     """Wire production adapters lazily for ``uvicorn app.api.main:app --factory``."""
+    from functools import partial
+
     from core import langfuse_client
     from core.config import load_yaml
     from core.paths import CONFIGS, PROCESSED, ROOT
+    from core.routing import classify_topics
     from core.settings import load_settings
 
     from app.agent.run import make_judge
@@ -121,23 +124,28 @@ def build_app() -> FastAPI:
     if environment.langfuse_public_key and environment.langfuse_secret_key:
         tracer = langfuse_client.client()
     judge = make_judge(config, limiter=limiter, tracer=tracer, caches=store.caches)
+    feedback = FeedbackService(store, tracer)
+    router_model = setting(config, "models.router.name", "jina-embeddings-v3")
     service = build_service(
         store,
         judge,
         limiter,
         tracer,
         statutes=statutes,
+        router=partial(classify_topics, model=router_model),
+        router_model=router_model,
+        feedback=feedback,
         **review_settings(config),
     )
     return create_app(
         store=store,
         service=service,
         statutes=statutes,
-        feedback=FeedbackService(store, tracer),
+        feedback=feedback,
         settings=config,
         readiness=production_probes(
             alias=setting(config, "store.alias", "bgb_agb"),
-            router_model=setting(config, "models.router.name", "jina-embeddings-v3"),
+            router_model=router_model,
             explain_model=setting(config, "models.explain.name", "gemini-3.8-flash"),
         ),
     )

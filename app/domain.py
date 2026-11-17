@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from core.schemas import Verdict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # --- documents and clauses --------------------------------------------------
 
@@ -41,7 +41,10 @@ class ClauseSpan(BaseModel):
     start: int | None = None
     end: int | None = None
     in_scope: bool = True
-    topic: str | None = None  # router hint, filled when the clause is judged
+    # Router topic ("liability", "warranty", "other"). Ingest leaves it None so it stays
+    # offline and deterministic; a review tags its clauses at start and stores the topic on
+    # its own clause rows, and every clause the review returns carries it.
+    topic: str | None = None
 
 
 class Document(BaseModel):
@@ -63,7 +66,11 @@ class IngestResult(BaseModel):
 
 # --- verdicts -----------------------------------------------------------------
 
-ClauseStatus = Literal["queued", "checking", "done", "failed", "out_of_scope"]
+# queued → checking → done | failed | awaiting_decision; a cache hit goes queued → done, or
+# queued → awaiting_decision for a cached `uncertain` verdict. awaiting_decision → done when
+# the lawyer decides. A clause has a verdict in `done` and `awaiting_decision` (and may have
+# one in `checking`); never in `queued`, `failed` or `out_of_scope`.
+ClauseStatus = Literal["queued", "checking", "done", "failed", "out_of_scope", "awaiting_decision"]
 StepName = Literal["route", "retrieve", "judge", "self-check", "retry-retrieve", "explain"]
 
 
@@ -99,18 +106,37 @@ class ClauseVerdict(BaseModel):
 
 # --- reviews ------------------------------------------------------------------
 
-ReviewStatus = Literal["queued", "running", "finished", "failed"]
+# queued → running → finished | awaiting_decisions | failed. A run ends `awaiting_decisions`
+# when at least one clause is `awaiting_decision`; the decision that settles the last one
+# makes it `finished` (when no run is going). A retry makes any idle review `running`
+# again; a decision never changes `finished` or `failed`. See docs/Events.md.
+ReviewStatus = Literal["queued", "running", "finished", "awaiting_decisions", "failed"]
+
+# Statuses in which no run of the review is going: its event log ends in a terminal event.
+IDLE_REVIEW_STATUSES: tuple[ReviewStatus, ...] = ("finished", "awaiting_decisions", "failed")
 
 
 class ReviewCounts(BaseModel):
+    """Per-review tallies, computed by `app.review.runner.count` and nowhere else.
+
+    The verdict classes count the model's verdict of every clause that has one (`done` or
+    `awaiting_decision`). The decision tallies count current decisions (one per clause)
+    on clauses with a verdict; `open_*` are those verdicts with no decision yet. The
+    review can be closed („Prüfung abschließen“) when `open_void == open_review == 0`.
+    """
+
     total: int = 0  # in-scope clauses
-    done: int = 0
+    done: int = 0  # status `done`
     failed: int = 0
+    awaiting_decision: int = 0  # status `awaiting_decision`
     potentially_void: int = 0
     uncertain: int = 0
     valid: int = 0
     out_of_scope: int = 0
     cache_hits: int = 0
+    decided: int = 0  # clauses with a verdict and a decision (any action)
+    open_void: int = 0  # potentially_void verdicts without a decision
+    open_review: int = 0  # uncertain verdicts without a decision
 
 
 class Review(BaseModel):
@@ -128,18 +154,130 @@ class Review(BaseModel):
     finished_at: datetime | None = None
 
 
+# --- decisions ------------------------------------------------------------------
+
 DecisionAction = Literal["accept", "override", "dismiss"]
+FindingStatus = Literal["open", "accepted", "overridden", "dismissed"]
+
+FINDING_STATUS: dict[DecisionAction, FindingStatus] = {
+    "accept": "accepted",
+    "override": "overridden",
+    "dismiss": "dismissed",
+}
+
+
+class Reviewer(BaseModel):
+    """Who decides. Before login (Phase 9) the name comes from the `X-Reviewer` header and is
+    not authenticated; the audit trail says so."""
+
+    name: str | None = None  # None: the header was absent or blank
+    authenticated: bool = False
+
+
+class DecisionIn(BaseModel):
+    """A lawyer's decision on one finding. `corrected_*` are only allowed with `override`;
+    an override needs `corrected_verdict`, and an empty `corrected_basis` keeps the model's §."""
+
+    action: DecisionAction
+    corrected_verdict: Verdict | None = None
+    corrected_basis: list[str] = Field(default_factory=list)  # statute chunk_ids
+    note: str = Field(default="", max_length=2000)
 
 
 class Decision(BaseModel):
+    """The current decision on one clause of one review (one row per review and position)."""
+
     review_id: str
     position: int
     action: DecisionAction
     corrected_verdict: Verdict | None = None
     corrected_basis: list[str] = Field(default_factory=list)
     note: str = ""
-    decided_by: str | None = None  # no login in v1
+    decided_by: str | None = None  # Reviewer.name
     decided_at: datetime | None = None
+    # The model's verdict and basis when the decision was made, so the history and the
+    # agreement figures never need the shared verdict cache.
+    model_verdict: Verdict | None = None
+    model_basis: list[str] = Field(default_factory=list)
+    # The reasoning written for the lawyer's verdict when a decision resumes an interrupted
+    # clause and the decided verdict is potentially_void (Phase 7 plan, 7.B). The verdict
+    # row keeps the model's own reasoning.
+    reason_de: str = ""
+    reason_unavailable: bool = False
+
+
+def decided_verdict(decision: Decision) -> tuple[Verdict | None, list[str]]:
+    """The verdict and basis in force after a decision: the model's on accept, the corrected
+    ones on override (an empty corrected basis keeps the model's), none on dismiss."""
+    if decision.action == "accept":
+        return decision.model_verdict, list(decision.model_basis)
+    if decision.action == "override":
+        return decision.corrected_verdict, list(decision.corrected_basis or decision.model_basis)
+    return None, []
+
+
+def kept_model_verdict(decision: Decision) -> bool | None:
+    """True if the lawyer kept the model's verdict (accept, or an override of the § only),
+    False if they changed it, None for a dismissal (not counted as agreement or not)."""
+    if decision.action == "dismiss":
+        return None
+    return decided_verdict(decision)[0] == decision.model_verdict
+
+
+class DecisionEvent(BaseModel):
+    """One row of the append-only decision history (`decision_events`).
+
+    Written in the same transaction as the decision it records, never updated or deleted.
+    `from_*` is what was in force before (the previous decision's `decided_verdict`, or the
+    model's verdict and basis for the first decision), `to_*` what is in force after.
+    """
+
+    event_id: int  # assigned by the store, increasing in write order
+    review_id: str
+    position: int
+    action: DecisionAction
+    previous_action: DecisionAction | None = None  # None for the first decision
+    from_verdict: Verdict | None = None
+    from_basis: list[str] = Field(default_factory=list)
+    to_verdict: Verdict | None = None  # None after a dismissal
+    to_basis: list[str] = Field(default_factory=list)
+    note: str = ""
+    decided_by: str | None = None
+    authenticated: bool = False
+    agent_version: str
+    request_id: str | None = None  # the API request's X-Request-Id
+    at: datetime
+
+
+class AgreementCounts(BaseModel):
+    """Lawyer agreement over current decisions; `decided = kept + overridden + dismissed`."""
+
+    decided: int = 0
+    kept: int = 0  # accepted, or overridden with the same verdict (§ changed only)
+    overridden: int = 0  # overridden to a different verdict
+    dismissed: int = 0  # not relevant: neither agreement nor disagreement
+    rate: float | None = None  # kept / (kept + overridden); None when that is 0
+
+
+class AgreementByVerdict(BaseModel):
+    """The same figures per model verdict: `potentially_void.rate` is void precision as the
+    lawyer sees it."""
+
+    potentially_void: AgreementCounts = Field(default_factory=AgreementCounts)
+    uncertain: AgreementCounts = Field(default_factory=AgreementCounts)
+    valid: AgreementCounts = Field(default_factory=AgreementCounts)
+
+
+class Agreement(AgreementCounts):
+    """Lawyer agreement for one agent version, over every review judged by it."""
+
+    agent_version: str
+    by_verdict: AgreementByVerdict = Field(default_factory=AgreementByVerdict)
+    last_decided_at: datetime | None = None
+
+
+def agreement_rate(kept: int, overridden: int) -> float | None:
+    return kept / (kept + overridden) if kept + overridden else None
 
 
 class Finding(BaseModel):
@@ -151,7 +289,16 @@ class Finding(BaseModel):
     verdict: ClauseVerdict | None = None
     error: str | None = None
     decision: Decision | None = None
+    # Derived from `decision` on construction: "open" when there is none.
+    finding_status: FindingStatus = "open"
     feedback: "Feedback | None" = None  # the latest vote on this clause
+
+    @model_validator(mode="after")
+    def _derive_finding_status(self) -> "Finding":
+        self.finding_status = (
+            FINDING_STATUS[self.decision.action] if self.decision is not None else "open"
+        )
+        return self
 
 
 # --- feedback -----------------------------------------------------------------
@@ -207,6 +354,22 @@ EventType = Literal[
 
 # `CUSTOM` event names.
 CUSTOM_PROGRESS = "progress"  # value: ReviewCounts + cost_usd + budget_left + waiting_reason
+CUSTOM_INTERRUPT = "interrupt"  # value: Interrupt
+
+# Shown to the lawyer on a clause awaiting a decision.
+INTERRUPT_QUESTION = (
+    "Das Modell ist unsicher. Bitte entscheiden Sie: Ergebnis übernehmen, ändern oder als "
+    "nicht relevant verwerfen."
+)
+
+
+class Interrupt(BaseModel):
+    """`CUSTOM` `interrupt` value: a clause now waits for the lawyer (docs/Events.md)."""
+
+    position: int
+    verdict: Verdict  # the model's verdict; "uncertain" in v1
+    confidence: float
+    question: str = INTERRUPT_QUESTION
 
 
 class StoredEvent(BaseModel):

@@ -51,7 +51,7 @@ class QueryConnection:
             self._rows = self.clauses
         elif "from review_clauses" in sql:
             self._rows = [
-                {"position": clause["position"], "status": "done", "error": None}
+                {"position": clause["position"], "status": "done", "error": None, "topic": None}
                 for clause in self.clauses
             ]
         elif "from verdicts" in sql:
@@ -114,7 +114,8 @@ def test_findings_uses_a_constant_number_of_selects(tmp_path):
 
     assert len(findings) == len(texts)
     assert all(finding.verdict is not None for finding in findings)
-    assert len(connection.queries) == 6
+    # review, clauses, clause statuses, clause topics, verdicts, decisions, feedback
+    assert len(connection.queries) == 7
     assert sum("from verdicts" in sql for sql in connection.queries) == 1
 
 

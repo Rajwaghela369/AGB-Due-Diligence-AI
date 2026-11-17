@@ -8,20 +8,28 @@ from app.api.deps import state
 from app.api.errors import ApiError
 from app.api.schemas import Finding, FindingsOut, ReviewIn, ReviewOut
 from app.api.sse import stream_events
+from app.domain import Review
 
 router = APIRouter()
 
 
-def _review_out(request: Request, review) -> ReviewOut:
+def review_out(request: Request, review: Review) -> ReviewOut:
+    """A review with the limiter's state and the lawyer's progress (see `ReviewOut`)."""
     dependencies = state(request)
-    total = review.counts.total
-    cache_hit_rate = review.counts.cache_hits / total if total else 0.0
+    counts = review.counts
+    cache_hit_rate = counts.cache_hits / counts.total if counts.total else 0.0
+    decidable = counts.potentially_void + counts.uncertain + counts.valid
     limiter = getattr(dependencies, "limiter", None)
     return ReviewOut(
         review=review,
         cache_hit_rate=cache_hit_rate,
         budget_left=limiter.remaining_today() if limiter is not None else None,
         waiting_reason=limiter.waiting_reason() if limiter is not None else None,
+        decidable=decidable,
+        progress=counts.decided / decidable if decidable else 0.0,
+        can_complete=review.status in ("finished", "awaiting_decisions")
+        and counts.open_void == 0
+        and counts.open_review == 0,
     )
 
 
@@ -31,7 +39,7 @@ def create_review(payload: ReviewIn, request: Request) -> ReviewOut:
     address = request.client.host if request.client else "unknown"
     if not dependencies.rate_limiter.allow(address):
         raise ApiError(429, "rate_limited", "Zu viele Anfragen. Bitte versuchen Sie es später.")
-    return _review_out(request, dependencies.service.start(payload.document_id, payload.scope))
+    return review_out(request, dependencies.service.start(payload.document_id, payload.scope))
 
 
 @router.get("/reviews/{review_id}", response_model=ReviewOut)
@@ -39,7 +47,7 @@ def get_review(review_id: str, request: Request) -> ReviewOut:
     review = state(request).service.get(review_id)
     if review is None:
         raise ApiError(404, "not_found", "Prüfung nicht gefunden.")
-    return _review_out(request, review)
+    return review_out(request, review)
 
 
 @router.get("/reviews/{review_id}/findings", response_model=FindingsOut)
@@ -58,7 +66,7 @@ def retry_clause(review_id: str, position: int, request: Request) -> ReviewOut:
     review = service.get(review_id)
     if review is None:  # the service contract guarantees it still exists
         raise ApiError(404, "not_found", "Prüfung nicht gefunden.")
-    return _review_out(request, review)
+    return review_out(request, review)
 
 
 @router.post("/reviews/{review_id}/clauses/{position}/explain", response_model=Finding)

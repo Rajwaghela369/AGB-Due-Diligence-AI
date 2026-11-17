@@ -683,13 +683,20 @@ def test_build_app_wires_the_real_service_contract(monkeypatch, with_langfuse):
         config,
         {"limiter": limiter, "tracer": expected_tracer, "caches": store.caches},
     )
-    assert calls["service"] == (
+    args, kwargs = calls["service"]
+    router = kwargs.pop("router")
+    assert (args, kwargs) == (
         (store, judge, limiter, expected_tracer),
         {
             "statutes": {},
+            "router_model": "jina-embeddings-v3",
+            "feedback": application.state.feedback,
             "max_concurrency": 2,
             "prices": {"input": 0.0, "output": 0.0},
         },
     )
+    # Topics come from the Jina classifier under the configured model, batched.
+    assert router.func.__name__ == "classify_topics"
+    assert router.keywords == {"model": "jina-embeddings-v3"}
     assert application.state.feedback.langfuse is expected_tracer
     assert calls["files_root"] == ROOT / "stores/files"

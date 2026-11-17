@@ -20,7 +20,20 @@ from typing import Any
 from ag_ui.core import RunErrorEvent, RunFinishedEvent, StateSnapshotEvent
 from core.logging import get_logger
 
-from app.domain import Finding, Review, StoredEvent, Topic
+from app.domain import (
+    IDLE_REVIEW_STATUSES,
+    Agreement,
+    ClauseSpan,
+    ClauseVerdict,
+    Decision,
+    DecisionEvent,
+    DecisionIn,
+    Finding,
+    Review,
+    Reviewer,
+    StoredEvent,
+    Topic,
+)
 from app.review.events import TERMINAL_TYPES, EventBus, Subscription, serialise
 from app.review.limiter import DEFAULT_MAX_CONCURRENCY
 from app.review.runner import (
@@ -29,8 +42,13 @@ from app.review.runner import (
     build_state,
     load_entries,
     regenerate_reason,
+    review_clauses,
 )
+from app.review.topics import Router, tag_topics
 from app.store.interfaces import Store
+
+DEFAULT_ROUTER_MODEL = "jina-embeddings-v3"
+WAVE_1 = "Phase 7 Wave 1"
 
 log = get_logger("review.service")
 
@@ -50,6 +68,9 @@ class Service:
         prices: dict[str, float] | None = None,
         poll_seconds: float = 0.5,
         recheck_seconds: float = 5.0,
+        router: Router | None = None,
+        router_model: str = DEFAULT_ROUTER_MODEL,
+        feedback: Any = None,
     ) -> None:
         if max_concurrency < 1:
             raise ValueError("max_concurrency must be at least 1")
@@ -57,6 +78,9 @@ class Service:
         self.judge = judge
         self.limiter = limiter
         self.statutes = statutes  # kept for the API; the runner itself does not read statutes
+        self.router = router  # None: clauses keep no topic and every in-scope clause is judged
+        self.router_model = router_model
+        self.feedback = feedback  # app.review.feedback.FeedbackService, used by `decide`
         self.bus = EventBus(store, recheck_seconds=recheck_seconds)
         self._ctx = RunContext(
             store=store,
@@ -83,6 +107,8 @@ class Service:
         """Start a review, or return the active one for this document and agent version.
 
         Raises KeyError for an unknown document and ValueError for one without clauses.
+        The clauses are tagged with topics first, outside the lock (it may call the router),
+        and the active-review check is repeated after it.
         """
         with self._lock:
             self._check_open()
@@ -94,6 +120,12 @@ class Service:
             clauses = self.store.documents.clauses(document_id)
             if not clauses:
                 raise ValueError(f"document {document_id} has no clauses")
+        topics = self._tag(clauses)
+        with self._lock:
+            self._check_open()
+            active = self.store.reviews.active_for(document_id, self.agent_version)
+            if active is not None:
+                return active
             review_id = uuid.uuid4().hex
             review = self.store.reviews.create(
                 Review(
@@ -106,6 +138,13 @@ class Service:
             )
             if review.review_id != review_id:
                 return review  # another process won the race (reviews_one_active_idx)
+            try:
+                self.store.reviews.set_clause_topics(review_id, topics)
+            except Exception as exc:
+                self.store.reviews.set_status(review_id, "failed", f"{type(exc).__name__}: {exc}")
+                raise
+            for clause in clauses:
+                clause.topic = topics.get(clause.position, clause.topic)
             self._launch(review, clauses, positions=None, reason="start")
             return self.store.reviews.get(review.review_id)  # type: ignore[return-value]
 
@@ -115,7 +154,7 @@ class Service:
     def findings(self, review_id: str) -> list[Finding]:
         """Every clause in document order. Raises KeyError for an unknown review."""
         review = self._review(review_id)
-        clauses = self.store.documents.clauses(review.document_id)
+        clauses = review_clauses(self.store, review)
         entries = load_entries(self.store, review, clauses)
         decisions = self.store.decisions.for_review(review_id)
         votes = self.store.feedback.for_review(review_id)
@@ -152,7 +191,7 @@ class Service:
             active = self.store.reviews.active_for(review.document_id, review.agent_version)
             if active is not None and active.review_id != review_id:
                 raise ValueError(f"review {active.review_id} of this document is running")
-            clauses = self.store.documents.clauses(review.document_id)
+            clauses = review_clauses(self.store, review)
             self._launch(review, clauses, positions=[position], reason="retry")
 
     def explain_clause(self, review_id: str, position: int) -> Finding:
@@ -168,7 +207,7 @@ class Service:
         if explain is None:
             raise RuntimeError("this agent cannot regenerate a reasoning")
         clause = next(
-            (c for c in self.store.documents.clauses(review.document_id) if c.position == position),
+            (c for c in review_clauses(self.store, review) if c.position == position),
             None,
         )
         if clause is None:
@@ -204,7 +243,7 @@ class Service:
         comes. Done when the review is read, which covers every review a client
         can ask for, rather than by scanning the table at startup.
         """
-        if review.status not in ("finished", "failed"):
+        if review.status not in IDLE_REVIEW_STATUSES:
             return
         with self._lock:
             if review.review_id in self._runs:
@@ -212,7 +251,7 @@ class Service:
             events = list(self.store.events.since(review.review_id, 0))
             if events and events[-1].type in TERMINAL_TYPES:
                 return
-            if review.status == "finished":
+            if review.status != "failed":
                 result = {
                     "counts": review.counts.model_dump(mode="json"),
                     "cost_usd": review.cost_usd,
@@ -235,7 +274,7 @@ class Service:
             # Built from the store when the client reconnects. Anything it already reflects
             # and is replayed below is a `replace`, so applying it twice changes nothing.
             review = self._review(review_id)
-            clauses = self.store.documents.clauses(review.document_id)
+            clauses = review_clauses(self.store, review)
             state = build_state(review, load_entries(self.store, review, clauses))
             first.append(
                 StoredEvent(
@@ -246,6 +285,48 @@ class Service:
                 )
             )
         return self.bus.subscribe(review_id, after_seq, follow=follow, first=first)
+
+    # --- Phase 7: decisions (Wave 1 implements these; signatures are the contract) -----
+
+    def decide(
+        self,
+        review_id: str,
+        position: int,
+        decision: DecisionIn,
+        reviewer: Reviewer,
+        *,
+        request_id: str | None = None,
+    ) -> Finding:
+        """See `ReviewService.decide`. Owner: decisions-api. For an `awaiting_decision`
+        clause it calls `_resume_decided` (owner: interrupt) before storing the decision."""
+        raise NotImplementedError(WAVE_1)
+
+    def audit(self, review_id: str, position: int | None = None) -> list[DecisionEvent]:
+        """See `ReviewService.audit`. Owner: decisions-api."""
+        raise NotImplementedError(WAVE_1)
+
+    def agreement(self, agent_version: str | None = None) -> Agreement:
+        """See `ReviewService.agreement`. Owner: decisions-api."""
+        raise NotImplementedError(WAVE_1)
+
+    def _resume_decided(
+        self, review: Review, clause: ClauseSpan, verdict: ClauseVerdict, decision: Decision
+    ) -> tuple[Decision, float]:
+        """Resume an `awaiting_decision` clause with the lawyer's decision. Owner: interrupt.
+
+        Called by `decide` for every action on an awaiting clause, after validation and
+        before `DecisionRepo.put`, outside the service lock. `decision` is complete except
+        for the reasoning. With a live checkpoint (thread `{review_id}:{position}`) the graph
+        resumes with the decided verdict and basis; without one (a cached verdict) the judge
+        explains only. Either way the explanation runs only when `decided_verdict(decision)`
+        is potentially_void. Returns the decision with `reason_de`/`reason_unavailable` set
+        when it ran, and the USD cost of the model calls made (added to `cost_usd`). Never
+        raises for a model failure: `reason_unavailable=True`. Emits no events and does not
+        change the clause status; `decide` does both.
+
+        Until Wave 1 this makes no model call.
+        """
+        return decision, 0.0
 
     def resume_running(self) -> int:
         """Resume reviews left `running` by a restart; returns how many were resumed.
@@ -270,7 +351,7 @@ class Service:
                         RunErrorEvent(message=message, code="agent_version_changed"),
                     )
                     continue
-                clauses = self.store.documents.clauses(review.document_id)
+                clauses = review_clauses(self.store, review)
                 self._launch(review, clauses, positions=None, reason="resume")
                 resumed += 1
         return resumed
@@ -349,6 +430,13 @@ class Service:
             if self._runs.get(run.review_id) is run:
                 del self._runs[run.review_id]
 
+    def _tag(self, clauses: list[ClauseSpan]) -> dict[int, str]:
+        if self.router is None:
+            return {}
+        return tag_topics(
+            clauses, router=self.router, model=self.router_model, caches=self.store.caches
+        )
+
     def _review(self, review_id: str) -> Review:
         review = self.store.reviews.get(review_id)
         if review is None:
@@ -371,6 +459,9 @@ def build_service(
     prices: dict[str, float] | None = None,
     poll_seconds: float = 0.5,
     recheck_seconds: float = 5.0,
+    router: Router | None = None,
+    router_model: str = DEFAULT_ROUTER_MODEL,
+    feedback: Any = None,
 ) -> Service:
     """The one review service of a process; see `app.review.limiter.review_settings`."""
     return Service(
@@ -383,4 +474,7 @@ def build_service(
         prices=prices,
         poll_seconds=poll_seconds,
         recheck_seconds=recheck_seconds,
+        router=router,
+        router_model=router_model,
+        feedback=feedback,
     )

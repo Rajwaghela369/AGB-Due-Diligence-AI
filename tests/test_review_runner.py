@@ -290,6 +290,10 @@ def test_full_review_events_match_the_contract():
         "valid": 1,
         "out_of_scope": 0,
         "cache_hits": 1,
+        "awaiting_decision": 0,
+        "decided": 0,
+        "open_void": 1,
+        "open_review": 0,
     }
     # Only the judged clause costs: 1000 input tokens at $1/M, 100 output at $10/M.
     assert result["cost_usd"] == pytest.approx(0.002)
@@ -697,7 +701,10 @@ def test_findings_carry_status_verdict_decision_feedback_and_scope():
     document_id = _document(store, ["good", "bad", "aside"], out_of_scope=(2,))
     review = service.start(document_id, ["liability"])
     _finish(service, review.review_id)
-    store.decisions.put(Decision(review_id=review.review_id, position=0, action="accept"))
+    store.decisions.put(
+        Decision(review_id=review.review_id, position=0, action="accept", model_verdict="valid"),
+        agent_version=VERSION,
+    )
     store.feedback.put(
         Feedback(
             feedback_id="f1",

@@ -1,5 +1,157 @@
 {
   "$defs": {
+    "Agreement": {
+      "description": "Lawyer agreement for one agent version, over every review judged by it.",
+      "properties": {
+        "agent_version": {
+          "title": "Agent Version",
+          "type": "string"
+        },
+        "by_verdict": {
+          "$ref": "#/$defs/AgreementByVerdict"
+        },
+        "decided": {
+          "default": 0,
+          "title": "Decided",
+          "type": "integer"
+        },
+        "dismissed": {
+          "default": 0,
+          "title": "Dismissed",
+          "type": "integer"
+        },
+        "kept": {
+          "default": 0,
+          "title": "Kept",
+          "type": "integer"
+        },
+        "last_decided_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Decided At"
+        },
+        "overridden": {
+          "default": 0,
+          "title": "Overridden",
+          "type": "integer"
+        },
+        "rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rate"
+        }
+      },
+      "required": [
+        "agent_version"
+      ],
+      "title": "Agreement",
+      "type": "object"
+    },
+    "AgreementByVerdict": {
+      "description": "The same figures per model verdict: `potentially_void.rate` is void precision as the\nlawyer sees it.",
+      "properties": {
+        "potentially_void": {
+          "$ref": "#/$defs/AgreementCounts"
+        },
+        "uncertain": {
+          "$ref": "#/$defs/AgreementCounts"
+        },
+        "valid": {
+          "$ref": "#/$defs/AgreementCounts"
+        }
+      },
+      "title": "AgreementByVerdict",
+      "type": "object"
+    },
+    "AgreementCounts": {
+      "description": "Lawyer agreement over current decisions; `decided = kept + overridden + dismissed`.",
+      "properties": {
+        "decided": {
+          "default": 0,
+          "title": "Decided",
+          "type": "integer"
+        },
+        "dismissed": {
+          "default": 0,
+          "title": "Dismissed",
+          "type": "integer"
+        },
+        "kept": {
+          "default": 0,
+          "title": "Kept",
+          "type": "integer"
+        },
+        "overridden": {
+          "default": 0,
+          "title": "Overridden",
+          "type": "integer"
+        },
+        "rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rate"
+        }
+      },
+      "title": "AgreementCounts",
+      "type": "object"
+    },
+    "AgreementOut": {
+      "description": "`GET /metrics/agreement`: lawyer agreement for one agent version.",
+      "properties": {
+        "agreement": {
+          "$ref": "#/$defs/Agreement"
+        },
+        "current": {
+          "title": "Current",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "agreement",
+        "current"
+      ],
+      "title": "AgreementOut",
+      "type": "object"
+    },
+    "AuditOut": {
+      "description": "`GET /reviews/{id}/audit`: the decision history, oldest first.",
+      "properties": {
+        "events": {
+          "items": {
+            "$ref": "#/$defs/DecisionEvent"
+          },
+          "title": "Events",
+          "type": "array"
+        }
+      },
+      "required": [
+        "events"
+      ],
+      "title": "AuditOut",
+      "type": "object"
+    },
     "ClauseSpan": {
       "description": "One clause as the splitter found it. Position is its 0-based index in the document.",
       "properties": {
@@ -235,6 +387,7 @@
       "type": "object"
     },
     "Decision": {
+      "description": "The current decision on one clause of one review (one row per review and position).",
       "properties": {
         "action": {
           "enum": [
@@ -294,6 +447,30 @@
           "default": null,
           "title": "Decided By"
         },
+        "model_basis": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Model Basis",
+          "type": "array"
+        },
+        "model_verdict": {
+          "anyOf": [
+            {
+              "enum": [
+                "valid",
+                "potentially_void",
+                "uncertain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Verdict"
+        },
         "note": {
           "default": "",
           "title": "Note",
@@ -302,6 +479,16 @@
         "position": {
           "title": "Position",
           "type": "integer"
+        },
+        "reason_de": {
+          "default": "",
+          "title": "Reason De",
+          "type": "string"
+        },
+        "reason_unavailable": {
+          "default": false,
+          "title": "Reason Unavailable",
+          "type": "boolean"
         },
         "review_id": {
           "title": "Review Id",
@@ -316,7 +503,152 @@
       "title": "Decision",
       "type": "object"
     },
+    "DecisionEvent": {
+      "description": "One row of the append-only decision history (`decision_events`).\n\nWritten in the same transaction as the decision it records, never updated or deleted.\n`from_*` is what was in force before (the previous decision's `decided_verdict`, or the\nmodel's verdict and basis for the first decision), `to_*` what is in force after.",
+      "properties": {
+        "action": {
+          "enum": [
+            "accept",
+            "override",
+            "dismiss"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "agent_version": {
+          "title": "Agent Version",
+          "type": "string"
+        },
+        "at": {
+          "format": "date-time",
+          "title": "At",
+          "type": "string"
+        },
+        "authenticated": {
+          "default": false,
+          "title": "Authenticated",
+          "type": "boolean"
+        },
+        "decided_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decided By"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "integer"
+        },
+        "from_basis": {
+          "items": {
+            "type": "string"
+          },
+          "title": "From Basis",
+          "type": "array"
+        },
+        "from_verdict": {
+          "anyOf": [
+            {
+              "enum": [
+                "valid",
+                "potentially_void",
+                "uncertain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From Verdict"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        },
+        "position": {
+          "title": "Position",
+          "type": "integer"
+        },
+        "previous_action": {
+          "anyOf": [
+            {
+              "enum": [
+                "accept",
+                "override",
+                "dismiss"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Previous Action"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "review_id": {
+          "title": "Review Id",
+          "type": "string"
+        },
+        "to_basis": {
+          "items": {
+            "type": "string"
+          },
+          "title": "To Basis",
+          "type": "array"
+        },
+        "to_verdict": {
+          "anyOf": [
+            {
+              "enum": [
+                "valid",
+                "potentially_void",
+                "uncertain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Verdict"
+        }
+      },
+      "required": [
+        "event_id",
+        "review_id",
+        "position",
+        "action",
+        "agent_version",
+        "at"
+      ],
+      "title": "DecisionEvent",
+      "type": "object"
+    },
     "DecisionIn": {
+      "description": "A lawyer's decision on one finding. `corrected_*` are only allowed with `override`;\nan override needs `corrected_verdict`, and an empty `corrected_basis` keeps the model's §.",
       "properties": {
         "action": {
           "enum": [
@@ -365,13 +697,22 @@
       "type": "object"
     },
     "DecisionOut": {
+      "description": "`PUT /reviews/{id}/clauses/{pos}/decision`: everything the UI updates in place.",
       "properties": {
         "decision": {
           "$ref": "#/$defs/Decision"
+        },
+        "finding": {
+          "$ref": "#/$defs/Finding"
+        },
+        "review": {
+          "$ref": "#/$defs/ReviewOut"
         }
       },
       "required": [
-        "decision"
+        "decision",
+        "finding",
+        "review"
       ],
       "title": "DecisionOut",
       "type": "object"
@@ -784,6 +1125,17 @@
           ],
           "default": null
         },
+        "finding_status": {
+          "default": "open",
+          "enum": [
+            "open",
+            "accepted",
+            "overridden",
+            "dismissed"
+          ],
+          "title": "Finding Status",
+          "type": "string"
+        },
         "position": {
           "title": "Position",
           "type": "integer"
@@ -794,7 +1146,8 @@
             "checking",
             "done",
             "failed",
-            "out_of_scope"
+            "out_of_scope",
+            "awaiting_decision"
           ],
           "title": "Status",
           "type": "string"
@@ -849,6 +1202,40 @@
         }
       },
       "title": "Health",
+      "type": "object"
+    },
+    "Interrupt": {
+      "description": "`CUSTOM` `interrupt` value: a clause now waits for the lawyer (docs/Events.md).",
+      "properties": {
+        "confidence": {
+          "title": "Confidence",
+          "type": "number"
+        },
+        "position": {
+          "title": "Position",
+          "type": "integer"
+        },
+        "question": {
+          "default": "Das Modell ist unsicher. Bitte entscheiden Sie: Ergebnis übernehmen, ändern oder als nicht relevant verwerfen.",
+          "title": "Question",
+          "type": "string"
+        },
+        "verdict": {
+          "enum": [
+            "valid",
+            "potentially_void",
+            "uncertain"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "position",
+        "verdict",
+        "confidence"
+      ],
+      "title": "Interrupt",
       "type": "object"
     },
     "PasteIn": {
@@ -1015,6 +1402,7 @@
             "queued",
             "running",
             "finished",
+            "awaiting_decisions",
             "failed"
           ],
           "title": "Status",
@@ -1044,10 +1432,21 @@
       "type": "object"
     },
     "ReviewCounts": {
+      "description": "Per-review tallies, computed by `app.review.runner.count` and nowhere else.\n\nThe verdict classes count the model's verdict of every clause that has one (`done` or\n`awaiting_decision`). The decision tallies count current decisions (one per clause)\non clauses with a verdict; `open_*` are those verdicts with no decision yet. The\nreview can be closed („Prüfung abschließen“) when `open_void == open_review == 0`.",
       "properties": {
+        "awaiting_decision": {
+          "default": 0,
+          "title": "Awaiting Decision",
+          "type": "integer"
+        },
         "cache_hits": {
           "default": 0,
           "title": "Cache Hits",
+          "type": "integer"
+        },
+        "decided": {
+          "default": 0,
+          "title": "Decided",
           "type": "integer"
         },
         "done": {
@@ -1058,6 +1457,16 @@
         "failed": {
           "default": 0,
           "title": "Failed",
+          "type": "integer"
+        },
+        "open_review": {
+          "default": 0,
+          "title": "Open Review",
+          "type": "integer"
+        },
+        "open_void": {
+          "default": 0,
+          "title": "Open Void",
           "type": "integer"
         },
         "out_of_scope": {
@@ -1130,6 +1539,21 @@
         "cache_hit_rate": {
           "default": 0.0,
           "title": "Cache Hit Rate",
+          "type": "number"
+        },
+        "can_complete": {
+          "default": false,
+          "title": "Can Complete",
+          "type": "boolean"
+        },
+        "decidable": {
+          "default": 0,
+          "title": "Decidable",
+          "type": "integer"
+        },
+        "progress": {
+          "default": 0.0,
+          "title": "Progress",
           "type": "number"
         },
         "review": {
@@ -1311,6 +1735,12 @@
   "additionalProperties": false,
   "description": "Generated from app.api.schemas and app.domain.StoredEvent.",
   "properties": {
+    "AgreementOut": {
+      "$ref": "#/$defs/AgreementOut"
+    },
+    "AuditOut": {
+      "$ref": "#/$defs/AuditOut"
+    },
     "DecisionIn": {
       "$ref": "#/$defs/DecisionIn"
     },
@@ -1340,6 +1770,9 @@
     },
     "Health": {
       "$ref": "#/$defs/Health"
+    },
+    "Interrupt": {
+      "$ref": "#/$defs/Interrupt"
     },
     "PasteIn": {
       "$ref": "#/$defs/PasteIn"
