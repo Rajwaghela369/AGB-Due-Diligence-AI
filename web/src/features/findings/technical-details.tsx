@@ -7,7 +7,8 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { api } from "../../api/client";
-import type { FeedbackIn } from "../../api/types.gen";
+import type { FeedbackIn, Pricing } from "../../api/types.gen";
+import { clauseCostUsd, formatDuration, formatMoney, formatTokens } from "../cost/format";
 import { reviewKeys, type ReviewFinding } from "../review/use-review";
 import { isDevMode, langfuseTraceUrl } from "./helpers";
 import { useFeedback } from "./use-feedback";
@@ -25,9 +26,11 @@ const STEPS: { step: "clause_span" | "retrieval" | "judge" | "explanation"; reas
 export function TechnicalDetails({
   finding,
   reviewId,
+  pricing,
 }: {
   finding: ReviewFinding;
   reviewId: string;
+  pricing: Pricing | undefined;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -82,6 +85,27 @@ export function TechnicalDetails({
               <p>
                 {t("drawer.confidenceNumeric")}: {verdict.confidence.toFixed(2)}
               </p>
+              <div className="grid gap-1 rounded-md bg-muted p-2" data-testid="clause-cost">
+                <p>{t("cost.firstReview")}</p>
+                <p>
+                  {t("cost.tokens")}: {formatTokens(verdict.input_tokens, verdict.output_tokens)}
+                </p>
+                <p>
+                  {t("cost.latency")}: {formatDuration(verdict.latency_ms, "de")}
+                </p>
+                <p>
+                  {t("cost.cost")}:{" "}
+                  {formatMoney(
+                    clauseCostUsd(pricing, verdict.input_tokens, verdict.output_tokens),
+                    pricing?.eur_per_usd == null
+                      ? undefined
+                      : clauseCostUsd(pricing, verdict.input_tokens, verdict.output_tokens) *
+                          pricing.eur_per_usd,
+                    pricing,
+                    "de",
+                  ) ?? t("cost.unpriced")}
+                </p>
+              </div>
               <div>
                 <h4 className="mb-1 font-medium">{t("drawer.candidates")}</h4>
                 {verdict.candidates && verdict.candidates.length > 0 ? (

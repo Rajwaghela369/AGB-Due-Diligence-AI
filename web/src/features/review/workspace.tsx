@@ -13,9 +13,11 @@ import { useLocation, useParams } from "react-router-dom";
 import type { ClauseVerdict } from "../../api/types.gen";
 import { cn } from "../../lib/utils";
 import { DecisionProgress } from "../decisions/review-progress";
+import { ReviewCost } from "../cost/review-cost";
 import { ReviewerControl, ReviewerDialogHost } from "../decisions/reviewer-control";
 import { FindingDrawer } from "../findings/finding-drawer";
 import { FindingsPanel } from "../findings/findings-panel";
+import { SummaryBlock } from "../summary/summary-block";
 import { FindingsTable } from "../table/findings-table";
 import { DocumentViewer } from "../viewer/document-viewer";
 import { WorkspaceHotkeys } from "./hotkeys";
@@ -111,6 +113,9 @@ export function ReviewWorkspace() {
       )}
     >
       <ReviewerDialogHost />
+      {review.summary && (
+        <SummaryBlock reviewId={review.review.review_id} summary={review.summary} />
+      )}
       <div role="tablist" aria-label={t("workspace.panes")} className="flex gap-2 lg:hidden">
         {(
           [
@@ -195,6 +200,16 @@ export function ReviewWorkspace() {
               <ReviewerControl />
               <WorkspaceHotkeys />
             </div>
+          </div>
+          <div className="mb-2">
+            <ReviewCost
+              review={review.review}
+              pricing={review.pricing}
+              costEur={review.costEur}
+              wallTimeMs={review.wallTimeMs}
+              cacheHitRate={review.cacheHitRate}
+              compact
+            />
           </div>
           {view === "document" ? (
             <DocumentViewer documentId={review.review.document_id} review={review} />

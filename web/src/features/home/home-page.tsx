@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from "../../components/ui/dialog";
 import { AgreementCard } from "../decisions/agreement-card";
+import { ReviewCost } from "../cost/review-cost";
 import { ProgressBar } from "../decisions/review-progress";
 import { progressOf } from "../decisions/progress";
 import { riskStyle } from "../review/risk";
@@ -60,7 +61,11 @@ export function HomePage() {
       ) : (
         <ul className="divide-y divide-border rounded-xl border border-border bg-surface">
           {items.map((item) => (
-            <DocumentRow key={item.document.document_id} item={item} />
+            <DocumentRow
+              key={item.document.document_id}
+              item={item}
+              pricing={documents.data?.pricing}
+            />
           ))}
         </ul>
       )}
@@ -69,7 +74,13 @@ export function HomePage() {
 }
 
 /** A running review polls its own status; there is no stream on the home screen. */
-function DocumentRow({ item }: { item: DocumentListItem }) {
+function DocumentRow({
+  item,
+  pricing,
+}: {
+  item: DocumentListItem;
+  pricing: import("../../api/types.gen").Pricing | undefined;
+}) {
   const { i18n, t } = useTranslation();
   const navigate = useNavigate();
   const [scopeOpen, setScopeOpen] = useState(false);
@@ -85,6 +96,7 @@ function DocumentRow({ item }: { item: DocumentListItem }) {
     },
   });
   const review = polled.data?.review ?? stored;
+  const accounting = polled.data;
   return (
     <li className="grid gap-4 p-5 sm:grid-cols-[minmax(12rem,1fr)_auto_auto] sm:items-center">
       <button
@@ -103,7 +115,19 @@ function DocumentRow({ item }: { item: DocumentListItem }) {
           </span>
         </span>
         {review ? <RiskCounts review={review} /> : <span>{t("home.notReviewed")}</span>}
-        {review ? <Progress review={review} /> : null}
+        {review ? (
+          <span className="flex flex-col items-end gap-2">
+            <Progress review={review} />
+            <ReviewCost
+              review={review}
+              pricing={accounting?.pricing ?? pricing}
+              costEur={accounting?.cost_eur ?? item.cost_eur}
+              wallTimeMs={accounting?.wall_time_ms ?? item.wall_time_ms}
+              cacheHitRate={accounting?.cache_hit_rate ?? item.cache_hit_rate}
+              compact
+            />
+          </span>
+        ) : null}
       </button>
       {!review ? (
         <Button
