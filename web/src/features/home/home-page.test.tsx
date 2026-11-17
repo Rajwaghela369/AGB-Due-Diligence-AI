@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
@@ -32,6 +32,30 @@ describe("HomePage", () => {
     expect(screen.getByText("Wirksam")).toBeInTheDocument();
     expect(screen.getByText("Abgeschlossen")).toBeInTheDocument();
     expect(screen.getByText("10 von 10 Klauseln geprüft")).toBeInTheDocument();
+    expect(screen.getByText("10.11.2026")).toBeInTheDocument();
+  });
+
+  it("starts an unreviewed document after showing the AI-cost scope dialog", async () => {
+    let body: unknown;
+    server.use(
+      http.get(`${ORIGIN}/api/v1/documents`, () =>
+        HttpResponse.json({ items: [{ document: documentRecord(), latest_review: null }] }),
+      ),
+      http.post(`${ORIGIN}/api/v1/reviews`, async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ review: review({ review_id: "rev-new", status: "queued" }) });
+      }),
+    );
+    renderPage(<HomePage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Prüfung starten" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("kann Kosten verursachen");
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Prüfung starten" }),
+    );
+
+    expect(await screen.findByTestId("location")).toHaveTextContent("/reviews/rev-new");
+    expect(body).toEqual({ document_id: "doc-1", scope: ["liability", "warranty"] });
   });
 
   it("reopens a finished review without starting a new one", async () => {

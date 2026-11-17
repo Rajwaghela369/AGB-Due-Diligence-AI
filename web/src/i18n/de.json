@@ -148,6 +148,12 @@
       "description": "Laden Sie einen Vertrag hoch, um die erste Prüfung zu starten."
     },
     "notReviewed": "Noch nicht geprüft",
+    "startReview": "Prüfung starten",
+    "aiCostHint": "Die Prüfung verwendet KI-Anfragen und kann Kosten verursachen.",
+    "scope": "Prüfumfang",
+    "cancel": "Abbrechen",
+    "closeDialog": "Dialog schließen",
+    "startError": "Die Prüfung konnte nicht gestartet werden. Bitte erneut versuchen.",
     "progress": "{{done}} von {{total}} Klauseln geprüft",
     "status": {
       "queued": "Wartet",

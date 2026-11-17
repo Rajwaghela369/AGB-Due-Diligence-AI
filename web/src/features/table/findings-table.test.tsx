@@ -154,4 +154,15 @@ describe("FindingsTable", () => {
     expect(fourth).toHaveTextContent("Wartet");
     expect(first!.querySelector("svg")).not.toBeNull();
   });
+
+  it("keeps every fixed-size column reachable in one scrolling region", () => {
+    render(<FindingsTable review={reviewData(FINDINGS.slice(0, 1))} />);
+
+    const scroller = screen.getByRole("grid").parentElement!;
+    expect(scroller).toHaveClass("overflow-auto");
+    expect(screen.getByRole("columnheader", { name: /Sicherheit/ }).parentElement).toHaveClass(
+      "sticky",
+    );
+    expect(screen.getByRole("gridcell", { name: "Haftung" })).toBeInTheDocument();
+  });
 });

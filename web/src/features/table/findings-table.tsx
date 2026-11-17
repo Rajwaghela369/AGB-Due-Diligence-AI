@@ -135,11 +135,15 @@ export function FindingsTable({ review }: { review: ReviewData }) {
           </select>
         </label>
       </div>
-      <div className="overflow-x-auto rounded-xl border border-border bg-surface">
-        <div className="min-w-[850px]" role="grid" aria-rowcount={rows.length + 1}>
+      <div
+        ref={parent}
+        className="h-[min(60vh,38rem)] overflow-auto rounded-xl border border-border bg-surface"
+      >
+        <div className="min-w-[58rem]" role="grid" aria-rowcount={rows.length + 1}>
           <div
             role="row"
-            className="grid grid-cols-[4rem_minmax(16rem,2fr)_9rem_10rem_minmax(10rem,1fr)_7rem_9rem] border-b border-border bg-muted text-left text-sm font-medium"
+            className="sticky top-0 z-10 grid border-b border-border bg-muted text-left text-sm font-medium"
+            style={{ gridTemplateColumns: gridTemplate(table) }}
           >
             {table.getHeaderGroups().map((group) =>
               group.headers.map((header) => (
@@ -160,7 +164,7 @@ export function FindingsTable({ review }: { review: ReviewData }) {
               )),
             )}
           </div>
-          <div ref={parent} className="h-[min(60vh,38rem)] overflow-auto" role="rowgroup">
+          <div role="rowgroup">
             <div style={{ height: virtual.getTotalSize(), position: "relative" }}>
               {virtual.getVirtualItems().map((item) => {
                 const row = rows[item.index];
@@ -173,12 +177,13 @@ export function FindingsTable({ review }: { review: ReviewData }) {
                     type="button"
                     role="row"
                     aria-selected={row.original.position === selected}
-                    className={`grid w-full grid-cols-[4rem_minmax(16rem,2fr)_9rem_10rem_minmax(10rem,1fr)_7rem_9rem] border-b border-border text-left text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? "bg-muted" : ""} ${row.original.position === selected ? "border-l-4 border-l-accent" : ""}`}
+                    className={`grid w-full border-b border-border text-left text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? "bg-muted" : ""} ${row.original.position === selected ? "border-l-4 border-l-accent" : ""}`}
                     style={{
                       height: item.size,
                       position: "absolute",
                       top: 0,
                       transform: `translateY(${item.start}px)`,
+                      gridTemplateColumns: gridTemplate(table),
                     }}
                     onClick={() => {
                       select(row.original.position);
@@ -206,18 +211,21 @@ export function FindingsTable({ review }: { review: ReviewData }) {
 
 function makeColumns(t: TFunction): ColumnDef<ReviewFinding>[] {
   return [
-    { id: "position", accessorFn: (row) => row.position + 1, header: t("table.number") },
+    { id: "position", accessorFn: (row) => row.position + 1, header: t("table.number"), size: 64 },
     {
       id: "clause",
       accessorFn: (row) => row.clause.text,
       header: t("table.clause"),
       cell: ({ row }) => <span className="font-serif">{row.original.clause.text}</span>,
+      size: 320,
     },
     {
       id: "topic",
       accessorFn: (row) => row.clause.topic ?? "",
       header: t("table.topic"),
       filterFn: (row, _, value) => value === "all" || row.original.clause.topic === value,
+      size: 144,
+      cell: ({ getValue }) => getValue<string>() || "—",
     },
     {
       id: "verdict",
@@ -226,12 +234,14 @@ function makeColumns(t: TFunction): ColumnDef<ReviewFinding>[] {
       header: t("table.verdict"),
       filterFn: (row, _, value) => value === "all" || row.original.verdict?.verdict === value,
       cell: ({ row }) => <Verdict finding={row.original} />,
+      size: 160,
     },
     {
       id: "basis",
       accessorFn: (row) => row.verdict?.legal_basis?.join(", ") ?? "",
       header: t("table.basis"),
       cell: ({ getValue }) => getValue<string>() || "—",
+      size: 192,
     },
     {
       id: "confidence",
@@ -241,14 +251,23 @@ function makeColumns(t: TFunction): ColumnDef<ReviewFinding>[] {
         row.original.verdict
           ? t(`table.confidenceBands.${confidenceBand(row.original.verdict.confidence)}`)
           : "—",
+      size: 112,
     },
     {
       id: "status",
       accessorFn: (row) => row.status,
       header: t("table.status"),
       cell: ({ row }) => <Status finding={row.original} />,
+      size: 144,
     },
   ];
+}
+
+function gridTemplate(table: ReturnType<typeof useReactTable<ReviewFinding>>): string {
+  return table
+    .getVisibleLeafColumns()
+    .map((column) => (column.id === "clause" ? `minmax(20rem, 1fr)` : `${column.getSize()}px`))
+    .join(" ");
 }
 
 function Verdict({ finding }: { finding: ReviewFinding }) {

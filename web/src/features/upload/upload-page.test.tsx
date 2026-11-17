@@ -40,11 +40,13 @@ function start() {
 }
 
 describe("UploadPage", () => {
-  it("shows the disclaimer and both scopes checked by default", () => {
+  it("shows one header disclaimer, a real file button, and accented scopes", () => {
     renderPage(<UploadPage />, "/upload");
-    expect(screen.getByText(de.app.disclaimer)).toBeInTheDocument();
+    expect(screen.queryByText(de.app.disclaimer)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Datei auswählen" })).toBeVisible();
     expect(screen.getByLabelText("Haftung")).toBeChecked();
     expect(screen.getByLabelText("Gewährleistung")).toBeChecked();
+    expect(screen.getByLabelText("Haftung")).toHaveClass("accent-accent");
   });
 
   it.each(CODES)("shows a German message for %s", async (code) => {
