@@ -56,6 +56,12 @@ store:
 langfuse:
   enabled: true
 
+corrections:
+  # Contract text is not exported until Phase 9 masking is in place.
+  enabled: false
+  dataset: agb-lawyer-corrections
+  allowed_sources: [agb_de, public_shop]
+
 review:
   # Clauses of one review judged at once. Each judge call reserves from the one
   # shared limiter below, so this bounds threads, not provider requests.

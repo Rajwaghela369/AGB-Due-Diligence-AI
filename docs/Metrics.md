@@ -101,6 +101,22 @@ anything is published.
 
 89 contracts. 1 fragment and 18 foreign-law clauses are **flagged, not dropped**.
 
+## Lawyer agreement
+
+Lawyer agreement measures how often the current lawyer decision keeps the model's verdict,
+separately for each `agent_version`. An acceptance counts as kept. An override that changes
+only the legal basis also counts as kept; an override to another verdict counts as
+overridden. A dismissal means the finding was irrelevant and is excluded from the rate.
+
+`agreement = kept / (kept + overridden)`
+
+Read the overall rate as the share of reviewed, relevant findings whose verdict survived
+lawyer review. The per-verdict rates show where it succeeds or fails: in particular, the
+`potentially_void` rate is model precision as lawyers experience it. Always read rates with
+their counts; a high rate from a handful of decisions is not yet evidence of quality.
+Re-deciding a finding replaces its current contribution rather than adding another sample.
+No figures are recorded until the Phase 7 gate supplies reviewed decisions.
+
 Known properties of the inherited answer key, each with consequences for how a number
 reads — see `docs/Phase 2 Results.md`:
 

@@ -104,14 +104,21 @@ def test_interrupt_value_and_idle_statuses():
     assert "running" not in IDLE_REVIEW_STATUSES and "awaiting_decisions" in IDLE_REVIEW_STATUSES
 
 
-def test_wave_1_service_methods_are_stubbed():
+def test_wave_1_service_methods_use_the_store_contracts():
     service = build_service(memory_store(), FakeJudge(), StubLimiter())
-    with pytest.raises(NotImplementedError, match="Wave 1"):
+    with pytest.raises(KeyError, match="unknown review"):
         service.decide("r", 0, DecisionIn(action="accept"), Reviewer(name="Anna"))
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(KeyError, match="unknown review"):
         service.audit("r")
-    with pytest.raises(NotImplementedError):
-        service.agreement()
+    assert service.agreement().model_dump(exclude={"by_verdict"}) == {
+        "agent_version": "agent-v1",
+        "decided": 0,
+        "kept": 0,
+        "overridden": 0,
+        "dismissed": 0,
+        "rate": None,
+        "last_decided_at": None,
+    }
 
 
 def test_decision_records_the_reviewer_header_and_returns_progress(api):  # noqa: F811
@@ -143,7 +150,7 @@ def test_decision_records_the_reviewer_header_and_returns_progress(api):  # noqa
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["decision"]["decided_by"] == "Anna Müller"
-    assert body["finding"]["position"] == 0  # the fake service's findings carry no decision
+    assert body["finding"]["position"] == 0
     assert set(body["review"]) >= {"review", "decidable", "progress", "can_complete"}
     assert anonymous.json()["decision"]["decided_by"] is None
     assert (too_long.status_code, too_long.json()["code"]) == (422, "invalid_reviewer")

@@ -12,17 +12,27 @@ which is exactly what `resume_running()` looks for on the next start, and the
 verdict cache makes the resumed run pay only for clauses never judged.
 """
 
+import hashlib
 import threading
 import time
 import uuid
 from typing import Any
 
-from ag_ui.core import RunErrorEvent, RunFinishedEvent, StateSnapshotEvent
+from ag_ui.core import (
+    CustomEvent,
+    RunErrorEvent,
+    RunFinishedEvent,
+    RunStartedEvent,
+    StateDeltaEvent,
+    StateSnapshotEvent,
+)
 from core.logging import get_logger
 
 from app.domain import (
+    CUSTOM_PROGRESS,
     IDLE_REVIEW_STATUSES,
     Agreement,
+    AgreementByVerdict,
     ClauseSpan,
     ClauseVerdict,
     Decision,
@@ -33,13 +43,19 @@ from app.domain import (
     Reviewer,
     StoredEvent,
     Topic,
+    kept_model_verdict,
 )
+from app.review.corrections import Corrections
 from app.review.events import TERMINAL_TYPES, EventBus, Subscription, serialise
+from app.review.interfaces import InvalidDecision, NotDecidable
 from app.review.limiter import DEFAULT_MAX_CONCURRENCY
 from app.review.runner import (
+    KeyedLocks,
     ReviewRun,
     RunContext,
     build_state,
+    clause_entry,
+    count,
     load_entries,
     regenerate_reason,
     review_clauses,
@@ -48,7 +64,6 @@ from app.review.topics import Router, tag_topics
 from app.store.interfaces import Store
 
 DEFAULT_ROUTER_MODEL = "jina-embeddings-v3"
-WAVE_1 = "Phase 7 Wave 1"
 
 log = get_logger("review.service")
 
@@ -71,6 +86,7 @@ class Service:
         router: Router | None = None,
         router_model: str = DEFAULT_ROUTER_MODEL,
         feedback: Any = None,
+        corrections: Corrections | None = None,
     ) -> None:
         if max_concurrency < 1:
             raise ValueError("max_concurrency must be at least 1")
@@ -81,6 +97,7 @@ class Service:
         self.router = router  # None: clauses keep no topic and every in-scope clause is judged
         self.router_model = router_model
         self.feedback = feedback  # app.review.feedback.FeedbackService, used by `decide`
+        self.corrections = corrections
         self.bus = EventBus(store, recheck_seconds=recheck_seconds)
         self._ctx = RunContext(
             store=store,
@@ -94,6 +111,7 @@ class Service:
         )
         self._lock = threading.RLock()
         self._runs: dict[str, ReviewRun] = {}
+        self._decision_locks = KeyedLocks()
         self._stopped: dict[str, ReviewRun] = {}  # stopped by shutdown, for wait()
         self._closed = False
 
@@ -297,17 +315,224 @@ class Service:
         *,
         request_id: str | None = None,
     ) -> Finding:
-        """See `ReviewService.decide`. Owner: decisions-api. For an `awaiting_decision`
-        clause it calls `_resume_decided` (owner: interrupt) before storing the decision."""
-        raise NotImplementedError(WAVE_1)
+        """Record one serialised decision and publish its derived state exactly once."""
+        with self._decision_locks.hold((review_id, position)):
+            with self._lock:
+                self._check_open()
+                review = self._review(review_id)
+                document = self.store.documents.get(review.document_id)
+                clause = next(
+                    (
+                        item
+                        for item in review_clauses(self.store, review)
+                        if item.position == position
+                    ),
+                    None,
+                )
+                if document is None or clause is None:
+                    raise KeyError(f"unknown clause {position}")
+                status = self.store.reviews.clause_statuses(review_id).get(
+                    position, ("queued", None)
+                )[0]
+                if status not in ("done", "awaiting_decision"):
+                    raise NotDecidable(f"clause {position} is {status}, not decidable")
+                verdict = self.store.verdicts.get(clause.content_hash, review.agent_version)
+                if verdict is None:
+                    raise NotDecidable(f"clause {position} has no verdict")
+                self._validate_decision(decision, verdict)
+                stored = Decision(
+                    review_id=review_id,
+                    position=position,
+                    action=decision.action,
+                    corrected_verdict=decision.corrected_verdict,
+                    corrected_basis=list(decision.corrected_basis),
+                    note=decision.note,
+                    decided_by=reviewer.name,
+                    model_verdict=verdict.verdict,
+                    model_basis=list(verdict.legal_basis),
+                )
+
+            resume_cost = 0.0
+            if status == "awaiting_decision":
+                stored, resume_cost = self._resume_decided(review, clause, verdict, stored)
+
+            with self._lock:
+                self._check_open()
+                stored = self.store.decisions.put(
+                    stored,
+                    agent_version=review.agent_version,
+                    authenticated=reviewer.authenticated,
+                    request_id=request_id,
+                )
+                if self.feedback is not None:
+                    self.feedback.record_decision(stored)
+                status_changed = status == "awaiting_decision"
+                if status_changed:
+                    self.store.reviews.set_clause_status(review_id, position, "done")
+                run = self._runs.get(review_id)
+                if run is not None:
+                    counts = run.note_decision(stored)
+                    if status_changed or resume_cost:
+                        current = self._review(review_id)
+                        entries = load_entries(
+                            self.store, current, review_clauses(self.store, current)
+                        )
+                        counts = count(
+                            entries,
+                            current.counts.cache_hits,
+                            self.store.decisions.for_review(review_id),
+                        )
+                        self.store.reviews.update_counts(
+                            review_id, counts, current.cost_usd + resume_cost
+                        )
+                else:
+                    current = self._review(review_id)
+                    entries = load_entries(self.store, current, review_clauses(self.store, current))
+                    counts = count(
+                        entries,
+                        current.counts.cache_hits,
+                        self.store.decisions.for_review(review_id),
+                    )
+                    self.store.reviews.update_counts(
+                        review_id, counts, current.cost_usd + resume_cost
+                    )
+                    if current.status != "failed":
+                        next_status = (
+                            "awaiting_decisions" if counts.awaiting_decision else "finished"
+                        )
+                        self.store.reviews.set_status(review_id, next_status)
+                self._emit_decision(review_id, position, status_changed, run)
+                review = self._review(review_id)
+
+            self._score_agreement(review)
+            if self.corrections is not None:
+                self.corrections.upsert(document, review, clause, verdict, stored)
+            return next(item for item in self.findings(review_id) if item.position == position)
 
     def audit(self, review_id: str, position: int | None = None) -> list[DecisionEvent]:
         """See `ReviewService.audit`. Owner: decisions-api."""
-        raise NotImplementedError(WAVE_1)
+        self._review(review_id)
+        return self.store.decisions.history(review_id, position)
 
     def agreement(self, agent_version: str | None = None) -> Agreement:
         """See `ReviewService.agreement`. Owner: decisions-api."""
-        raise NotImplementedError(WAVE_1)
+        version = agent_version or self.agent_version
+        rows = self.store.metrics.agreement(version)
+        return (
+            rows[0] if rows else Agreement(agent_version=version, by_verdict=AgreementByVerdict())
+        )
+
+    def _validate_decision(self, decision: DecisionIn, verdict: ClauseVerdict) -> None:
+        if decision.action != "override":
+            if decision.corrected_verdict is not None or decision.corrected_basis:
+                raise InvalidDecision("corrected verdict and basis are only allowed on override")
+            return
+        if decision.corrected_verdict is None:
+            raise InvalidDecision("override requires corrected_verdict")
+        if self.statutes is not None:
+            unknown = [
+                chunk_id for chunk_id in decision.corrected_basis if chunk_id not in self.statutes
+            ]
+            if unknown:
+                raise InvalidDecision(f"unknown legal basis: {', '.join(unknown)}")
+        corrected_basis = decision.corrected_basis or verdict.legal_basis
+        if decision.corrected_verdict == verdict.verdict and corrected_basis == verdict.legal_basis:
+            raise InvalidDecision("override must change the verdict or legal basis")
+
+    def _emit_decision(
+        self, review_id: str, position: int, status_changed: bool, run: ReviewRun | None
+    ) -> None:
+        review = self._review(review_id)
+        clauses = review_clauses(self.store, review)
+        entries = load_entries(self.store, review, clauses)
+        delta: list[dict[str, Any]] = []
+        if status_changed:
+            status, error, verdict = entries[position]
+            delta.append(
+                {
+                    "op": "replace",
+                    "path": f"/clauses/{position}",
+                    "value": clause_entry(status, error, verdict),
+                }
+            )
+        delta.append(
+            {
+                "op": "replace",
+                "path": "/review/counts",
+                "value": review.counts.model_dump(mode="json"),
+            }
+        )
+        change = StateDeltaEvent(delta=delta)
+        progress = CustomEvent(
+            name=CUSTOM_PROGRESS,
+            value={
+                "counts": review.counts.model_dump(mode="json"),
+                "cost_usd": review.cost_usd,
+                "budget_left": self._budget_left(),
+                "waiting_reason": self._waiting_reason(),
+            },
+        )
+        if run is not None:
+            self.bus.emit_many(review_id, [change, progress])
+            return
+
+        snapshot = StateSnapshotEvent(snapshot=build_state(review, entries))
+        if review.status == "failed":
+            terminal: Any = RunErrorEvent(
+                message=review.error or "the review failed", code="review_failed"
+            )
+        else:
+            terminal = RunFinishedEvent(
+                thread_id=review.document_id,
+                run_id=review_id,
+                result={
+                    "counts": review.counts.model_dump(mode="json"),
+                    "cost_usd": review.cost_usd,
+                },
+            )
+        self.bus.emit_many(
+            review_id,
+            [
+                RunStartedEvent(thread_id=review.document_id, run_id=review_id),
+                snapshot,
+                change,
+                terminal,
+            ],
+        )
+
+    def _score_agreement(self, review: Review) -> None:
+        langfuse = getattr(self.feedback, "langfuse", None)
+        if langfuse is None or review.trace_id is None:
+            return
+        current = self.store.decisions.for_review(review.review_id).values()
+        values = [kept_model_verdict(decision) for decision in current]
+        kept = sum(value is True for value in values)
+        overridden = sum(value is False for value in values)
+        score_id = hashlib.sha256(f"lawyer_agreement\x1f{review.review_id}".encode()).hexdigest()
+        if kept + overridden == 0:
+            try:
+                langfuse.api.scores.delete(score_id)
+            except Exception:  # noqa: BLE001 - tracing cannot reject a decision
+                log.warning("could not delete undefined lawyer agreement", exc_info=True)
+            return
+        try:
+            langfuse.create_score(
+                name="lawyer_agreement",
+                value=kept / (kept + overridden),
+                trace_id=review.trace_id,
+                score_id=score_id,
+                data_type="NUMERIC",
+            )
+        except Exception:  # noqa: BLE001 - tracing cannot reject a decision
+            log.warning("could not record lawyer agreement", exc_info=True)
+
+    def _budget_left(self) -> int | None:
+        method = getattr(self.limiter, "remaining_today", None)
+        return method() if method is not None else None
+
+    def _waiting_reason(self) -> str | None:
+        method = getattr(self.limiter, "waiting_reason", None)
+        return method() if method is not None else None
 
     def _resume_decided(
         self, review: Review, clause: ClauseSpan, verdict: ClauseVerdict, decision: Decision
@@ -462,6 +687,7 @@ def build_service(
     router: Router | None = None,
     router_model: str = DEFAULT_ROUTER_MODEL,
     feedback: Any = None,
+    corrections: Corrections | None = None,
 ) -> Service:
     """The one review service of a process; see `app.review.limiter.review_settings`."""
     return Service(
@@ -477,4 +703,5 @@ def build_service(
         router=router,
         router_model=router_model,
         feedback=feedback,
+        corrections=corrections,
     )

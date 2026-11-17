@@ -87,6 +87,7 @@ class FakeReviewService:
         self.retry_error: Exception | None = None
         self.start_error: Exception | None = None
         self.event_log: list[StoredEvent] = []
+        self.feedback = None
 
     def start(self, document_id, scope) -> Review:
         if self.start_error:
@@ -115,6 +116,25 @@ class FakeReviewService:
     def retry_clause(self, review_id: str, position: int) -> None:
         if self.retry_error:
             raise self.retry_error
+
+    def decide(self, review_id, position, decision, reviewer, *, request_id=None) -> Finding:
+        stored = self.feedback.decide(
+            review_id,
+            position,
+            decision,
+            decided_by=reviewer.name,
+            request_id=request_id,
+        )
+        review = self.store.reviews.get(review_id)
+        clause = self.store.documents.clauses(review.document_id)[position]
+        verdict = self.store.verdicts.get(clause.content_hash, review.agent_version)
+        return Finding(
+            position=position,
+            clause=clause,
+            status="done",
+            verdict=verdict,
+            decision=stored,
+        )
 
     def events(
         self, review_id: str, after_seq: int = 0, *, follow: bool = True
@@ -156,11 +176,13 @@ def api():
     store = memory_store()
     service = FakeReviewService(store)
     langfuse = FakeLangfuse()
+    feedback = FeedbackService(store, langfuse)
+    service.feedback = feedback
     application = create_app(
         store=store,
         service=service,
         statutes={"bgb-309-7": _statute()},
-        feedback=FeedbackService(store, langfuse),
+        feedback=feedback,
         settings={"ingest": {"max_upload_mb": 20}},
     )
     return application, store, service, langfuse

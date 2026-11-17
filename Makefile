@@ -1,7 +1,8 @@
 # Single entry point: CI runs exactly these targets, so local and CI never diverge.
 .PHONY: help install smoke kb eval-data eval-data-dry recheck baseline baseline-held-out \
 	baseline-smoke eval eval-held-out eval-smoke seed-prompts lint format test web web-gen \
-	web-check e2e e2e-install ui-snapshots ui-snapshots-update check clean api api-up api-down
+	web-check e2e e2e-install ui-snapshots ui-snapshots-update check clean api api-up api-down \
+	eval-corrections
 
 PY := uv run
 
@@ -43,6 +44,9 @@ eval-held-out:  ## Agent on held-out data; only to confirm a configuration worth
 
 eval-smoke:  ## Phase 4 gate: 5 clauses through the agent, end to end
 	$(PY) python -m evals.run_agent --split dev --slice first:5
+
+eval-corrections:  ## Paid agent run over lawyer corrections; add ARGS=--yes to approve
+	$(PY) python -m app.review.corrections $(ARGS)
 
 seed-prompts:  ## Seed the agent prompts into Langfuse under the `evaluation` label
 	$(PY) python scripts/seed_prompts.py
