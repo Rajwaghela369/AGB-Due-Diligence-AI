@@ -11,6 +11,7 @@ import { confidenceBand, riskStyle } from "../review/risk";
 import { useReviewUi } from "../review/store";
 import type { ReviewData, ReviewFinding } from "../review/use-review";
 import { FeedbackControl } from "./feedback-control";
+import { RegenerateReason } from "./regenerate-reason";
 import { clauseTitle } from "./helpers";
 import { TechnicalDetails } from "./technical-details";
 import { useStatute } from "./use-statute";
@@ -116,9 +117,13 @@ function DrawerBody({ finding, reviewId }: { finding: ReviewFinding; reviewId: s
             <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t("drawer.reasoning")}
             </h3>
-            <p className="text-sm leading-relaxed">
-              {verdict.reason_unavailable ? t("drawer.reasonUnavailable") : verdict.reason_de}
-            </p>
+            {verdict.reason_unavailable && verdict.verdict === "potentially_void" ? (
+              <RegenerateReason reviewId={reviewId} position={finding.position} />
+            ) : verdict.reason_unavailable ? (
+              <p className="text-sm leading-relaxed">{t("drawer.reasonUnavailable")}</p>
+            ) : (
+              <p className="text-sm leading-relaxed">{verdict.reason_de}</p>
+            )}
           </section>
 
           <FeedbackControl reviewId={reviewId} finding={finding} />

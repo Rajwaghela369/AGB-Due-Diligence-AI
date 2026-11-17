@@ -3,9 +3,10 @@
 from fastapi import APIRouter, Header, Request
 from fastapi.responses import StreamingResponse
 
+from app.agent.run import ExplainFailed
 from app.api.deps import state
 from app.api.errors import ApiError
-from app.api.schemas import FindingsOut, ReviewIn, ReviewOut
+from app.api.schemas import Finding, FindingsOut, ReviewIn, ReviewOut
 from app.api.sse import stream_events
 
 router = APIRouter()
@@ -58,6 +59,21 @@ def retry_clause(review_id: str, position: int, request: Request) -> ReviewOut:
     if review is None:  # the service contract guarantees it still exists
         raise ApiError(404, "not_found", "Prüfung nicht gefunden.")
     return _review_out(request, review)
+
+
+@router.post("/reviews/{review_id}/clauses/{position}/explain", response_model=Finding)
+def explain_clause(review_id: str, position: int, request: Request) -> Finding:
+    """Regenerate a missing reasoning: one Gemini call, so it shares the review rate limit."""
+    dependencies = state(request)
+    address = request.client.host if request.client else "unknown"
+    if not dependencies.rate_limiter.allow(address):
+        raise ApiError(429, "rate_limited", "Zu viele Anfragen. Bitte versuchen Sie es später.")
+    try:
+        return dependencies.service.explain_clause(review_id, position)
+    except ExplainFailed as exc:
+        raise ApiError(
+            502, "explain_failed", "Die Begründung konnte nicht erzeugt werden."
+        ) from exc
 
 
 @router.get("/reviews/{review_id}/events", response_class=StreamingResponse)

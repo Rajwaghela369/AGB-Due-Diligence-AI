@@ -23,7 +23,13 @@ from core.logging import get_logger
 from app.domain import Finding, Review, StoredEvent, Topic
 from app.review.events import TERMINAL_TYPES, EventBus, Subscription, serialise
 from app.review.limiter import DEFAULT_MAX_CONCURRENCY
-from app.review.runner import ReviewRun, RunContext, build_state, load_entries
+from app.review.runner import (
+    ReviewRun,
+    RunContext,
+    build_state,
+    load_entries,
+    regenerate_reason,
+)
 from app.store.interfaces import Store
 
 log = get_logger("review.service")
@@ -148,6 +154,39 @@ class Service:
                 raise ValueError(f"review {active.review_id} of this document is running")
             clauses = self.store.documents.clauses(review.document_id)
             self._launch(review, clauses, positions=[position], reason="retry")
+
+    def explain_clause(self, review_id: str, position: int) -> Finding:
+        """Regenerate the missing reasoning of a void verdict (1 Gemini call).
+
+        KeyError for an unknown review or clause; ValueError (409) if the verdict is not
+        void or already has a reason; `ExplainFailed` if the provider failed.
+        """
+        with self._lock:
+            self._check_open()
+            review = self._review(review_id)
+        explain = getattr(self.judge, "explain_only", None)
+        if explain is None:
+            raise RuntimeError("this agent cannot regenerate a reasoning")
+        clause = next(
+            (c for c in self.store.documents.clauses(review.document_id) if c.position == position),
+            None,
+        )
+        if clause is None:
+            raise KeyError(f"unknown clause {position}")
+        if self.store.reviews.clause_statuses(review_id).get(position, ("queued",))[0] != "done":
+            raise ValueError(f"clause {position} has no verdict yet")
+        verdict = self.store.verdicts.get(clause.content_hash, review.agent_version)
+        if verdict is None:
+            raise ValueError(f"clause {position} has no verdict yet")
+        regenerate_reason(
+            self._ctx,
+            review_id,
+            clause,
+            verdict,
+            gate=self._lock,
+            active_runs=lambda: list(self._runs.values()),
+        )
+        return next(f for f in self.findings(review_id) if f.position == position)
 
     def events(self, review_id: str, after_seq: int = 0, *, follow: bool = True) -> Subscription:
         """See `ReviewService.events`. Raises KeyError at once for an unknown review.
