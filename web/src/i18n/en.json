@@ -53,7 +53,8 @@
       "out": "{{count}} out of scope"
     },
     "alreadyReviewed": "Already reviewed: results from the stored review, with no new AI requests.",
-    "views": "Views"
+    "views": "Views",
+    "panes": "Areas"
   },
   "findings": {
     "title": "Findings",

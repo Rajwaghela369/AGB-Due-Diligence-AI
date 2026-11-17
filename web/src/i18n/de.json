@@ -53,7 +53,8 @@
       "out": "{{count}} außerhalb des Umfangs"
     },
     "alreadyReviewed": "Bereits geprüft: Ergebnis aus der gespeicherten Prüfung, ohne neue KI-Anfragen.",
-    "views": "Ansichten"
+    "views": "Ansichten",
+    "panes": "Bereiche"
   },
   "findings": {
     "title": "Fundstellen",
