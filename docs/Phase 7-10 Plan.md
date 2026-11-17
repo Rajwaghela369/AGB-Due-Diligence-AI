@@ -27,6 +27,38 @@ Carried over from Phase 5–6 and handled first, in Phase 7 Wave 0:
 | CI: Playwright browser install in `.github/workflows/ci.yml` | `make check` now needs Chromium. |
 | Gemini token prices in `configs/app.yaml` | Phase 8 shows cost per clause and per review. |
 
+## Team: Claude and Codex together
+
+The build runs as one team of two vendors, coordinated by one orchestrator.
+
+| Role | Who | Model | Used for |
+| --- | --- | --- | --- |
+| Orchestrator | Claude | Opus 5.5 | Wave 0 contracts, merges, live gates, `HANDOFF.md` |
+| Hard builder | Claude | Opus 5.5 | concurrency, agent graph, security-critical code |
+| UI builder | Claude | Sonnet 5.5 | React features, interaction, accessibility |
+| Light builder | Claude | Haiku 5.5 | ops, config, docs, snapshot tooling |
+| Backend builder | Codex | gpt-5.6-sol · medium | well-specified API, store and pipeline work |
+| Mechanical builder | Codex | gpt-5.6-terra · medium | tests, table/form UI, refactors, migrations |
+| Fallback orchestrator | Codex | gpt-5.6-sol · medium | takes over from `HANDOFF.md` if the Claude session runs out |
+
+**Working agreement.**
+
+1. **Cross-vendor pairs.** Every slice has a builder from one vendor and a reviewer from the
+   other. A Codex review runs read-only (`codex exec -s read-only` on `git diff stage...HEAD`);
+   a Claude review is a Sonnet sub-agent or the orchestrator. The builder fixes the
+   findings, and only then does the orchestrator merge.
+2. **Contracts before code.** Wave 0 fixes the interfaces. Shared files have one owner;
+   others ask in their report.
+3. **Small waves.** At most three builders at once, mixed across vendors, and one branch and
+   worktree per slice.
+4. **Availability check.** Before each wave, a 1-token `codex exec` probe. If Codex is
+   rate-limited, its slices move to Claude Sonnet (or Opus for sol-level work), and Codex
+   reviews resume once it is back.
+5. **Fakes only inside agents.** No `.env` in worktrees. Live checks are run by the
+   orchestrator only, within the Gemini cap.
+6. **Handoff always current.** `agb-check-wt/HANDOFF.md` is updated after every merge, so
+   either vendor can take over orchestration.
+
 ## Standing rules
 
 - **At most 5 Gemini calls in any test or live check.** Agents use fakes only. Live checks
@@ -153,13 +185,14 @@ duplicated) on re-override.
 
 ### Phase 7 agents
 
-| Wave | Agent | Model | Tasks |
-| --- | --- | --- | --- |
-| 0 | orchestrator | Claude Opus | contracts, topic tagging, CI |
-| 1 | **interrupt** | Claude Opus | 7.B (runner + graph + checkpointer + events) |
-| 1 | **decisions-api** | Codex sol (if available) / Claude Sonnet | 7.C, 7.D, 7.E backend |
-| 1 | **decisions-ui** | Claude Sonnet | 7.A UI, hotkeys, progress, audit view (against the Wave 0 API models) |
-| 2 | **gate7** | Claude Sonnet | Playwright reload-and-resume, agreement figures, docs |
+| Wave | Slice | Builder | Model | Reviewer | Tasks |
+| --- | --- | --- | --- | --- | --- |
+| 0 | contracts | orchestrator | Claude Opus | — | contracts, topic tagging, CI |
+| 1 | **interrupt** | Claude | Opus | Codex sol | 7.B runner, graph, checkpointer, events |
+| 1 | **decisions-api** | Codex | gpt-5.6-sol | Claude Sonnet | 7.C, 7.D, 7.E backend |
+| 1 | **decisions-ui** | Claude | Sonnet | Codex terra | 7.A UI, A/O/D hotkeys, progress, audit view |
+| 2 | **gate7** | Codex | gpt-5.6-terra | Claude (orchestrator) | Playwright reload-and-resume, agreement figures |
+| gate | live | orchestrator | Claude Opus | — | ≤ 5 Gemini calls |
 
 ---
 
@@ -213,13 +246,14 @@ verdict, and underline it inside the clause highlight. Otherwise skip.
 
 ### Phase 8 agents
 
-| Wave | Agent | Model | Tasks |
-| --- | --- | --- | --- |
-| 0 | orchestrator | Claude Opus | summary and export models, chat event contract |
-| 1 | **export** | Codex sol / Claude Sonnet | 8.A backend + 8.B |
-| 1 | **chat** | Claude Opus | 8.C backend + UI |
-| 1 | **cost-ui** | Claude Haiku | 8.D, the summary block UI |
-| 2 | **gate8** | Claude Sonnet | Playwright raw document → export, golden files |
+| Wave | Slice | Builder | Model | Reviewer | Tasks |
+| --- | --- | --- | --- | --- | --- |
+| 0 | contracts | orchestrator | Claude Opus | — | summary and export models, chat events |
+| 1 | **export** | Codex | gpt-5.6-sol | Claude Sonnet | 8.A backend, 8.B DOCX, Markdown and CSV |
+| 1 | **chat** | Claude | Opus | Codex sol | 8.C rewrite chat (prompt safety, streaming) |
+| 1 | **cost-ui** | Codex | gpt-5.6-terra | Claude Haiku | 8.D, summary block UI |
+| 2 | **gate8** | Claude | Sonnet | Codex terra | Playwright raw document → export, golden files |
+| gate | live | orchestrator | Claude Opus | — | ≤ 5 Gemini calls (1 summary + 2 chat) |
 
 ---
 
@@ -278,15 +312,16 @@ the signed AVV.
 
 ### Phase 9 agents
 
-| Wave | Agent | Model | Tasks |
-| --- | --- | --- | --- |
-| 0 | orchestrator | Claude Opus | masking boundary, owner model, deletion contract |
-| 1 | **masking** | Claude Opus | 9.A |
-| 1 | **deletion** | Codex sol / Claude Sonnet | 9.B + 9.C |
-| 1 | **storage** | Claude Haiku | 9.D |
-| 2 | **auth-scale** | Claude Opus | 9.E |
-| 2 | **dsgvo-doc** | Claude Sonnet | 9.F (research) |
-| 3 | **gate9** | Claude Sonnet | PII leak tests, deletion property tests, access tests |
+| Wave | Slice | Builder | Model | Reviewer | Tasks |
+| --- | --- | --- | --- | --- | --- |
+| 0 | contracts | orchestrator | Claude Opus | — | masking boundary, owner model, deletion contract |
+| 1 | **masking** | Claude | Opus | Codex sol | 9.A Presidio + regex, Langfuse mask hook |
+| 1 | **deletion** | Codex | gpt-5.6-sol | Claude Opus | 9.B reference-counted deletion, 9.C retention |
+| 1 | **storage** | Codex | gpt-5.6-terra | Claude Haiku | 9.D S3-compatible EU `FileStore` |
+| 2 | **auth-scale** | Claude | Opus | Codex sol | 9.E OIDC, owner checks, LISTEN/NOTIFY, job queue |
+| 2 | **dsgvo-doc** | Claude | Sonnet | Codex terra | 9.F processor checklist (research) |
+| 3 | **gate9** | Codex | gpt-5.6-sol | Claude (orchestrator) | PII-leak, deletion-property and access tests |
+| gate | live | orchestrator | Claude Opus | — | masked payloads verified live, ≤ 5 Gemini calls |
 
 ---
 
@@ -307,6 +342,15 @@ the signed AVV.
 **Done when:** an F1 on the held-out AVV set is recorded in `docs/Metrics.md` (with
 approval for the Gemini calls), and the UI runs an AVV end to end on fakes.
 
+### Phase 10 agents
+
+| Wave | Slice | Builder | Model | Reviewer | Tasks |
+| --- | --- | --- | --- | --- | --- |
+| 0 | contracts | orchestrator | Claude Opus | — | AVV profile config, obligation model |
+| 1 | **avv-kb** | Codex | gpt-5.6-sol | Claude Sonnet | 10.A DSGVO norm set through P1, 10.B labelled set |
+| 1 | **avv-agent** | Claude | Opus | Codex sol | 10.C questions, router, missing-obligation check |
+| 2 | **avv-ui** | Codex | gpt-5.6-terra | Claude Sonnet | 10.D document type, per-obligation findings |
+
 ---
 
 ## Continuous evaluation (all phases)
@@ -315,10 +359,17 @@ Void recall above 0.70 and F1 above 0.276, run as Langfuse experiments. From Pha
 is fed by lawyer corrections (7.E). Every run needs the user's explicit approval, because of
 the Gemini cap. Never blocks a phase.
 
+## Before Phase 7: UI fixes
+
+`docs/UI Fix Plan.md` (17 bugs from the Phase 6 screenshot review) runs first, in two waves:
+UF-A (Claude Sonnet) ║ UF-B (Codex sol) ║ UF-C (Codex terra), then UF-D (Claude Sonnet) ║
+UF-E (Claude Haiku). Phase 7 builds its decision UI into the same workspace and drawer.
+
 ## Sequencing and effort
 
 | Phase | Waves | Agents | Rough size | Depends on |
 | --- | --- | --- | --- | --- |
+| UI fixes | 2 | 5 | small | — |
 | 7 | 0 + 2 | 4 | like Phase 5 | carry-overs |
 | 8 | 0 + 2 | 4 | smaller than 6 | 7 (decisions feed the export) |
 | 9 | 0 + 3 | 6 | the largest | 7 (audit "who"); must precede real client data |
