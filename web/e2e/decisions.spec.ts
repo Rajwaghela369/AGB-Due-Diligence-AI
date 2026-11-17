@@ -1,6 +1,7 @@
 // Phase 7 gate: an interrupted finding remains reviewable across a reload, and the final
 // decision closes the review. The app uses the offline fake API, never a Gemini request.
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -34,7 +35,13 @@ async function review(page: Page, reviewId: string) {
 test("reload keeps an override and the final acceptance finishes the review", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("agb.reviewer", "E2E Anwältin"));
   await page.goto("/upload");
-  await page.locator('input[type="file"]').setInputFiles(PSG);
+  // The API reuses a review per document hash. A distinct trailing comment gives this test its
+  // own review, so its decisions do not leak into the review the other specs upload.
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "psg-decisions.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.concat([readFileSync(PSG), Buffer.from("\n%decisions-e2e\n")]),
+  });
   await page.getByRole("button", { name: "Prüfung starten" }).click();
   await page.waitForURL(/\/reviews\/[0-9a-f-]+/);
   const reviewId = reviewIdOf(page);
@@ -59,7 +66,9 @@ test("reload keeps an override and the final acceptance finishes the review", as
   await form.getByRole("radio", { name: "Potenziell unwirksam" }).check();
   await page.getByLabel("Notiz (optional)").fill("§ 309 Nr. 7 BGB ist einschlägig.");
   await form.getByRole("button", { name: "Überschreiben bestätigen" }).click();
-  await expect(page.getByTestId("decision-status")).toHaveText("Überschrieben");
+  await expect(
+    page.getByTestId(`finding-card-${interrupted.position}`).getByTestId("decision-status"),
+  ).toHaveText("Überschrieben");
 
   await page.reload();
   const overriddenCard = page.getByTestId(`finding-card-${interrupted.position}`);
@@ -69,7 +78,12 @@ test("reload keeps an override and the final acceptance finishes the review", as
   await expect(page.getByTestId("current-decision")).toContainText(
     "§ 309 Nr. 7 BGB ist einschlägig.",
   );
-  await expect(page.getByTestId("decision-progress")).toContainText("1 von 2 entschieden");
+  // The bar counts every decidable finding (void + uncertain + valid), not only the two reviewed.
+  const counts = (await review(page, reviewId)).review.counts;
+  const decidable = (counts.potentially_void ?? 0) + (counts.uncertain ?? 0) + (counts.valid ?? 0);
+  await expect(page.getByTestId("decision-progress")).toContainText(
+    `1 von ${decidable} entschieden`,
+  );
   const auditList = page.getByTestId("audit-list");
   await expect(auditList.getByRole("heading", { name: "Verlauf" })).toBeVisible();
   await expect(auditList).toContainText("Überschrieben");
@@ -87,6 +101,9 @@ test("reload keeps an override and the final acceptance finishes the review", as
     }),
   ]);
 
+  // The drawer replaces the findings list while it is open; Esc brings the list back.
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("finding-drawer")).toBeHidden();
   const voidFinding = (await findings(page, reviewId)).find(
     (finding) =>
       finding.position !== interrupted.position && finding.verdict?.verdict === "potentially_void",
@@ -97,7 +114,9 @@ test("reload keeps an override and the final acceptance finishes the review", as
     .first()
     .click();
   await page.keyboard.press("a");
-  await expect(page.getByTestId("decision-status")).toHaveText("Akzeptiert");
+  await expect(
+    page.getByTestId(`finding-card-${voidFinding.position}`).getByTestId("decision-status"),
+  ).toHaveText("Akzeptiert");
   await page.reload();
 
   const stored = await review(page, reviewId);
@@ -105,7 +124,9 @@ test("reload keeps an override and the final acceptance finishes the review", as
   expect(stored.review.counts.awaiting_decision ?? 0).toBe(0);
   expect(stored.review.counts.open_review ?? 0).toBe(0);
   expect(stored.review.counts.open_void ?? 0).toBe(0);
-  await expect(page.getByTestId("decision-progress")).toContainText("2 von 2 entschieden");
+  await expect(page.getByTestId("decision-progress")).toContainText(
+    `2 von ${decidable} entschieden`,
+  );
 
   await page.goto("/");
   const agreement = page.getByTestId("agreement");
