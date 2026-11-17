@@ -392,3 +392,19 @@ Core path: **7 → 9**. Phase 8 can run in parallel with 9's later waves if agen
    deterministic block is defensible on its own.
 5. **Corrections dataset before Phase 9 (7.E):** allowed for AGB-DE and public shop AGB
    only. Recommended: yes, behind the switch.
+
+## Decisions taken (2026-11-17)
+
+The user asked for all phases to be built before a final walkthrough, so each open decision
+takes the recommended option:
+
+1. **Interrupt:** both. The graph interrupts on live runs, and cached `uncertain` verdicts
+   wait at review level as `awaiting_decision`.
+2. **Login:** provider-agnostic OIDC. Keycloak runs in Docker Compose for development and
+   tests; the production provider is configured, not coded.
+3. **Object storage:** a generic S3-compatible `FileStore`, with MinIO in Compose for
+   development and tests. The EU provider (Hetzner, Scaleway or OVH) is set by
+   configuration.
+4. **LLM summary recommendation:** off by default.
+5. **Corrections dataset before Phase 9:** allowed for AGB-DE and public shop AGB, behind a
+   switch.
