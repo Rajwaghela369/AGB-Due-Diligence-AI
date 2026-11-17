@@ -194,15 +194,14 @@ def test_a_failing_masker_blocks_the_send():
         boundary().outbound(CLAUSE)
 
 
-def test_the_presidio_masker_and_the_langfuse_hook_are_wave_1():
+def test_the_presidio_masker_and_the_langfuse_hook_mask_when_enabled():
+    # Wave 1 (masking) implemented both; tests/test_masking.py covers them in depth.
     payload = {"input": [CLAUSE], "metadata": {"review_id": "r"}}
     assert boundary().langfuse_mask(data=payload) is payload  # off: unchanged
 
     masking.configure(PresidioMasker())
-    with pytest.raises(NotImplementedError):
-        boundary().outbound(CLAUSE)
-    with pytest.raises(NotImplementedError):
-        boundary().langfuse_mask(data=payload)
+    assert "anna.mueller@example.de" not in boundary().outbound(CLAUSE)
+    assert "anna.mueller@example.de" not in str(boundary().langfuse_mask(data=payload))
 
 
 def test_masking_is_off_in_the_shipped_config_and_presidio_when_on():
