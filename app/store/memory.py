@@ -44,11 +44,14 @@ def _now() -> datetime:
 class MemoryFileStore:
     def __init__(self) -> None:
         self._blobs: dict[str, bytes] = {}
+        self._created: dict[str, datetime] = {}
         self._lock = threading.RLock()
 
     def put(self, key: str, data: bytes) -> str:
         with self._lock:
-            self._blobs.setdefault(key, bytes(data))
+            if key not in self._blobs:
+                self._blobs[key] = bytes(data)
+                self._created[key] = _now()
         return key
 
     def get(self, key: str) -> bytes:
@@ -64,7 +67,9 @@ class MemoryFileStore:
 
     def delete(self, key: str) -> bool:
         with self._lock:
-            return self._blobs.pop(key, None) is not None
+            existed = self._blobs.pop(key, None) is not None
+            self._created.pop(key, None)
+            return existed
 
     def presign(self, key: str, expires_in: int) -> str | None:
         return None  # like local disk: the API proxies the bytes
@@ -82,6 +87,7 @@ class MemoryDocumentRepo:
         self._documents: dict[str, Document] = {}
         self._clauses: dict[str, list[ClauseSpan]] = {}
         self._texts: dict[str, str] = {}  # content_hash -> text, stored once
+        self._text_created: dict[str, datetime] = {}
 
     def record_upload(self, document_id: str, filename: str, source_type: str, size: int) -> str:
         upload_id = uuid.uuid4().hex
@@ -117,6 +123,7 @@ class MemoryDocumentRepo:
                 self._texts.setdefault(
                     clause.content_hash, texts.get(clause.content_hash, clause.text)
                 )
+                self._text_created.setdefault(clause.content_hash, _now())
             existing = self._documents.get(document.document_id)
             if (
                 existing
@@ -161,6 +168,7 @@ class MemoryVerdictRepo:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._rows: dict[tuple[str, str], ClauseVerdict] = {}
+        self._created: dict[tuple[str, str], datetime] = {}
 
     def get(self, content_hash: str, agent_version: str) -> ClauseVerdict | None:
         with self._lock:
@@ -177,9 +185,9 @@ class MemoryVerdictRepo:
 
     def save(self, verdict: ClauseVerdict) -> ClauseVerdict:
         with self._lock:
-            row = self._rows.setdefault(
-                (verdict.content_hash, verdict.agent_version), verdict.model_copy(deep=True)
-            )
+            key = (verdict.content_hash, verdict.agent_version)
+            row = self._rows.setdefault(key, verdict.model_copy(deep=True))
+            self._created.setdefault(key, _now())
             return row.model_copy(deep=True)
 
     def set_reason(
@@ -207,6 +215,9 @@ class MemoryCacheRepo:
         self._embeddings: dict[tuple[str, str], list[float]] = {}
         self._retrievals: dict[tuple[str, str, str], list] = {}
         self._topics: dict[tuple[str, str], str] = {}
+        self._embedding_created: dict[tuple[str, str], datetime] = {}
+        self._retrieval_created: dict[tuple[str, str, str], datetime] = {}
+        self._topic_created: dict[tuple[str, str], datetime] = {}
         self._summaries: dict[tuple[str, str], str] = {}
 
     def get_embedding(self, content_hash: str, model: str) -> list[float] | None:
@@ -216,7 +227,9 @@ class MemoryCacheRepo:
 
     def put_embedding(self, content_hash: str, model: str, vector: list[float]) -> None:
         with self._lock:
-            self._embeddings.setdefault((content_hash, model), list(vector))
+            key = (content_hash, model)
+            self._embeddings.setdefault(key, list(vector))
+            self._embedding_created.setdefault(key, _now())
 
     def get_retrieval(self, content_hash: str, index_hash: str, policy_hash: str) -> list | None:
         with self._lock:
@@ -227,9 +240,9 @@ class MemoryCacheRepo:
         self, content_hash: str, index_hash: str, policy_hash: str, candidates: list
     ) -> None:
         with self._lock:
-            self._retrievals.setdefault(
-                (content_hash, index_hash, policy_hash), deepcopy(candidates)
-            )
+            key = (content_hash, index_hash, policy_hash)
+            self._retrievals.setdefault(key, deepcopy(candidates))
+            self._retrieval_created.setdefault(key, _now())
 
     def get_topics(self, content_hashes: list[str], model: str) -> dict[str, str]:
         with self._lock:
@@ -242,7 +255,9 @@ class MemoryCacheRepo:
     def put_topics(self, model: str, topics: dict[str, str]) -> None:
         with self._lock:
             for content_hash, topic in topics.items():
-                self._topics.setdefault((content_hash, model), topic)
+                key = (content_hash, model)
+                self._topics.setdefault(key, topic)
+                self._topic_created.setdefault(key, _now())
 
     def get_summary_text(self, decision_set_hash: str, model: str) -> str | None:
         with self._lock:

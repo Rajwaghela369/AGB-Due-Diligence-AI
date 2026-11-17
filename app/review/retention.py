@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from app.domain import SweepReport
@@ -62,4 +62,111 @@ def retention_settings(config: Mapping[str, Any]) -> RetentionSettings:
 def run_sweep(
     service: Service, settings: RetentionSettings, now: datetime | None = None
 ) -> SweepReport:
-    raise NotImplementedError("Phase 9 Wave 1: retention")
+    instant = now or datetime.now(UTC)
+    if instant.tzinfo is None:
+        instant = instant.replace(tzinfo=UTC)
+    started = datetime.now(UTC)
+    expired_documents = expired_reviews = expired_traces = 0
+
+    if settings.enabled and settings.files_days is not None:
+        before = instant - timedelta(days=settings.files_days)
+        for document_id in service.store.deletion.expired("files", before, settings.batch):
+            try:
+                service.store.deletion.delete_document(
+                    document_id, deleted_by=None, reason="retention"
+                )
+            except (KeyError, ValueError):
+                continue  # another sweep won, or a review became active after the query
+            expired_documents += 1
+
+    if settings.enabled and settings.reviews_days is not None:
+        before = instant - timedelta(days=settings.reviews_days)
+        for review_id in service.store.deletion.expired("reviews", before, settings.batch):
+            try:
+                service.store.deletion.delete_review(review_id, deleted_by=None, reason="retention")
+            except (KeyError, ValueError):
+                continue
+            expired_reviews += 1
+
+    if settings.enabled and settings.traces_days is not None:
+        before = instant - timedelta(days=settings.traces_days)
+        trace_ids = service.store.deletion.expired("traces", before, settings.batch)
+        service.store.deletion.queue_erasures([("trace", trace_id) for trace_id in trace_ids])
+        expired_traces = len(trace_ids)
+
+    orphans_removed = service.store.deletion.sweep_orphans()
+    erasures_done, erasures_failed = service.process_erasures(settings.batch)
+    return SweepReport(
+        started_at=started,
+        finished_at=datetime.now(UTC),
+        expired_documents=expired_documents,
+        expired_reviews=expired_reviews,
+        expired_traces=expired_traces,
+        orphans_removed=orphans_removed,
+        erasures_done=erasures_done,
+        erasures_failed=erasures_failed,
+    )
+
+
+def main() -> None:
+    """Run one sweep with production wiring; scheduling belongs to cron, not the API."""
+    service, checkpoint = _production_service()
+    try:
+        print(service.sweep().model_dump_json())
+    finally:
+        service.shutdown(timeout=5)
+        checkpoint.close()
+        close = getattr(service.store, "close", None)
+        if close is not None:
+            close()
+
+
+def _production_service():
+    """Wire only the dependencies a standalone sweep needs, without starting FastAPI."""
+    from core import langfuse_client
+    from core.config import load_yaml
+    from core.masking import configure as configure_masking
+    from core.masking import masker_from_config
+    from core.paths import CONFIGS, ROOT
+    from core.settings import load_settings
+
+    from app.agent.run import make_judge
+    from app.domain import DEFAULT_OWNER_ID
+    from app.review.checkpoint import postgres_checkpointer
+    from app.review.limiter import build_limiter, review_settings
+    from app.review.service import build_service
+    from app.store.migrate import apply_pending
+    from app.store.postgres import postgres_store
+    from app.store.s3 import file_store_from_config
+
+    config = load_yaml(CONFIGS / "app.yaml")
+    configure_masking(masker_from_config(config))
+    default_owner = str(config.get("auth", {}).get("default_owner", DEFAULT_OWNER_ID))
+    apply_pending(default_owner=default_owner)
+    store = postgres_store(file_store_from_config(config, ROOT))
+    limiter = build_limiter(config)
+    environment = load_settings()
+    tracer = None
+    if environment.langfuse_public_key and environment.langfuse_secret_key:
+        tracer = langfuse_client.client()
+    checkpoint = postgres_checkpointer()
+    judge = make_judge(
+        config,
+        limiter=limiter,
+        tracer=tracer,
+        caches=store.caches,
+        checkpointer=checkpoint.saver,
+    )
+    service = build_service(
+        store,
+        judge,
+        limiter,
+        tracer,
+        retention_policy=retention_settings(config),
+        **review_settings(config),
+    )
+    return service, checkpoint
+
+
+if __name__ == "__main__":
+    main()
