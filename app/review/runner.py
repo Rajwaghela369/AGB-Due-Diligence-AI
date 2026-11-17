@@ -203,14 +203,27 @@ def count(entries: dict[int, tuple], cache_hits: int) -> ReviewCounts:
 
 
 def regenerate_reason(
-    ctx: RunContext, review: Review, clause: ClauseSpan, verdict: ClauseVerdict
+    ctx: RunContext,
+    review_id: str,
+    clause: ClauseSpan,
+    verdict: ClauseVerdict,
+    *,
+    gate: threading.RLock,
+    active_runs: Callable[[], list["ReviewRun"]],
 ) -> ClauseVerdict:
     """Re-run the explanation of one void verdict and store it on the shared verdict row.
 
-    Under the verdict's single-flight lock, so two clicks cost one Gemini call: the
-    second finds the reason in place and gets ValueError (409). The new state is
-    emitted as a STATE_DELTA; for a finished review the terminal event is appended
-    again so a follower that reconnects still ends on RUN_FINISHED/RUN_ERROR.
+    The paid call runs under the verdict's single-flight lock only, so two clicks cost
+    one Gemini call: the second finds the reason in place and gets ValueError (409).
+    Storing and announcing happen under `gate` (the service lock, the one `_try_finish`
+    holds), and whether the review is final is decided there, after the call returned:
+
+    - a run is still going: only a STATE_DELTA, so the run's own terminal comes after it;
+    - the review is final: the sequence docs/Events.md defines for a retry on a finished
+      review, RUN_STARTED, STATE_SNAPSHOT, the clause's STATE_DELTA, then the terminal
+      event again. No terminal is ever followed by anything but a RUN_STARTED.
+
+    Runs still holding the old verdict in memory are refreshed so they cannot emit it.
     """
     key = (verdict.content_hash, verdict.agent_version)
     with ctx.flights.hold(key):
@@ -220,21 +233,28 @@ def regenerate_reason(
         if not current.reason_unavailable:
             raise ValueError("Für diese Klausel liegt bereits eine Begründung vor.")
         explained = ctx.judge.explain_only(clause, current)  # raises ExplainFailed
-        stored = ctx.store.verdicts.set_reason(
-            key[0],
-            key[1],
-            explained.reason_de,
-            explained.input_tokens - current.input_tokens,
-            explained.output_tokens - current.output_tokens,
-        )
-        if stored is None:
-            raise ValueError("Für diese Klausel liegt bereits eine Begründung vor.")
-        with ctx.verdict_cache_lock:
-            ctx.verdict_cache[key] = stored
-        statuses = ctx.store.reviews.clause_statuses(review.review_id)
-        status, error = statuses.get(clause.position, ("done", None))
-        events: list = [
-            StateDeltaEvent(
+        with gate:
+            stored = ctx.store.verdicts.set_reason(
+                key[0],
+                key[1],
+                explained.reason_de,
+                explained.input_tokens - current.input_tokens,
+                explained.output_tokens - current.output_tokens,
+            )
+            if stored is None:
+                raise ValueError("Für diese Klausel liegt bereits eine Begründung vor.")
+            with ctx.verdict_cache_lock:
+                ctx.verdict_cache[key] = stored
+            runs = active_runs()
+            for run in runs:  # any review may hold the shared verdict
+                run.refresh_verdict(stored)
+            runs = [run for run in runs if run.review_id == review_id]
+            review = ctx.store.reviews.get(review_id)
+            if review is None:
+                raise KeyError(f"unknown review {review_id}")
+            statuses = ctx.store.reviews.clause_statuses(review_id)
+            status, error = statuses.get(clause.position, ("done", None))
+            delta = StateDeltaEvent(
                 delta=[
                     {
                         "op": "replace",
@@ -243,23 +263,30 @@ def regenerate_reason(
                     }
                 ]
             )
-        ]
-        if review.status == "finished":
-            events.append(
-                RunFinishedEvent(
-                    thread_id=review.document_id,
-                    run_id=review.review_id,
-                    result={
-                        "counts": review.counts.model_dump(mode="json"),
-                        "cost_usd": review.cost_usd,
-                    },
-                )
-            )
-        elif review.status == "failed":
-            events.append(
-                RunErrorEvent(message=review.error or "the review failed", code="review_failed")
-            )
-        ctx.bus.emit_many(review.review_id, events)
+            events: list = [delta]
+            if not runs and review.status in ("finished", "failed"):
+                clauses = ctx.store.documents.clauses(review.document_id)
+                state = build_state(review, load_entries(ctx.store, review, clauses))
+                if review.status == "finished":
+                    terminal: Any = RunFinishedEvent(
+                        thread_id=review.document_id,
+                        run_id=review_id,
+                        result={
+                            "counts": review.counts.model_dump(mode="json"),
+                            "cost_usd": review.cost_usd,
+                        },
+                    )
+                else:
+                    terminal = RunErrorEvent(
+                        message=review.error or "the review failed", code="review_failed"
+                    )
+                events = [
+                    RunStartedEvent(thread_id=review.document_id, run_id=review_id),
+                    StateSnapshotEvent(snapshot=state),
+                    delta,
+                    terminal,
+                ]
+            ctx.bus.emit_many(review_id, events)
         return stored
 
 
@@ -370,6 +397,15 @@ class ReviewRun:
             self._pending.append(position)
             self._set(position, "queued")
             self._cond.notify_all()
+
+    def refresh_verdict(self, verdict: ClauseVerdict) -> None:
+        """Swap in a verdict stored after this run read it, so the run cannot emit the old one."""
+        with self._cond:
+            if verdict.content_hash in self._cached_verdicts:
+                self._cached_verdicts[verdict.content_hash] = verdict
+            for position, (status, error, held) in self._entries.items():
+                if held is not None and held.content_hash == verdict.content_hash:
+                    self._entries[position] = (status, error, verdict)
 
     def stop(self) -> None:
         """Stop taking clauses; in-flight ones finish. The review stays `running` for resume."""

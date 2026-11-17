@@ -4,6 +4,8 @@ Nothing here reaches Gemini. `make_judge` gets a provider-shaped fake client, an
 API tests swap in a fake judge whose `explain_only` counts calls.
 """
 
+import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -15,8 +17,9 @@ from fastapi.testclient import TestClient
 from app.agent import prompts, run, task
 from app.agent.run import ExplainFailed
 from app.api.main import create_app
-from app.domain import ClauseSpan, ClauseVerdict, Document
+from app.domain import ClauseSpan, ClauseVerdict, Document, Review
 from app.review.limiter import build_limiter
+from app.review.runner import ReviewRun
 from app.review.service import build_service
 from app.store.memory import memory_store
 
@@ -243,3 +246,161 @@ def test_explain_endpoint_reports_a_provider_failure_and_keeps_the_verdict():
     assert response.json()["code"] == "explain_failed"
     assert finding["verdict"]["reason_unavailable"] is True
     assert retry.status_code == 200
+
+
+# --- terminal events and run-local caches -------------------------------------------
+
+
+class GatedJudge(FakeJudge):
+    """Holds a slow clause open, and holds `explain_only` open, until the test lets go."""
+
+    def __init__(self) -> None:
+        super().__init__(None)
+        self.slow = threading.Event()
+        self.explain_entered = threading.Event()
+        self.explain_go = threading.Event()
+
+    def __call__(self, clause, *, parent=None):
+        if "langsam" in clause.text:
+            assert self.slow.wait(10)
+        return super().__call__(clause, parent=parent)
+
+    def explain_only(self, clause, verdict):
+        self.explain_entered.set()
+        assert self.explain_go.wait(10)
+        return super().explain_only(clause, verdict)
+
+
+def _save_document(store, texts: list[str]) -> str:
+    document_id = content_hash("\n".join(texts))
+    store.documents.save(
+        Document(
+            document_id=document_id,
+            filename="a.txt",
+            source_type="text",
+            parser_version="p",
+            splitter_version="s",
+            text_hash=document_id,
+        ),
+        [
+            ClauseSpan(position=i, number=f"{i + 1}.", text=t, content_hash=content_hash(t))
+            for i, t in enumerate(texts)
+        ],
+        {content_hash(t): t for t in texts},
+    )
+    return document_id
+
+
+def _wait(predicate, what: str) -> None:
+    deadline = time.monotonic() + 10
+    while not predicate():
+        assert time.monotonic() < deadline, what
+        time.sleep(0.005)
+
+
+def test_a_review_finishing_during_explain_keeps_every_terminal_last():
+    store = memory_store()
+    judge = GatedJudge()
+    service = build_service(store, judge, build_limiter({}), max_concurrency=2, poll_seconds=0.01)
+    document_id = _save_document(store, [VOID_TEXT, "Eine langsame Klausel."])
+    review_id = service.start(document_id, []).review_id
+    _wait(
+        lambda: store.reviews.clause_statuses(review_id).get(0, ("",))[0] == "done",
+        "void clause judged",
+    )
+
+    result: list = []
+    caller = threading.Thread(target=lambda: result.append(service.explain_clause(review_id, 0)))
+    caller.start()
+    assert judge.explain_entered.wait(10)
+    judge.slow.set()  # the run finishes while the paid call is in flight
+    assert service.wait(review_id, 10)
+    judge.explain_go.set()
+    caller.join(10)
+    assert result[0].verdict.reason_de == "Neue Begründung."
+
+    events = list(service.events(review_id, 0, follow=False))
+    types = [e.type for e in events]
+    # (c) nothing but a new RUN_STARTED ever follows a terminal event.
+    for i, kind in enumerate(types[:-1]):
+        if kind in ("RUN_FINISHED", "RUN_ERROR"):
+            assert types[i + 1] == "RUN_STARTED"
+    assert types[-1] == "RUN_FINISHED"
+    # (a) a full replay contains the regenerated delta and ends on a terminal.
+    assert types[-4:] == ["RUN_STARTED", "STATE_SNAPSHOT", "STATE_DELTA", "RUN_FINISHED"]
+    assert "Neue Begründung." in str(events[-2].payload)
+    assert "Neue Begründung." in str(events[-3].payload)
+    # (b) a client that stopped at the original terminal sees the new events and stops.
+    first_terminal = types.index("RUN_FINISHED")
+    tail = list(service.events(review_id, events[first_terminal].seq))
+    # The reconnect's own seq-0 snapshot comes first, then exactly the new events.
+    assert [e.type for e in tail][1:] == [
+        "RUN_STARTED",
+        "STATE_SNAPSHOT",
+        "STATE_DELTA",
+        "RUN_FINISHED",
+    ]
+    assert "Neue Begründung." in str([e.payload for e in tail])
+
+
+def test_a_running_review_gets_only_a_delta_before_its_own_terminal():
+    store = memory_store()
+    judge = GatedJudge()
+    judge.explain_go.set()
+    service = build_service(store, judge, build_limiter({}), max_concurrency=2, poll_seconds=0.01)
+    document_id = _save_document(store, [VOID_TEXT, "Eine langsame Klausel."])
+    review_id = service.start(document_id, []).review_id
+    _wait(
+        lambda: store.reviews.clause_statuses(review_id).get(0, ("",))[0] == "done",
+        "void clause judged",
+    )
+    service.explain_clause(review_id, 0)
+    judge.slow.set()
+    assert service.wait(review_id, 10)
+
+    types = [e.type for e in service.events(review_id, 0, follow=False)]
+    assert types.count("RUN_FINISHED") == 1 and types[-1] == "RUN_FINISHED"
+    assert types.count("RUN_STARTED") == 1
+
+
+def test_a_concurrent_review_holding_the_old_verdict_emits_the_new_reason():
+    store = memory_store()
+    judge = GatedJudge()
+    judge.explain_go.set()
+    service = build_service(store, judge, build_limiter({}), max_concurrency=1, poll_seconds=0.01)
+    judge.slow.set()
+    first = service.start(_save_document(store, [VOID_TEXT]), []).review_id
+    assert service.wait(first, 10)
+
+    other = Review(
+        review_id="other",
+        document_id=_save_document(store, [VOID_TEXT, "Noch eine Klausel."]),
+        agent_version=VERSION,
+        scope=[],
+        status="queued",
+    )
+    store.reviews.create(other)
+    clauses = store.documents.clauses(other.document_id)
+    run = ReviewRun(
+        service._ctx,
+        other,
+        clauses,
+        positions=None,
+        reason="start",
+        finish_gate=service._lock,
+        on_closed=lambda _run: None,
+    )
+    run.open()  # reads the verdict now, while its reasoning is still missing
+    run.announce()
+
+    with service._lock:
+        service._runs["other"] = run  # as if the other review were still going
+    service.explain_clause(first, 0)
+    with service._lock:
+        del service._runs["other"]
+    run._resolve_cached()
+
+    events = list(service.events("other", 0, follow=False))
+    deltas = [str(e.payload) for e in events if e.type == "STATE_DELTA"]
+    assert deltas and all("Neue Begründung." in d for d in deltas)
+    assert not any("reason_unavailable': True" in d for d in deltas)

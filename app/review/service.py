@@ -178,7 +178,14 @@ class Service:
         verdict = self.store.verdicts.get(clause.content_hash, review.agent_version)
         if verdict is None:
             raise ValueError(f"clause {position} has no verdict yet")
-        regenerate_reason(self._ctx, review, clause, verdict)
+        regenerate_reason(
+            self._ctx,
+            review_id,
+            clause,
+            verdict,
+            gate=self._lock,
+            active_runs=lambda: list(self._runs.values()),
+        )
         return next(f for f in self.findings(review_id) if f.position == position)
 
     def events(self, review_id: str, after_seq: int = 0, *, follow: bool = True) -> Subscription:
