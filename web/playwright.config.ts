@@ -24,7 +24,7 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      testIgnore: ["**/snapshots.spec.ts", "**/decisions.spec.ts"],
+      testIgnore: ["**/snapshots.spec.ts", "**/decisions.spec.ts", "**/export.spec.ts"],
       use: { ...devices["Desktop Chrome"] },
     },
     {
@@ -34,9 +34,10 @@ export default defineConfig({
     },
     {
       // Lawyer decisions change the home page (document list, agreement card). They run after
-      // the screenshots so the pixel baselines never depend on them.
+      // the screenshots so the pixel baselines never depend on them. decisions.spec.ts asserts
+      // the agreement counts before export.spec.ts (alphabetical order) adds its own decisions.
       name: "decisions",
-      testMatch: "**/decisions.spec.ts",
+      testMatch: ["**/decisions.spec.ts", "**/export.spec.ts"],
       dependencies: ["snapshots"],
       use: { ...devices["Desktop Chrome"] },
     },

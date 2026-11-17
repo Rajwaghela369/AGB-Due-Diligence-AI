@@ -53,7 +53,7 @@ from app.store import migrate
 from app.store.deletion import MemoryDeletionRepo, PostgresDeletionRepo
 from app.store.files import LocalFileStore
 from app.store.memory import memory_store
-from app.store.s3 import S3FileStore, S3Settings, file_store_from_config
+from app.store.s3 import S3FileStore, file_store_from_config
 from tests.test_review_runner import FakeJudge, StubLimiter
 from tests.test_store_files_migrate import FakeDb
 
@@ -426,22 +426,9 @@ def test_the_memory_file_store_deletes_idempotently_and_does_not_sign():
     assert not files.exists("k.pdf") and files.keys() == []
 
 
-def test_local_and_s3_file_stores_are_wave_1(tmp_path: Path):
-    local = LocalFileStore(tmp_path)
-    s3 = S3FileStore(S3Settings())
-    for call in (
-        lambda: local.delete("k"),
-        lambda: local.presign("k", 60),
-        lambda: s3.put("k", b"x"),
-        lambda: s3.get("k"),
-        lambda: s3.delete("k"),
-        lambda: s3.presign("k", 60),
-    ):
-        with pytest.raises(NotImplementedError):
-            call()
-
-
-def test_the_file_store_is_chosen_by_config(tmp_path: Path):
+def test_the_file_store_is_chosen_by_config(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("S3_ACCESS_KEY_ID", "test-key")
+    monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "test-secret")
     assert isinstance(file_store_from_config(APP_CONFIG, tmp_path), LocalFileStore)
     assert (tmp_path / "stores/files").is_dir()
     s3 = file_store_from_config(

@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
-from fastapi.responses import Response
+from fastapi.responses import RedirectResponse, Response
 from pydantic import ValidationError
 from starlette.datastructures import UploadFile
 
 from app.api.costs import cache_hit_rate, cost_eur, pricing, wall_time_ms
-from app.api.deps import setting, state
+from app.api.deps import principal, setting, state
 from app.api.errors import ApiError
 from app.api.schemas import DocumentList, DocumentListItem, DocumentOut, PasteIn
+from app.domain import blob_key
 from app.ingest import IngestError, ingest_file, ingest_text
+from app.store.s3 import S3Settings
 
 router = APIRouter()
 
@@ -121,18 +123,29 @@ def get_document_file(document_id: str, request: Request) -> Response:
     """The source as stored: the PDF, or the pasted text the clause offsets index into."""
     dependencies = state(request)
     document = dependencies.store.documents.get(document_id)
-    if document is None:
+    caller = principal(request)
+    if document is None or document.owner_id != caller.owner_id:
         raise ApiError(404, "not_found", "Dokument nicht gefunden.")
     is_text = document.source_type == "text"
+    key = blob_key(document)
+    files = dependencies.store.files
+    download = setting(dependencies.settings, "files.s3.download", "proxy")
+    if download == "redirect":
+        # S3Settings validates this again at the request boundary: a local backend can
+        # otherwise conceal a bad redirect value until it is switched on in production.
+        expires_in = S3Settings.from_config(dependencies.settings).presign_seconds
+        url = files.presign(key, expires_in)
+        if url is not None:
+            return RedirectResponse(url=url, status_code=307, headers={"Cache-Control": "no-store"})
     try:
-        content = dependencies.store.files.get(f"{document_id}.{'txt' if is_text else 'pdf'}")
+        content = files.get(key)
     except FileNotFoundError as exc:
         raise ApiError(404, "not_found", "Datei nicht gefunden.") from exc
     return Response(
         content=content,
         media_type="text/plain; charset=utf-8" if is_text else "application/pdf",
         headers={
-            "Cache-Control": "public, max-age=31536000, immutable",
+            "Cache-Control": "private, no-store",
             "ETag": f'"{document_id}"',
         },
     )

@@ -55,6 +55,17 @@ def test_a_missing_key_raises_file_not_found(tmp_path):
         LocalFileStore(tmp_path).get("missing")
 
 
+def test_delete_is_idempotent_and_local_files_are_not_signed(tmp_path):
+    files = LocalFileStore(tmp_path)
+    files.put("a.bin", b"x")
+
+    assert files.delete("a.bin") is True
+    assert files.delete("a.bin") is False
+    assert files.presign("missing.bin", 60) is None
+    with pytest.raises(ValueError, match="positive"):
+        files.presign("missing.bin", 0)
+
+
 # --- migrate -----------------------------------------------------------------------
 
 
