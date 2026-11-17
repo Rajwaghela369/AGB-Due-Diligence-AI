@@ -7,9 +7,6 @@ what a user deletion would not. The job runs outside the API process: `python -m
 app.review.retention` once a night (cron, a Compose service or a Kubernetes CronJob), so
 two API replicas never sweep at once and a long sweep never holds a request worker.
 docs/Phase 9 Design.md, "Retention", explains the periods and the choice.
-
-Wave 0 ships the settings and stubs; the deletion slice (Wave 1) writes `run_sweep` and the
-`__main__` entry point.
 """
 
 from __future__ import annotations
@@ -19,10 +16,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from core.logging import get_logger
+
 from app.domain import SweepReport
 
 if TYPE_CHECKING:
     from app.review.service import Service
+
+log = get_logger("review.retention")
 
 
 @dataclass(frozen=True)
@@ -96,6 +97,18 @@ def run_sweep(
 
     orphans_removed = service.store.deletion.sweep_orphans()
     erasures_done, erasures_failed = service.process_erasures(settings.batch)
+    # A task past the attempt limit stays pending (it is retried every night), but each
+    # run names it, so an operator learns that a trace or blob still exists.
+    for task in service.store.deletion.pending_erasures(settings.batch):
+        if task.attempts >= settings.erasure_max_attempts:
+            log.error(
+                "erasure task %s (%s %s) has failed %s times: %s",
+                task.task_id,
+                task.target,
+                task.key,
+                task.attempts,
+                task.last_error,
+            )
     return SweepReport(
         started_at=started,
         finished_at=datetime.now(UTC),

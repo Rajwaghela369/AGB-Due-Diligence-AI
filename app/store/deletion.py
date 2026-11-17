@@ -5,8 +5,6 @@ repositories, because deletion is the one operation that crosses every table: th
 fake needs the internals of every memory repository, and the Postgres version is one
 transaction over all of them. docs/Phase 9 API.md, "Deletion", is the contract;
 docs/Phase 9 Design.md explains reference counting, the outbox and the tombstones.
-
-Wave 0 ships stubs; the deletion slice (Wave 1) writes the bodies.
 """
 
 from __future__ import annotations
@@ -15,7 +13,7 @@ import hashlib
 import threading
 import uuid
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from psycopg.rows import dict_row
@@ -39,6 +37,11 @@ if TYPE_CHECKING:
 # append-only `decision_events` (migration 006). Set with `set local`, so it ends with the
 # transaction and no other statement ever sees it.
 ERASURE_SETTING = "agb.erasure"
+
+# The orphan sweep leaves younger rows alone: an ingest writes the blob and clause texts
+# before the document that references them (docs/Phase 9 API.md, "The orphan sweep").
+ORPHAN_MIN_AGE = timedelta(hours=1)
+_EPOCH = datetime.min.replace(tzinfo=UTC)
 
 
 def _now() -> datetime:
@@ -93,24 +96,10 @@ class MemoryDeletionRepo:
             ]
             self.store.documents._clauses.pop(document_id, None)
             self.store.documents._documents.pop(document_id, None)
-            for content_hash in orphaned:
-                self.store.documents._texts.pop(content_hash, None)
-            self.store.verdicts._rows = {
-                key: row for key, row in self.store.verdicts._rows.items() if key[0] not in orphaned
-            }
-            self.store.caches._embeddings = {
-                key: row
-                for key, row in self.store.caches._embeddings.items()
-                if key[0] not in orphaned
-            }
-            self.store.caches._retrievals = {
-                key: row
-                for key, row in self.store.caches._retrievals.items()
-                if key[0] not in orphaned
-            }
-            self.store.caches._topics = {
-                key: row for key, row in self.store.caches._topics.items() if key[0] not in orphaned
-            }
+            for _name, rows, created, hash_of in self._content_tables():
+                for key in [key for key in rows if hash_of(key) in orphaned]:
+                    rows.pop(key, None)
+                    created.pop(key, None)
             tombstone = self._add_tombstone(
                 kind="document",
                 subject_id=document_id,
@@ -148,34 +137,44 @@ class MemoryDeletionRepo:
 
     def sweep_orphans(self) -> dict[str, int]:
         with self._lock:
+            # Like Postgres: rows younger than ORPHAN_MIN_AGE may belong to an upload that
+            # has written its clause texts (or blob) but not yet its document.
+            cutoff = _now() - ORPHAN_MIN_AGE
             referenced = {
                 clause.content_hash
                 for clauses in self.store.documents._clauses.values()
                 for clause in clauses
             }
             removed = _counts()
-            orphaned = set(self.store.documents._texts) - referenced
-            removed["clause_texts"] = len(orphaned)
-            for content_hash in orphaned:
-                self.store.documents._texts.pop(content_hash, None)
-            for name, rows in (
-                ("verdicts", self.store.verdicts._rows),
-                ("embeddings", self.store.caches._embeddings),
-                ("retrievals", self.store.caches._retrievals),
-                ("topics", self.store.caches._topics),
-            ):
-                doomed = [key for key in rows if key[0] not in referenced]
+            traces: list[tuple[ErasureTarget, str]] = []
+            for name, rows, created, hash_of in self._content_tables():
+                doomed = [
+                    key
+                    for key in rows
+                    if hash_of(key) not in referenced and created.get(key, _EPOCH) < cutoff
+                ]
                 removed[name] = len(doomed)
                 for key in doomed:
-                    rows.pop(key, None)
+                    row = rows.pop(key, None)
+                    created.pop(key, None)
+                    if name == "verdicts" and row is not None and row.trace_id:
+                        traces.append(("trace", row.trace_id))
 
-            live_blobs = {
-                blob_key(document) for document in self.store.documents._documents.values()
-            }
-            file_keys = self.store.files.keys()
-            orphan_blobs = [key for key in file_keys if key not in live_blobs]
+            files = self.store.files
+            listed = getattr(files, "keys", None)
+            orphan_blobs: list[str] = []
+            if listed is not None:  # the FileStore protocol cannot list; see the report
+                live_blobs = {
+                    blob_key(document) for document in self.store.documents._documents.values()
+                }
+                born = getattr(files, "_created", {})
+                orphan_blobs = [
+                    key
+                    for key in listed()
+                    if key not in live_blobs and born.get(key, _EPOCH) < cutoff
+                ]
             removed["blobs"] = len(orphan_blobs)
-            self.queue_erasures([("blob", key) for key in orphan_blobs])
+            self.queue_erasures(traces + [("blob", key) for key in orphan_blobs])
             return removed
 
     def expired(self, data_class: DataClass, before: datetime, limit: int = 100) -> list[str]:
@@ -194,9 +193,7 @@ class MemoryDeletionRepo:
                 }
                 candidates = [
                     (
-                        uploaded.get(document_id)
-                        or document.created_at
-                        or datetime.min.replace(tzinfo=UTC),
+                        uploaded.get(document_id) or document.created_at or _EPOCH,
                         document_id,
                     )
                     for document_id, document in self.store.documents._documents.items()
@@ -209,12 +206,21 @@ class MemoryDeletionRepo:
                 ]
             else:
                 candidates = [
-                    (review.created_at or datetime.min.replace(tzinfo=UTC), review.trace_id)
+                    (review.created_at or _EPOCH, review.trace_id)
                     for review in self.store.reviews._reviews.values()
                     if review.trace_id
                 ]
-                pending = {task.key for task in self._tasks if task.target == "trace"}
-                candidates = [(at, key) for at, key in candidates if key not in pending]
+                candidates += [
+                    (self.store.verdicts._created.get(key, _EPOCH), verdict.trace_id)
+                    for key, verdict in self.store.verdicts._rows.items()
+                    if verdict.trace_id
+                ]
+                queued = {task.key for task in self._tasks if task.target == "trace"}
+                first: dict[str, datetime] = {}
+                for at, key in candidates:
+                    if key not in queued:
+                        first[key] = min(at, first.get(key, at))
+                candidates = [(at, key) for key, at in first.items()]
             return [key for at, key in sorted(candidates) if at < before][:limit]
 
     def pending_erasures(self, limit: int = 100) -> list[ErasureTask]:
@@ -394,6 +400,18 @@ class MemoryDeletionRepo:
             if content_hash in orphaned_hashes and verdict.trace_id
         )
         return self._dedupe_tasks(tasks)
+
+    def _content_tables(self) -> list[tuple[str, dict, dict, Any]]:
+        """Each content-addressed table: its rows, their creation times, and the key's hash."""
+        documents, verdicts, caches = self.store.documents, self.store.verdicts, self.store.caches
+        whole, first = (lambda key: key), (lambda key: key[0])
+        return [
+            ("clause_texts", documents._texts, documents._text_created, whole),
+            ("verdicts", verdicts._rows, verdicts._created, first),
+            ("embeddings", caches._embeddings, caches._embedding_created, first),
+            ("retrievals", caches._retrievals, caches._retrieval_created, first),
+            ("topics", caches._topics, caches._topic_created, first),
+        ]
 
     def _shared_hashes(self, document_id: str, hashes: set[str]) -> set[str]:
         return {

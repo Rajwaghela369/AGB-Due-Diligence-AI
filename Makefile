@@ -2,7 +2,7 @@
 .PHONY: help install smoke kb eval-data eval-data-dry recheck baseline baseline-held-out \
 	baseline-smoke eval eval-held-out eval-smoke seed-prompts lint format test web web-gen \
 	web-check e2e e2e-install ui-snapshots ui-snapshots-update check clean api api-up api-down \
-	eval-corrections
+	eval-corrections sweep
 
 PY := uv run
 
@@ -85,6 +85,9 @@ ui-snapshots:  ## Screenshot regression: every page x {1440, 1024, 820} px x {li
 
 ui-snapshots-update:  ## Re-record the screenshot baselines after an intended visual change
 	cd web && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm exec playwright test --project=snapshots --update-snapshots
+
+sweep:  ## 9.C nightly job: retention, the orphan sweep and pending erasures (DATABASE_URL)
+	$(PY) python -m app.review.retention
 
 agreement:  ## Lawyer agreement per agent_version for the store in DATABASE_URL
 	$(PY) python -m scripts.agreement
