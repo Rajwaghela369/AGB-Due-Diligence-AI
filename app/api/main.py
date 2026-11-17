@@ -157,8 +157,14 @@ def build_app() -> FastAPI:
     configure_logging(json_logs=True)
     environment = load_settings()
     # Phase 9 (9.A): the masking boundary every model and trace payload passes through;
-    # None (masking off) until `privacy.masking.enabled`.
-    configure_masking(masker_from_config(config))
+    # None (masking off) until `privacy.masking.enabled`. The masker loads now, not on the
+    # first clause: with `privacy.masking.required` a missing spaCy model or Presidio stops
+    # the start (MaskerUnavailable) instead of failing every call.
+    masker = masker_from_config(config)
+    configure_masking(masker)
+    load_masker = getattr(masker, "load", None)
+    if callable(load_masker):
+        load_masker()
     apply_pending(default_owner=setting(config, "auth.default_owner", DEFAULT_OWNER_ID))
     store = postgres_store(file_store_from_config(config, ROOT))
     statutes = load_statutes(PROCESSED / "bgb_chunks.jsonl")

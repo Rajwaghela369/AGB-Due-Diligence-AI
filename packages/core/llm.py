@@ -22,8 +22,15 @@ control signal rather than a provider fault, and swallowing it would recreate
 the failure this module exists to prevent: the $5 Anthropic run did not stop
 when it ran out, it degraded, and returned a verdict-shaped error for every
 remaining clause. A run out of allowance should stop.
+
+Phase 9 (9.A): client text leaves only masked. `decide` masks `text`, `complete` and
+`complete_stream` mask `user` through `core.masking.boundary()`, and restore the
+placeholders in the answer before returning it, so callers never see a placeholder or hold
+the map. A masker failure is a failed result and nothing is sent. System prompts and
+decision questions are our own templates (and statute texts) and pass as they are.
 """
 
+import json
 import os
 import random
 import re
@@ -36,6 +43,7 @@ from typing import Any
 
 from core.budget import BudgetExceeded, RequestBudget
 from core.logging import get_logger
+from core.masking import MaskedText, MaskingError, StreamUnmasker, boundary
 
 log = get_logger("core.llm")
 
@@ -223,9 +231,11 @@ def decide(
         )
 
     try:
+        masked = boundary().outbound(text)
+        boundary().require_masked(masked)
         resolved = _gemini_client(client)
         result = _request_with_retries(
-            lambda: resolved.decisions.create(model=name, input=text, questions=questions),
+            lambda: resolved.decisions.create(model=name, input=masked, questions=questions),
             budget,
         )
     except BudgetExceeded:
@@ -253,16 +263,45 @@ def complete(
     max_tokens = int(model.get("max_output_tokens", 800))
 
     try:
-        if provider == GEMINI:
-            return _complete_gemini(system, user, schema, name, max_tokens, budget, client)
-        if provider == ANTHROPIC:
-            return _complete_anthropic(system, user, schema, name, max_tokens, budget, client)
+        if provider in (GEMINI, ANTHROPIC):
+            masked = boundary().outbound(user)
+            boundary().require_masked(masked)
+            call = _complete_gemini if provider == GEMINI else _complete_anthropic
+            completion = call(system, masked, schema, name, max_tokens, budget, client)
+            return _unmasked(completion, masked)
     except BudgetExceeded:
         raise
     except Exception as exc:  # noqa: BLE001 - a failed call is data, not a crash
         return _failed_completion(name, exc)
 
     raise NotImplementedError(f"complete() does not support provider {provider!r}")
+
+
+def _unmasked(completion: Completion, masked: str) -> Completion:
+    """The answer with the prompt's placeholders restored. The answer is JSON, and an
+    original value may need escaping (a line break in an address), so strings are restored
+    inside the parsed JSON; text that is not JSON is restored as it is."""
+    if not isinstance(masked, MaskedText) or not masked.placeholders:
+        return completion
+    try:
+        parsed = json.loads(completion.text)
+    except ValueError:
+        text = masked.unmask(completion.text)
+    else:
+        text = json.dumps(_unmask_json(parsed, masked), ensure_ascii=False)
+    return Completion(
+        text, completion.input_tokens, completion.output_tokens, completion.model, completion.error
+    )
+
+
+def _unmask_json(value: Any, masked: MaskedText) -> Any:
+    if isinstance(value, str):
+        return masked.unmask(value)
+    if isinstance(value, list):
+        return [_unmask_json(item, masked) for item in value]
+    if isinstance(value, dict):
+        return {key: _unmask_json(item, masked) for key, item in value.items()}
+    return value
 
 
 def _complete_gemini(
@@ -479,4 +518,49 @@ def complete_stream(
     if provider != GEMINI:
         raise NotImplementedError(f"complete_stream() does not support provider {provider!r}")
 
-    return _GeminiCompletionStream(system, user, name, max_tokens, budget, client)
+    try:
+        masked = boundary().outbound(user)
+        boundary().require_masked(masked)
+    except MaskingError as exc:
+        return iter([_failed_completion(name, exc)])
+    stream = _GeminiCompletionStream(system, masked, name, max_tokens, budget, client)
+    if isinstance(masked, MaskedText) and masked.placeholders:
+        return _UnmaskingStream(stream, masked)
+    return stream
+
+
+class _UnmaskingStream(Iterator[Completion]):
+    """Restores placeholders piece by piece (holding back a split `<KIND_` tail) and keeps
+    the provider stream's cancel hook reachable for the chat's disconnect handling."""
+
+    def __init__(self, source: _GeminiCompletionStream, masked: MaskedText) -> None:
+        self._source = source
+        self._unmasker = StreamUnmasker(masked)
+
+    def __iter__(self) -> "_UnmaskingStream":
+        return self
+
+    def __next__(self) -> Completion:
+        while True:
+            try:
+                piece = next(self._source)
+            except StopIteration:
+                rest = self._unmasker.flush()
+                if rest:
+                    return Completion(rest, 0, 0, self._source._name)
+                raise
+            if piece.text:
+                text = self._unmasker.feed(piece.text)
+                if not text:
+                    continue  # all of it may be the start of a placeholder
+            else:
+                # The closing piece (usage, or an error): release anything held back.
+                text = self._unmasker.flush()
+            return Completion(
+                text, piece.input_tokens, piece.output_tokens, piece.model, piece.error
+            )
+
+    def cancel(self) -> None:
+        self._source.cancel()
+
+    close = cancel

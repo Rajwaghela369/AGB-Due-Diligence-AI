@@ -14,6 +14,7 @@ from typing import Any
 
 from core.hashing import content_hash
 from core.logging import get_logger
+from core.masking import boundary
 
 from app.domain import ClauseSpan, ClauseVerdict, Decision, Document, Review
 
@@ -82,26 +83,35 @@ class Corrections:
                 name=self.settings.dataset,
                 description="Lawyer overrides approved for continuous evaluation.",
             )
+            # Dataset items are not observations, so the `mask=` hook does not see them; they
+            # are masked here (9.A). A masking failure raises before anything is sent.
+            mask = boundary().langfuse_mask
             self.langfuse.create_dataset_item(
                 id=item_id,
                 dataset_name=self.settings.dataset,
-                input={
-                    "clause_id": clause.content_hash,
-                    "title": clause.heading or clause.number or "",
-                    "text": clause.text,
-                    "topics": [clause.topic] if clause.topic else [],
-                },
-                expected_output={
-                    "model_verdict": verdict.verdict,
-                    "corrected_verdict": decision.corrected_verdict,
-                    "corrected_basis": list(decision.corrected_basis or decision.model_basis),
-                },
-                metadata={
-                    "agent_version": review.agent_version,
-                    "review_id": review.review_id,
-                    "review_link": f"/reviews/{review.review_id}",
-                    "content_hash": clause.content_hash,
-                },
+                input=mask(
+                    data={
+                        "clause_id": clause.content_hash,
+                        "title": clause.heading or clause.number or "",
+                        "text": clause.text,
+                        "topics": [clause.topic] if clause.topic else [],
+                    }
+                ),
+                expected_output=mask(
+                    data={
+                        "model_verdict": verdict.verdict,
+                        "corrected_verdict": decision.corrected_verdict,
+                        "corrected_basis": list(decision.corrected_basis or decision.model_basis),
+                    }
+                ),
+                metadata=mask(
+                    data={
+                        "agent_version": review.agent_version,
+                        "review_id": review.review_id,
+                        "review_link": f"/reviews/{review.review_id}",
+                        "content_hash": clause.content_hash,
+                    }
+                ),
             )
         except Exception:  # noqa: BLE001 - dataset publishing cannot reject a decision
             log.warning("could not upsert correction %s", item_id, exc_info=True)

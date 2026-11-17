@@ -23,9 +23,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from core import langfuse_client
+from core import langfuse_client, masking
 from core.budget import BudgetExceeded, RequestBudget
+from core.config import load_yaml
 from core.logging import get_logger
+from core.paths import CONFIGS
 from langfuse import Evaluation
 
 from evals.datasets import EvalItem
@@ -273,6 +275,16 @@ def write_report(
     )
 
 
+def configure_masking(app_config: dict[str, Any] | None = None) -> None:
+    """Mask eval runs exactly as the app would (`privacy.masking` in configs/app.yaml), so
+    the 9.A gate's "verdicts do not change" eval measures the masked prompts. A boundary a
+    caller (a test) has already configured is left alone."""
+    if masking.boundary().enabled:
+        return
+    config = app_config if app_config is not None else load_yaml(CONFIGS / "app.yaml")
+    masking.configure(masking.masker_from_config(config))
+
+
 def run(
     name: str,
     run_name: str,
@@ -287,6 +299,7 @@ def run(
     budget: RequestBudget | None = None,
 ) -> RunResult:
     """Execute one experiment and record it in Langfuse and in a report file."""
+    configure_masking()
     client = langfuse_client.client()
 
     # Held-out runs attach to the published dataset so Langfuse can compare

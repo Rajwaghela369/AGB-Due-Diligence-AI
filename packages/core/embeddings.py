@@ -1,4 +1,9 @@
-"""Embedding access through the Jina API. Nothing runs locally."""
+"""Embedding access through the Jina API. Nothing runs locally.
+
+Phase 9 (9.A): each text is masked (`core.masking.boundary()`) after its cache key is
+computed, so the key stays on the original text and only masked text reaches Jina. Masking
+is off in processes that never configure it, such as the knowledge-base build over statutes.
+"""
 
 from dataclasses import dataclass
 
@@ -6,6 +11,7 @@ import requests
 
 from core.hashing import content_hash
 from core.logging import get_logger
+from core.masking import boundary
 from core.settings import load_settings
 
 log = get_logger("core.embeddings")
@@ -62,7 +68,9 @@ def embed_texts(
 
     for start in range(0, len(missing), batch_size):
         batch_entries = missing[start : start + batch_size]
-        batch = [entry[1] for entry in batch_entries]
+        # Masked here, after `digest` was computed on the original (MaskingError: no send).
+        batch = [boundary().outbound(entry[1]) for entry in batch_entries]
+        boundary().require_masked(batch)
         response = requests.post(
             ENDPOINT,
             headers=headers,

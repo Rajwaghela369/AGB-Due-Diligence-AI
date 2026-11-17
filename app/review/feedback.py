@@ -11,6 +11,7 @@ import hashlib
 from typing import Any
 
 from core.logging import get_logger
+from core.masking import boundary
 
 from app.domain import REASON_STEP, Decision, Feedback
 from app.store.interfaces import Store
@@ -65,7 +66,9 @@ class FeedbackService:
 
         observations: dict[str, str | None] = {}
         scored_steps: list[str] = []
-        score_comment = self._score_comment(request)
+        # Score comments are plain API calls, not observations: Langfuse's `mask=` hook does
+        # not see them, so they are masked here (9.A). A masking failure drops the comment.
+        score_comment = boundary().trace_text(self._score_comment(request))
         for step in steps:
             observation_id = getattr(verdict.observations, step)
             observations[step] = observation_id
@@ -169,7 +172,7 @@ class FeedbackService:
                         observation_id=verdict.observations.clause_span,
                         score_id=dismissed_id,
                         data_type="NUMERIC",
-                        comment=decision.note,
+                        comment=boundary().trace_text(decision.note),
                     )
                 except Exception:  # noqa: BLE001 - tracing cannot reject a decision
                     log.warning("could not record Langfuse dismissal score", exc_info=True)

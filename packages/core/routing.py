@@ -1,10 +1,15 @@
-"""Low-cost topic routing through Jina's zero-shot classifier."""
+"""Low-cost topic routing through Jina's zero-shot classifier.
+
+Phase 9 (9.A): every clause is masked (`core.masking.boundary()`) before it is sent; the
+topic does not depend on whose name is in the clause.
+"""
 
 from typing import Any
 
 import requests
 
 from core.logging import get_logger
+from core.masking import boundary
 from core.settings import load_settings
 
 log = get_logger("core.routing")
@@ -22,7 +27,8 @@ def classify_topics(texts: list[str], *, model: str = "jina-embeddings-v3") -> l
         raise RuntimeError("JINA_API_KEY is not set; copy .env.example to .env")
     topics: list[str] = []
     for start in range(0, len(texts), BATCH_SIZE):
-        batch = texts[start : start + BATCH_SIZE]
+        batch = [boundary().outbound(text) for text in texts[start : start + BATCH_SIZE]]
+        boundary().require_masked(batch)
         response = requests.post(
             ENDPOINT,
             headers={
