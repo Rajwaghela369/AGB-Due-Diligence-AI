@@ -405,6 +405,17 @@ def test_set_clause_statuses_upserts_many_in_one_call(store):
     }
 
 
+def test_summary_text_cache_insert_or_reuse_per_model(store):
+    key = uid()
+    assert store.caches.get_summary_text(key, "flash") is None
+    store.caches.put_summary_text(key, "flash", "Erste Empfehlung.")
+    store.caches.put_summary_text(key, "flash", "Zweite Empfehlung.")  # first writer wins
+
+    assert store.caches.get_summary_text(key, "flash") == "Erste Empfehlung."
+    assert store.caches.get_summary_text(key, "pro") is None
+    assert store.caches.get_summary_text(uid(), "flash") is None
+
+
 def test_clause_topics_live_on_the_review_rows(store):
     review = store.reviews.create(make_review())
     rid = review.review_id
@@ -429,6 +440,22 @@ def test_awaiting_decisions_is_idle_and_stamps_finished_at(store):
     assert got.status == "awaiting_decisions" and got.finished_at is not None
     assert store.reviews.active_for(review.document_id, review.agent_version) is None
     assert review.review_id not in {r.review_id for r in store.reviews.running()}
+
+
+def test_finished_at_is_the_end_of_the_last_run(store):
+    """A decision moving the review between idle statuses keeps `finished_at` (Phase 8
+    wall time); a retry's run ending restamps it."""
+    review = store.reviews.create(make_review())
+    store.reviews.set_status(review.review_id, "running")
+    store.reviews.set_status(review.review_id, "awaiting_decisions")
+    ended = store.reviews.get(review.review_id).finished_at
+
+    store.reviews.set_status(review.review_id, "finished")
+    assert store.reviews.get(review.review_id).finished_at == ended
+
+    store.reviews.set_status(review.review_id, "running")
+    store.reviews.set_status(review.review_id, "finished")
+    assert store.reviews.get(review.review_id).finished_at > ended
 
 
 # --- events -------------------------------------------------------------------
