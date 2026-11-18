@@ -69,14 +69,16 @@ export function StepBar(props: {
         />
       </li>
       {awaitingDecisions && (
-        <li role="status" className="text-muted-foreground">
-          {t("viewer.steps.awaitingDecisions")}
+        <li className="text-muted-foreground">
+          <span role="status">{t("viewer.steps.awaitingDecisions")}</span>
         </li>
       )}
       {props.progress?.waiting_reason && (
-        <li role="status" className="flex items-center gap-1 text-muted-foreground">
-          <Hourglass aria-hidden="true" size={13} />
-          {t(`viewer.steps.waiting.${props.progress.waiting_reason}`)}
+        <li className="flex items-center gap-1 text-muted-foreground">
+          <span role="status" className="flex items-center gap-1">
+            <Hourglass aria-hidden="true" size={13} />
+            {t(`viewer.steps.waiting.${props.progress.waiting_reason}`)}
+          </span>
         </li>
       )}
     </ol>
