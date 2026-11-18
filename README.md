@@ -1,8 +1,9 @@
 # AGB-Check
 
 Agentic review of German consumer terms and conditions (AGB): flags potentially void
-clauses, cites the BGB paragraph, and explains why. Learning prototype in the legal
-due diligence area.
+clauses, cites the BGB paragraph, and explains why. This repository contains an MVP
+close to production shape for evaluation and demonstration; it is not a production
+service or legal advice.
 
 ## Documents
 
@@ -17,6 +18,10 @@ due diligence area.
 - `docs/Phase 4 Results.md` - what Phase 4 built and the numbers measured so far
 - `docs/Phase 5 Plan.md` - the backend API: ingest, cache-first review runner, AG-UI stream, feedback
 - `docs/Phase 6 Plan.md` - the frontend: annotated document, findings, table, feedback
+- `docs/Phase 7-10 Plan.md` - decisions, deliverables, DSGVO hardening and the AVV stretch scope
+- `docs/Phase 9 Design.md` - privacy, deletion, storage and authentication design
+- `docs/Phase 9 API.md` - current privacy, storage and OIDC contracts
+- `docs/Phase 10 API.md` - AVV contract and implementation boundary
 
 ## Layout
 
@@ -40,8 +45,21 @@ siblings and may not import each other, pipelines write the stores, the app read
 
 ## Getting started
 
+Prerequisites: Python 3.12, `uv`, Docker Compose, Node.js with Corepack/pnpm, and
+access to the configured external services. The API and evaluation commands use
+Gemini, Jina, Qdrant, Neon Postgres and Langfuse; the browser checks use local fakes.
+
 ```bash
 cp .env.example .env     # fill in the keys; see the comments in the file
+corepack enable
+cd web && pnpm install && cd ..
+```
+
+Set `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` in `.env` before using `make api-up`;
+Compose starts MinIO for development even though the default application file backend
+is local. Then install the Python environment and run the local smoke gate:
+
+```bash
 make install
 make smoke               # Phase 0 gate
 ```
@@ -94,6 +112,30 @@ Limits live in `configs/app.yaml`: `ingest.max_upload_mb`, `api.cors_origins` (t
 browser origin allowed), `api.rate_limit_per_minute` and `api.rate_limit_burst` (uploads
 and reviews per client IP), and `files.root` for the stored PDFs.
 
+## MVP boundary and non-production defaults
+
+The AGB review flow, API, browser workspace, human decisions, summaries, exports, chat,
+storage abstractions, deletion logic and OIDC validation are implemented and tested.
+The current `stage` branch is still an MVP: run the full browser gate before relying on
+an environment, and treat all findings as review assistance rather than legal advice.
+
+The following defaults are deliberate demo-MVP choices and are outside this project's
+scope; they are not required for the evaluation application:
+
+- `privacy.masking.enabled: false`, `privacy.retention.enabled: false`,
+  `auth.enabled: false`, and `files.backend: local` in `configs/app.yaml`.
+- Gemini token prices are `0` and `eur_per_usd` is `null`, so displayed cost is marked
+  as unconfirmed until prices and an exchange-rate policy are supplied.
+- MinIO and Keycloak in `docker-compose.yml` are development services. Production
+  storage, OIDC provider, TLS, secrets, retention periods and backup policy are
+  intentionally not included in this MVP.
+- The browser login flow is not enabled by the default configuration; Keycloak is an
+  API/development validation path only until the web client integration is completed.
+- Phase 10 AVV support is currently contract/schema groundwork on this branch. The AVV
+  agent/UI implementation is not part of the default AGB MVP path.
+- The API is intentionally configured for one worker because review events are held in
+  process memory until the Postgres event path is used consistently.
+
 ## Current state
 
 Reference numbers, with the caveats that matter, in `docs/Metrics.md`:
@@ -125,9 +167,14 @@ times for every correct call, so precision is what Phase 4 has to earn. The harn
 `evals/` is permanent and agent-agnostic; Phase 4's graph plugs into it unchanged. See
 `docs/Phase 3 Results.md`.
 
-Phase 4: the agentic RAG graph runs end to end - see **Running the agent**. Phase 4
-closes on runnability, not on a metric; void F1 and recall are improved as continuous
-evaluation alongside later phases. See `docs/Phase 4 Plan.md`.
+Phases 4–9: the agentic RAG graph, backend API, browser workspace, human decisions,
+deliverables and DSGVO hardening are present on this branch. They close on runnability
+and test coverage rather than a production accuracy claim; void F1 and recall remain
+continuous-evaluation metrics. See the phase plans and `docs/Metrics.md`.
+
+Phase 10: the AVV profile, migration and API contract are present, but the AVV agent and
+UI work remain separate branch work. Do not describe AVV checking as part of the current
+AGB MVP until those branches are merged and the end-to-end gate passes.
 
 ## Stack
 
