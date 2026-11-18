@@ -7,12 +7,31 @@ import { useTranslation } from "react-i18next";
 
 import type { ReviewProgress } from "../../api/events";
 import type { Review } from "../../api/types.gen";
+import type { ReviewFinding } from "../review/use-review";
 import { reviewProgress } from "./layout";
 
-export function StepBar(props: { review: Review; progress?: ReviewProgress | null }) {
+export function StepBar(props: {
+  review: Review;
+  findings: readonly ReviewFinding[];
+  progress?: ReviewProgress | null;
+}) {
   const { t } = useTranslation();
   const { done, total } = reviewProgress(props.review);
-  const awaitingDecisions = props.review.status === "awaiting_decisions";
+  const awaitingDecisions =
+    props.review.status === "awaiting_decisions" ||
+    (props.review.counts?.awaiting_decision !== undefined &&
+      props.review.counts.awaiting_decision > 0) ||
+    props.findings.some((finding) => finding.status === "awaiting_decision");
+  // A terminal stream's final snapshot can still carry `running`; all clause states are
+  // already final in that case. Do not leave the lawyer looking at a spinner.
+  const judgeable = props.findings.filter(
+    (finding) => finding.clause.in_scope !== false && finding.status !== "out_of_scope",
+  );
+  const allClausesSettled =
+    judgeable.length > 0 &&
+    judgeable.every((finding) => ["done", "failed", "awaiting_decision"].includes(finding.status));
+  const judgingComplete =
+    ["awaiting_decisions", "finished"].includes(props.review.status) || allClausesSettled;
   const finished = ["upload", "read", "split"] as const;
   return (
     <ol
@@ -32,7 +51,7 @@ export function StepBar(props: { review: Review; progress?: ReviewProgress | nul
         </Fragment>
       ))}
       <li className="flex items-center gap-2 font-medium" aria-current="step">
-        {awaitingDecisions ? (
+        {judgingComplete ? (
           <Check aria-hidden="true" size={13} className="text-valid" />
         ) : (
           <Loader2
@@ -50,14 +69,16 @@ export function StepBar(props: { review: Review; progress?: ReviewProgress | nul
         />
       </li>
       {awaitingDecisions && (
-        <li role="status" className="text-muted-foreground">
-          {t("viewer.steps.awaitingDecisions")}
+        <li className="text-muted-foreground">
+          <span role="status">{t("viewer.steps.awaitingDecisions")}</span>
         </li>
       )}
       {props.progress?.waiting_reason && (
-        <li role="status" className="flex items-center gap-1 text-muted-foreground">
-          <Hourglass aria-hidden="true" size={13} />
-          {t(`viewer.steps.waiting.${props.progress.waiting_reason}`)}
+        <li className="flex items-center gap-1 text-muted-foreground">
+          <span role="status" className="flex items-center gap-1">
+            <Hourglass aria-hidden="true" size={13} />
+            {t(`viewer.steps.waiting.${props.progress.waiting_reason}`)}
+          </span>
         </li>
       )}
     </ol>

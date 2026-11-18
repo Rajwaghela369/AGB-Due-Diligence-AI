@@ -83,8 +83,12 @@ export function hitOffsets(hitsByPage: ReadonlyArray<readonly unknown[]>): numbe
   return offsets;
 }
 
-/** Checked clauses (done or failed) out of all in-scope clauses. */
+/** Judged clauses out of all in-scope (and therefore judgeable) clauses. */
 export function reviewProgress(review: Review): { done: number; total: number } {
   const counts = review.counts ?? {};
-  return { done: (counts.done ?? 0) + (counts.failed ?? 0), total: counts.total ?? 0 };
+  return {
+    // An uncertain clause has already been judged; it now needs the lawyer's decision.
+    done: (counts.done ?? 0) + (counts.failed ?? 0) + (counts.awaiting_decision ?? 0),
+    total: counts.total ?? 0,
+  };
 }
