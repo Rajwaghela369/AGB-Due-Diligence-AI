@@ -35,6 +35,7 @@ from app.domain import (
     DecisionEvent,
     Document,
     Feedback,
+    ObligationCode,
     Review,
     ReviewCounts,
     ReviewStatus,
@@ -164,13 +165,21 @@ class _Repo:
 
 
 class PostgresDocumentRepo(_Repo):
-    def record_upload(self, document_id: str, filename: str, source_type: str, size: int) -> str:
+    def record_upload(
+        self,
+        document_id: str,
+        filename: str,
+        source_type: str,
+        size: int,
+        document_type: str = "agb",
+    ) -> str:
         upload_id = uuid.uuid4().hex
         with self._connect() as conn:
             conn.execute(
-                "insert into uploads (upload_id, document_id, filename, source_type, size)"
-                " values (%s, %s, %s, %s, %s)",
-                (upload_id, document_id, filename, source_type, size),
+                "insert into uploads"
+                " (upload_id, document_id, filename, source_type, size, document_type)"
+                " values (%s, %s, %s, %s, %s, %s)",
+                (upload_id, document_id, filename, source_type, size, document_type),
             )
         return upload_id
 
@@ -180,7 +189,7 @@ class PostgresDocumentRepo(_Repo):
 
     _DOC_COLUMNS = (
         "document_id, filename, source_type, page_count, parser_version, splitter_version,"
-        " text_hash, created_at, owner_id, source_hash"
+        " text_hash, document_type, created_at, owner_id, source_hash"
     )
 
     def get(self, document_id: str) -> Document | None:
@@ -231,12 +240,14 @@ class PostgresDocumentRepo(_Repo):
             conn.execute(
                 "insert into documents (document_id, filename, source_type, page_count,"
                 " parser_version, splitter_version, text_hash, created_at, owner_id,"
-                " source_hash)"
-                " values (%s, %s, %s, %s, %s, %s, %s, coalesce(%s, clock_timestamp()), %s, %s)"
+                " source_hash, document_type)"
+                " values (%s, %s, %s, %s, %s, %s, %s, coalesce(%s, clock_timestamp()),"
+                " %s, %s, %s)"
                 " on conflict (document_id) do update set"
                 " filename = excluded.filename, source_type = excluded.source_type,"
                 " page_count = excluded.page_count, parser_version = excluded.parser_version,"
-                " splitter_version = excluded.splitter_version, text_hash = excluded.text_hash",
+                " splitter_version = excluded.splitter_version, text_hash = excluded.text_hash,"
+                " document_type = excluded.document_type",
                 (
                     document.document_id,
                     document.filename,
@@ -248,6 +259,7 @@ class PostgresDocumentRepo(_Repo):
                     document.created_at,
                     document.owner_id,
                     document.source_hash or document.document_id,
+                    document.document_type,
                 ),
             )
             conn.execute(
@@ -303,7 +315,7 @@ class PostgresDocumentRepo(_Repo):
 _VERDICT_COLUMNS = (
     "content_hash, agent_version, verdict, legal_basis, candidates, basis_scores, reason_de,"
     " reason_unavailable, confidence, void_probability, check_rule, trace_id, observations,"
-    " input_tokens, output_tokens, latency_ms"
+    " input_tokens, output_tokens, latency_ms, obligation_findings"
 )
 
 
@@ -343,7 +355,8 @@ class PostgresVerdictRepo(_Repo):
         with self._connect() as conn:
             conn.execute(
                 f"insert into verdicts ({_VERDICT_COLUMNS})"
-                " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+                " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,"
+                " %s, %s)"
                 " on conflict (content_hash, agent_version) do nothing",
                 (
                     verdict.content_hash,
@@ -362,6 +375,7 @@ class PostgresVerdictRepo(_Repo):
                     verdict.input_tokens,
                     verdict.output_tokens,
                     verdict.latency_ms,
+                    Jsonb([item.model_dump(mode="json") for item in verdict.obligation_findings]),
                 ),
             )
             row = _row(
@@ -457,6 +471,40 @@ class PostgresCacheRepo(_Repo):
                 (model, hashes, [topics[h] for h in hashes]),
             )
 
+    def get_obligations(
+        self, content_hashes: list[str], model: str, profile: str
+    ) -> dict[str, list[ObligationCode]]:
+        hashes = list(dict.fromkeys(content_hashes))
+        if not hashes:
+            return {}
+        with self._connect() as conn:
+            rows = _rows(
+                conn,
+                "select content_hash, obligations from obligation_routes"
+                " where content_hash = any(%s) and model = %s and profile = %s",
+                (hashes, model, profile),
+            )
+        return {row["content_hash"]: list(row["obligations"]) for row in rows}
+
+    def put_obligations(
+        self,
+        model: str,
+        profile: str,
+        obligations: dict[str, list[ObligationCode]],
+    ) -> None:
+        if not obligations:
+            return
+        with self._connect() as conn, conn.cursor() as cursor:
+            cursor.executemany(
+                "insert into obligation_routes (content_hash, model, profile, obligations)"
+                " values (%s, %s, %s, %s)"
+                " on conflict (content_hash, model, profile) do nothing",
+                [
+                    (content_hash, model, profile, found)
+                    for content_hash, found in obligations.items()
+                ],
+            )
+
     def get_summary_text(self, decision_set_hash: str, model: str) -> str | None:
         with self._connect() as conn:
             rows = _rows(
@@ -479,7 +527,7 @@ class PostgresCacheRepo(_Repo):
 
 _REVIEW_COLUMNS = (
     "review_id, document_id, agent_version, scope, status, counts, cost_usd, trace_id, error,"
-    " created_at, started_at, finished_at, owner_id"
+    " created_at, started_at, finished_at, owner_id, document_type, obligations"
 )
 
 
@@ -510,9 +558,9 @@ class PostgresReviewRepo(_Repo):
             conn.execute(
                 "insert into reviews (review_id, document_id, agent_version, scope, status,"
                 " counts, cost_usd, trace_id, error, created_at, started_at, finished_at,"
-                " owner_id)"
+                " owner_id, document_type, obligations)"
                 " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, coalesce(%s, clock_timestamp()),"
-                " %s, %s, %s) on conflict do nothing",
+                " %s, %s, %s, %s, %s) on conflict do nothing",
                 (
                     review.review_id,
                     review.document_id,
@@ -527,6 +575,8 @@ class PostgresReviewRepo(_Repo):
                     review.started_at,
                     review.finished_at,
                     review.owner_id,
+                    review.document_type,
+                    list(review.obligations),
                 ),
             )
             row = _row(
@@ -676,6 +726,31 @@ class PostgresReviewRepo(_Repo):
                 (review_id,),
             )
         return {r["position"]: r["topic"] for r in rows}
+
+    def set_clause_obligations(
+        self, review_id: str, obligations: dict[int, list[ObligationCode]]
+    ) -> None:
+        if not obligations:
+            return
+        positions = list(obligations)
+        with self._connect() as conn, conn.cursor() as cursor:
+            cursor.executemany(
+                "insert into review_clauses (review_id, position, status, obligations)"
+                " values (%s, %s, 'queued', %s)"
+                " on conflict (review_id, position) do update set"
+                " obligations = excluded.obligations",
+                [(review_id, position, obligations[position]) for position in positions],
+            )
+
+    def clause_obligations(self, review_id: str) -> dict[int, list[ObligationCode]]:
+        with self._connect() as conn:
+            rows = _rows(
+                conn,
+                "select position, obligations from review_clauses"
+                " where review_id = %s and cardinality(obligations) > 0 order by position",
+                (review_id,),
+            )
+        return {row["position"]: list(row["obligations"]) for row in rows}
 
 
 class PostgresEventRepo(_Repo):

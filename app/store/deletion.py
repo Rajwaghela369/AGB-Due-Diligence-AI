@@ -416,6 +416,9 @@ class MemoryDeletionRepo:
                 "embeddings": sum(key[0] in orphaned for key in self.store.caches._embeddings),
                 "retrievals": sum(key[0] in orphaned for key in self.store.caches._retrievals),
                 "topics": sum(key[0] in orphaned for key in self.store.caches._topics),
+                "obligation_routes": sum(
+                    key[0] in orphaned for key in self.store.caches._obligations
+                ),
             }
         )
         kept = {
@@ -424,6 +427,7 @@ class MemoryDeletionRepo:
             "embeddings": sum(key[0] in shared for key in self.store.caches._embeddings),
             "retrievals": sum(key[0] in shared for key in self.store.caches._retrievals),
             "topics": sum(key[0] in shared for key in self.store.caches._topics),
+            "obligation_routes": sum(key[0] in shared for key in self.store.caches._obligations),
         }
         erasures = self._external_tasks(set(review_ids), orphaned)
         if not any(
@@ -538,6 +542,12 @@ class MemoryDeletionRepo:
             ("embeddings", caches._embeddings, caches._embedding_created, first),
             ("retrievals", caches._retrievals, caches._retrieval_created, first),
             ("topics", caches._topics, caches._topic_created, first),
+            (
+                "obligation_routes",
+                caches._obligations,
+                caches._obligation_created,
+                first,
+            ),
         ]
 
     def _shared_hashes(self, document_id: str, hashes: set[str]) -> set[str]:
@@ -746,7 +756,14 @@ class PostgresDeletionRepo:
                 "select distinct trace_id from verdicts candidate where trace_id is not null"
                 " and" + unreferenced,
             )
-            for table in ("verdicts", "embeddings", "retrievals", "topics", "clause_texts"):
+            for table in (
+                "verdicts",
+                "embeddings",
+                "retrievals",
+                "topics",
+                "obligation_routes",
+                "clause_texts",
+            ):
                 removed[table] = _delete_count(
                     conn, f"delete from {table} candidate where" + unreferenced
                 )
@@ -1129,7 +1146,14 @@ class PostgresDeletionRepo:
             " where d.content_hash = candidate.content_hash)"
             + self._eval_guard(conn, "candidate.content_hash")
         )
-        for table in ("verdicts", "embeddings", "retrievals", "topics", "clause_texts"):
+        for table in (
+            "verdicts",
+            "embeddings",
+            "retrievals",
+            "topics",
+            "obligation_routes",
+            "clause_texts",
+        ):
             removed[table] = _delete_count(
                 conn,
                 f"delete from {table} candidate where candidate.content_hash = any(%s)"
@@ -1210,7 +1234,14 @@ class PostgresDeletionRepo:
         return f" and not exists (select 1 from clauses e where e.content_hash = {expression})"
 
 
-_CONTENT_TABLES = ("clause_texts", "verdicts", "embeddings", "retrievals", "topics")
+_CONTENT_TABLES = (
+    "clause_texts",
+    "verdicts",
+    "embeddings",
+    "retrievals",
+    "topics",
+    "obligation_routes",
+)
 _TASK_COLUMNS = (
     "task_id, target, key, tombstone_id, requested_at, attempts, last_error, done_at,"
     " next_attempt_at"

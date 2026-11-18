@@ -301,23 +301,31 @@ export type ReviewId2 = string;
 export type Source = "vote" | "decision";
 export type Vote = "up" | "down";
 export type FindingStatus = "open" | "accepted" | "overridden" | "dismissed";
+export type Confidence = number;
+export type Fulfilled = boolean;
+export type LegalBasis = string[];
+export type Obligation = "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h";
+export type ReasonDe1 = string;
+export type ReasonUnavailable1 = boolean;
+export type ObligationFindings = ObligationFinding[];
 export type Position4 = number;
 export type Status = "queued" | "checking" | "done" | "failed" | "out_of_scope" | "awaiting_decision";
 export type AgentVersion3 = string;
 export type Candidates = string[];
 export type Check = string | null;
-export type Confidence = number;
+export type Confidence1 = number;
 export type ContentHash1 = string;
 export type InputTokens1 = number;
 export type LatencyMs1 = number | null;
-export type LegalBasis = string[];
+export type LegalBasis1 = string[];
+export type ObligationFindings1 = ObligationFinding[];
 export type ClauseSpan1 = string | null;
 export type Explanation = string | null;
 export type Judge = string | null;
 export type Retrieval = string | null;
 export type OutputTokens1 = number;
-export type ReasonDe1 = string;
-export type ReasonUnavailable1 = boolean;
+export type ReasonDe2 = string;
+export type ReasonUnavailable2 = boolean;
 export type TraceId = string | null;
 export type Verdict = "valid" | "potentially_void" | "uncertain";
 export type VoidProbability = number | null;
@@ -347,8 +355,10 @@ export type Uncertain = number;
 export type Valid = number;
 export type CreatedAt1 = string | null;
 export type DocumentId = string;
+export type DocumentType = "agb" | "avv";
 export type Error1 = string | null;
 export type FinishedAt = string | null;
+export type Obligations = ("a" | "b" | "c" | "d" | "e" | "f" | "g" | "h")[];
 export type OwnerId = string;
 export type ReviewId3 = string;
 export type Scope = ("liability" | "warranty")[];
@@ -367,6 +377,7 @@ export type Attempts = number;
 export type DoneAt = string | null;
 export type Key = string;
 export type LastError = string | null;
+export type NextAttemptAt = string | null;
 export type RequestedAt = string;
 export type Target = "blob" | "trace" | "score" | "dataset_item" | "checkpoint";
 export type TaskId = number;
@@ -376,7 +387,7 @@ export type ReviewIds1 = string[];
 export type At1 = string;
 export type Authenticated1 = boolean;
 export type DeletedBy = string | null;
-export type Kind = "document" | "review";
+export type Kind = "document" | "review" | "sweep";
 export type OwnerId1 = string;
 export type Reason = "user" | "retention" | "orphan_sweep";
 export type SubjectId = string;
@@ -385,6 +396,7 @@ export type CacheHitRate1 = number;
 export type CostEur1 = number | null;
 export type CreatedAt2 = string | null;
 export type DocumentId2 = string;
+export type DocumentType1 = "agb" | "avv";
 export type Filename = string;
 export type OwnerId2 = string;
 export type PageCount = number | null;
@@ -417,11 +429,20 @@ export type Vote1 = "up" | "down";
 export type FeedbackId1 = string;
 export type ScoredSteps = string[];
 export type Findings = Finding[];
+export type FindingStatus1 = "open" | "accepted" | "overridden" | "dismissed";
+export type Code3 = "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h";
+export type LabelDe = string;
+export type LegalBasis2 = string;
+export type QuestionDe = string;
+export type ReasonDe3 = string;
+export type ReviewId5 = string;
+export type MissingObligations = MissingObligation[];
 export type Status2 = "ok";
-export type Confidence1 = number;
+export type Confidence2 = number;
 export type Position7 = number;
 export type Question = string;
 export type Verdict2 = "valid" | "potentially_void" | "uncertain";
+export type DocumentType2 = "agb" | "avv";
 export type Filename1 = string;
 export type Text3 = string;
 export type AuthEnabled = boolean;
@@ -453,15 +474,15 @@ export type GeneratedAt = string;
 export type LastDecidedAt1 = string | null;
 export type Recommendation = string;
 export type RecommendationFromLlm = boolean;
-export type ReviewId5 = string;
+export type ReviewId6 = string;
 export type ReviewStatus = "queued" | "running" | "finished" | "awaiting_decisions" | "failed";
 export type Reviewers = string[];
 export type Basis = string[];
 export type Citations = string[];
-export type Confidence2 = number;
+export type Confidence3 = number;
 export type DecidedBy2 = string | null;
 export type Excerpt = string;
-export type FindingStatus1 = "open" | "accepted" | "overridden" | "dismissed";
+export type FindingStatus2 = "open" | "accepted" | "overridden" | "dismissed";
 export type Heading2 = string | null;
 export type ModelVerdict1 = "valid" | "potentially_void" | "uncertain";
 export type Note3 = string;
@@ -480,7 +501,7 @@ export type SourceUrl = string | null;
 export type Text4 = string;
 export type Title = string;
 export type CreatedAt3 = string | null;
-export type ReviewId6 = string;
+export type ReviewId7 = string;
 export type Seq = number;
 export type Type =
   | "RUN_STARTED"
@@ -732,6 +753,7 @@ export interface Finding {
   error?: Error;
   feedback?: Feedback | null;
   finding_status?: FindingStatus;
+  obligation_findings?: ObligationFindings;
   position: Position4;
   status: Status;
   verdict?: ClauseVerdict | null;
@@ -794,6 +816,21 @@ export interface Observations {
   [k: string]: string | null;
 }
 /**
+ * The AVV agent's answer for one obligation mentioned by one clause.
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "ObligationFinding".
+ */
+export interface ObligationFinding {
+  confidence: Confidence;
+  fulfilled: Fulfilled;
+  legal_basis?: LegalBasis;
+  obligation: Obligation;
+  reason_de?: ReasonDe1;
+  reason_unavailable?: ReasonUnavailable1;
+  [k: string]: unknown;
+}
+/**
  * A verdict keyed by (content_hash, agent_version); shared by every document.
  *
  * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
@@ -804,15 +841,16 @@ export interface ClauseVerdict {
   basis_scores?: BasisScores;
   candidates?: Candidates;
   check?: Check;
-  confidence: Confidence;
+  confidence: Confidence1;
   content_hash: ContentHash1;
   input_tokens?: InputTokens1;
   latency_ms?: LatencyMs1;
-  legal_basis?: LegalBasis;
+  legal_basis?: LegalBasis1;
+  obligation_findings?: ObligationFindings1;
   observations?: StepObservations;
   output_tokens?: OutputTokens1;
-  reason_de?: ReasonDe1;
-  reason_unavailable?: ReasonUnavailable1;
+  reason_de?: ReasonDe2;
+  reason_unavailable?: ReasonUnavailable2;
   trace_id?: TraceId;
   verdict: Verdict;
   void_probability?: VoidProbability;
@@ -877,8 +915,10 @@ export interface Review {
   counts?: ReviewCounts;
   created_at?: CreatedAt1;
   document_id: DocumentId;
+  document_type?: DocumentType;
   error?: Error1;
   finished_at?: FinishedAt;
+  obligations?: Obligations;
   owner_id?: OwnerId;
   review_id: ReviewId3;
   scope: Scope;
@@ -963,6 +1003,7 @@ export interface ErasureTask {
   done_at?: DoneAt;
   key: Key;
   last_error?: LastError;
+  next_attempt_at?: NextAttemptAt;
   requested_at: RequestedAt;
   target: Target;
   task_id: TaskId;
@@ -1025,6 +1066,7 @@ export interface DocumentListItem {
 export interface Document {
   created_at?: CreatedAt2;
   document_id: DocumentId2;
+  document_type?: DocumentType1;
   filename: Filename;
   owner_id?: OwnerId2;
   page_count?: PageCount;
@@ -1112,7 +1154,34 @@ export interface FeedbackOut {
  */
 export interface FindingsOut {
   findings: Findings;
+  missing_obligations?: MissingObligations;
   review: Review;
+  [k: string]: unknown;
+}
+/**
+ * A document-level AVV finding: no clause mentions one mandatory obligation.
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "MissingObligation".
+ */
+export interface MissingObligation {
+  finding_status?: FindingStatus1;
+  obligation: Obligation1;
+  reason_de: ReasonDe3;
+  review_id: ReviewId5;
+  [k: string]: unknown;
+}
+/**
+ * One mandatory term of Art. 28(3)(a)-(h) DSGVO in the AVV profile.
+ *
+ * This interface was referenced by `AGBCheckAPIContracts`'s JSON-Schema
+ * via the `definition` "Obligation".
+ */
+export interface Obligation1 {
+  code: Code3;
+  label_de: LabelDe;
+  legal_basis: LegalBasis2;
+  question_de: QuestionDe;
   [k: string]: unknown;
 }
 /**
@@ -1130,7 +1199,7 @@ export interface Health {
  * via the `definition` "Interrupt".
  */
 export interface Interrupt {
-  confidence: Confidence1;
+  confidence: Confidence2;
   position: Position7;
   question?: Question;
   verdict: Verdict2;
@@ -1143,6 +1212,7 @@ export interface Interrupt {
  * via the `definition` "PasteIn".
  */
 export interface PasteIn {
+  document_type?: DocumentType2;
   filename?: Filename1;
   text: Text3;
   [k: string]: unknown;
@@ -1204,7 +1274,7 @@ export interface ReviewSummary {
   last_decided_at?: LastDecidedAt1;
   recommendation: Recommendation;
   recommendation_from_llm?: RecommendationFromLlm;
-  review_id: ReviewId5;
+  review_id: ReviewId6;
   review_status: ReviewStatus;
   reviewers?: Reviewers;
   top_risks?: TopRisks;
@@ -1245,10 +1315,10 @@ export interface SummaryCounts {
 export interface SummaryFinding {
   basis?: Basis;
   citations?: Citations;
-  confidence: Confidence2;
+  confidence: Confidence3;
   decided_by?: DecidedBy2;
   excerpt: Excerpt;
-  finding_status: FindingStatus1;
+  finding_status: FindingStatus2;
   heading?: Heading2;
   model_verdict: ModelVerdict1;
   note?: Note3;
@@ -1299,7 +1369,7 @@ export interface StatuteOut {
 export interface StoredEvent {
   created_at?: CreatedAt3;
   payload: Payload;
-  review_id: ReviewId6;
+  review_id: ReviewId7;
   seq: Seq;
   type: Type;
   [k: string]: unknown;
