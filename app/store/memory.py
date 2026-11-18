@@ -26,6 +26,7 @@ from app.domain import (
     DecisionEvent,
     Document,
     Feedback,
+    ObligationCode,
     Review,
     ReviewCounts,
     ReviewStatus,
@@ -97,7 +98,14 @@ class MemoryDocumentRepo:
         self._texts: dict[str, str] = {}  # content_hash -> text, stored once
         self._text_created: dict[str, datetime] = {}
 
-    def record_upload(self, document_id: str, filename: str, source_type: str, size: int) -> str:
+    def record_upload(
+        self,
+        document_id: str,
+        filename: str,
+        source_type: str,
+        size: int,
+        document_type: str = "agb",
+    ) -> str:
         upload_id = uuid.uuid4().hex
         with self._lock:
             self.uploads.append(
@@ -106,6 +114,7 @@ class MemoryDocumentRepo:
                     "document_id": document_id,
                     "filename": filename,
                     "source_type": source_type,
+                    "document_type": document_type,
                     "size": size,
                     "uploaded_at": _now(),
                 }
@@ -223,9 +232,11 @@ class MemoryCacheRepo:
         self._embeddings: dict[tuple[str, str], list[float]] = {}
         self._retrievals: dict[tuple[str, str, str], list] = {}
         self._topics: dict[tuple[str, str], str] = {}
+        self._obligations: dict[tuple[str, str, str], list[ObligationCode]] = {}
         self._embedding_created: dict[tuple[str, str], datetime] = {}
         self._retrieval_created: dict[tuple[str, str, str], datetime] = {}
         self._topic_created: dict[tuple[str, str], datetime] = {}
+        self._obligation_created: dict[tuple[str, str, str], datetime] = {}
         self._summaries: dict[tuple[str, str], str] = {}
         # Phase 9: the review each paragraph was written for (None: before Phase 9).
         self._summary_reviews: dict[tuple[str, str], str | None] = {}
@@ -270,6 +281,28 @@ class MemoryCacheRepo:
                 self._topics.setdefault(key, topic)
                 self._topic_created.setdefault(key, _now())
 
+    def get_obligations(
+        self, content_hashes: list[str], model: str, profile: str
+    ) -> dict[str, list[ObligationCode]]:
+        with self._lock:
+            return {
+                content_hash: list(found)
+                for content_hash in dict.fromkeys(content_hashes)
+                if (found := self._obligations.get((content_hash, model, profile))) is not None
+            }
+
+    def put_obligations(
+        self,
+        model: str,
+        profile: str,
+        obligations: dict[str, list[ObligationCode]],
+    ) -> None:
+        with self._lock:
+            for content_hash, found in obligations.items():
+                key = (content_hash, model, profile)
+                self._obligations.setdefault(key, list(found))
+                self._obligation_created.setdefault(key, _now())
+
     def get_summary_text(self, decision_set_hash: str, model: str) -> str | None:
         with self._lock:
             return self._summaries.get((decision_set_hash, model))
@@ -292,6 +325,7 @@ class MemoryReviewRepo:
         self._order: dict[str, int] = {}  # insertion order breaks created_at ties
         self._clauses: dict[str, dict[int, tuple[ClauseStatus, str | None]]] = {}
         self._topics: dict[str, dict[int, str]] = {}
+        self._obligations: dict[str, dict[int, list[ObligationCode]]] = {}
 
     def create(self, review: Review) -> Review:
         with self._lock:
@@ -420,6 +454,28 @@ class MemoryReviewRepo:
     def clause_topics(self, review_id: str) -> dict[int, str]:
         with self._lock:
             return dict(sorted(self._topics.get(review_id, {}).items()))
+
+    def set_clause_obligations(
+        self, review_id: str, obligations: dict[int, list[ObligationCode]]
+    ) -> None:
+        if not obligations:
+            return
+        with self._lock:
+            if review_id not in self._reviews:
+                raise KeyError(review_id)
+            rows = self._clauses.setdefault(review_id, {})
+            for position in obligations:
+                rows.setdefault(position, ("queued", None))
+            stored = self._obligations.setdefault(review_id, {})
+            for position, found in obligations.items():
+                stored[position] = list(found)
+
+    def clause_obligations(self, review_id: str) -> dict[int, list[ObligationCode]]:
+        with self._lock:
+            return {
+                position: list(found)
+                for position, found in sorted(self._obligations.get(review_id, {}).items())
+            }
 
 
 class MemoryEventRepo:

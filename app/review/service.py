@@ -170,7 +170,8 @@ class Service:
             active = self.store.reviews.active_for(document_id, self.agent_version)
             if active is not None:
                 return active
-            if self.store.documents.get(document_id) is None:
+            document = self.store.documents.get(document_id)
+            if document is None:
                 raise KeyError(f"unknown document {document_id}")
             clauses = self.store.documents.clauses(document_id)
             if not clauses:
@@ -187,6 +188,7 @@ class Service:
                     review_id=review_id,
                     document_id=document_id,
                     agent_version=self.agent_version,
+                    document_type=document.document_type,
                     scope=list(scope),
                     status="queued",
                 )
@@ -225,6 +227,9 @@ class Service:
                     error=error,
                     decision=decisions.get(clause.position),
                     feedback=votes.get(clause.position),
+                    obligation_findings=(
+                        list(verdict.obligation_findings) if verdict is not None else []
+                    ),
                 )
             )
         return findings

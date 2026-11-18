@@ -2,8 +2,8 @@
 
 Public surface (the Phase 5 contract):
 
-    ingest_file(data, filename, *, store) -> IngestResult
-    ingest_text(text, filename, *, store) -> IngestResult
+    ingest_file(data, filename, *, store, document_type="agb") -> IngestResult
+    ingest_text(text, filename, *, store, document_type="agb") -> IngestResult
     split(words) -> list[ClauseSpan]           # pure, unit-testable
     IngestError(code, message)                 # code is shown by the UI
 
@@ -18,7 +18,7 @@ import hashlib
 
 from core.hashing import content_hash
 
-from app.domain import Document, IngestResult
+from app.domain import Document, DocumentType, IngestResult, blob_key, document_id_for
 
 PARSER_VERSION = "pdfplumber-1"
 SPLITTER_VERSION = "2"  # bump on any change to split.py
@@ -31,7 +31,9 @@ class IngestError(Exception):
         self.message = message
 
 
-def ingest_file(data: bytes, filename: str, *, store) -> IngestResult:
+def ingest_file(
+    data: bytes, filename: str, *, store, document_type: DocumentType = "agb"
+) -> IngestResult:
     """Validate and content-address one uploaded PDF or DOCX."""
     from app.ingest.convert import convert_docx
     from app.ingest.split import split
@@ -40,11 +42,12 @@ def ingest_file(data: bytes, filename: str, *, store) -> IngestResult:
     source_type = detect_upload(data)
     # Keyed on the uploaded bytes, and checked before conversion: Gotenberg stamps
     # each PDF it renders, so the converted bytes differ on every upload of a DOCX.
-    document_id = hashlib.sha256(data).hexdigest()
+    source_hash = hashlib.sha256(data).hexdigest()
+    document_id = document_id_for(source_hash, document_type=document_type)
 
     cached = store.documents.find_parsed(document_id, PARSER_VERSION, SPLITTER_VERSION)
     if cached is not None:
-        store.documents.record_upload(document_id, filename, source_type, len(data))
+        store.documents.record_upload(document_id, filename, source_type, len(data), document_type)
         return IngestResult(
             document=cached,
             clauses=store.documents.clauses(document_id),
@@ -65,13 +68,17 @@ def ingest_file(data: bytes, filename: str, *, store) -> IngestResult:
         parser_version=PARSER_VERSION,
         splitter_version=SPLITTER_VERSION,
         text_hash=content_hash("\n".join(clause.text for clause in clauses)),
+        document_type=document_type,
+        source_hash=source_hash,
     )
-    _save_with_blob(store, document, clauses, f"{document_id}.pdf", pdf_data)
-    store.documents.record_upload(document_id, filename, source_type, len(data))
+    _save_with_blob(store, document, clauses, blob_key(document), pdf_data)
+    store.documents.record_upload(document_id, filename, source_type, len(data), document_type)
     return IngestResult(document=document, clauses=clauses)
 
 
-def ingest_text(text: str, filename: str, *, store) -> IngestResult:
+def ingest_text(
+    text: str, filename: str, *, store, document_type: DocumentType = "agb"
+) -> IngestResult:
     """Content-address pasted text and split it with character offsets."""
     from app.ingest.split import split, words_from_text
 
@@ -79,10 +86,11 @@ def ingest_text(text: str, filename: str, *, store) -> IngestResult:
         raise IngestError("empty", "Der eingefügte Text ist leer.")
 
     data = text.encode("utf-8")
-    document_id = hashlib.sha256(data).hexdigest()
+    source_hash = hashlib.sha256(data).hexdigest()
+    document_id = document_id_for(source_hash, document_type=document_type)
     cached = store.documents.find_parsed(document_id, PARSER_VERSION, SPLITTER_VERSION)
     if cached is not None:
-        store.documents.record_upload(document_id, filename, "text", len(data))
+        store.documents.record_upload(document_id, filename, "text", len(data), document_type)
         return IngestResult(
             document=cached,
             clauses=store.documents.clauses(document_id),
@@ -99,9 +107,11 @@ def ingest_text(text: str, filename: str, *, store) -> IngestResult:
         parser_version=PARSER_VERSION,
         splitter_version=SPLITTER_VERSION,
         text_hash=content_hash(text),
+        document_type=document_type,
+        source_hash=source_hash,
     )
-    _save_with_blob(store, document, clauses, f"{document_id}.txt", data)
-    store.documents.record_upload(document_id, filename, "text", len(data))
+    _save_with_blob(store, document, clauses, blob_key(document), data)
+    store.documents.record_upload(document_id, filename, "text", len(data), document_type)
     return IngestResult(document=document, clauses=clauses)
 
 

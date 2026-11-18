@@ -19,6 +19,7 @@ from app.domain import (
     ExportFile,
     ExportFormat,
     Finding,
+    MissingObligation,
     Principal,
     Review,
     Reviewer,
@@ -112,6 +113,14 @@ class ReviewService(Protocol):
     def findings(self, review_id: str) -> list[Finding]:
         """Every clause of the document in order, with status, verdict, decision and vote."""
         ...
+
+    def missing_obligations(self, review_id: str) -> list[MissingObligation]:
+        """Return each AVV obligation absent from every clause-level obligation finding.
+
+        The check runs at document level after clause results are available. AGB reviews
+        and incomplete AVV reviews return an empty list. Phase 10 Wave 1 implements it.
+        """
+        raise NotImplementedError
 
     def retry_clause(self, review_id: str, position: int) -> None:
         """Re-judge a failed clause. Raises ValueError if it is not failed."""

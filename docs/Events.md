@@ -26,6 +26,7 @@ and closes.
 ```jsonc
 {
   "review": Review,                      // app.domain.Review, camelCase not applied: field names as in Python
+  "missing_obligations": MissingObligation[], // [] for AGB; Phase 10 document findings
   "clauses": {
     "<position>": {
       "status": "queued" | "checking" | "done" | "failed" | "out_of_scope" | "awaiting_decision",
@@ -235,3 +236,17 @@ Phase 9 adds no event types. Three rules for the streams above:
   event. A client that reconnects (`Last-Event-ID`) to a deleted review gets 404 and
   should drop the review from its state. A deletion writes no event; its record is the
   tombstone (docs/Phase 9 API.md, "Deletion").
+
+## AVV reviews (Phase 10)
+
+Phase 10 raises `EVENT_SCHEMA_VERSION` to 2 and adds no event type. `Review.document_type`
+selects the profile. For an AVV, each clause verdict may carry several
+`obligation_findings`; these travel inside the existing clause entry of `STATE_SNAPSHOT`
+and `STATE_DELTA`.
+
+Once obligation routing has covered every clause, the document-level checker compares the
+mentioned letters with Art. 28(3)(a)-(h). It emits one `STATE_DELTA` operation
+`replace /missing_obligations` containing all absent letters in profile order, including
+lit. c when no clause mentions lit. c. This operation precedes the terminal progress and
+`RUN_FINISHED`. A reconnect snapshot contains the same list. AGB snapshots keep an empty
+list and their event order is unchanged.

@@ -13,11 +13,13 @@ from app.domain import (
     Decision,
     DecisionEvent,
     Document,
+    DocumentType,
     ExportBlocker,
     ExportBlockReason,
     FeedbackReason,
     FeedbackVote,
     Finding,
+    MissingObligation,
     Review,
     Topic,
 )
@@ -67,6 +69,7 @@ class PasteIn(BaseModel):
 
     text: str = Field(min_length=1)
     filename: str = "Eingefügter Text"
+    document_type: DocumentType = "agb"
 
 
 class DocumentListItem(BaseModel):
@@ -110,6 +113,7 @@ class ReviewOut(BaseModel):
 class FindingsOut(BaseModel):
     review: Review
     findings: list[Finding]
+    missing_obligations: list[MissingObligation] = Field(default_factory=list)
 
 
 class FeedbackIn(BaseModel):

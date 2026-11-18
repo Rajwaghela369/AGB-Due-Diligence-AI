@@ -52,7 +52,7 @@ from typing import Any, Protocol
 
 from core.logging import get_logger
 
-from app.domain import ClauseSpan, ClauseVerdict
+from app.domain import ClauseSpan, ClauseVerdict, ObligationCode
 
 log = get_logger("agent.run")
 
@@ -84,6 +84,14 @@ class Judge(Protocol):
     def __call__(
         self, clause: ClauseSpan, *, parent: Any = None, thread_id: str | None = None
     ) -> ClauseVerdict: ...
+
+    def route_obligations(self, clause: ClauseSpan) -> list[ObligationCode]:
+        """Route an AVV clause to every applicable Art. 28(3)(a)-(h) obligation.
+
+        Phase 10 Wave 1 implements this from the AVV profile. A clause may cover several
+        letters; an empty result means it does not mention a mandatory obligation.
+        """
+        raise NotImplementedError
 
     def resume(
         self, clause: ClauseSpan, *, thread_id: str, verdict: str | None, basis: list[str]

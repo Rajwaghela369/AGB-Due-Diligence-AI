@@ -19,7 +19,29 @@ from pydantic import BaseModel, Field, model_validator
 DEFAULT_OWNER_ID = "local"
 
 SourceType = Literal["pdf", "docx", "text"]
+DocumentType = Literal["agb", "avv"]
 Topic = Literal["liability", "warranty"]
+ObligationCode = Literal["a", "b", "c", "d", "e", "f", "g", "h"]
+
+
+class Obligation(BaseModel):
+    """One mandatory term of Art. 28(3)(a)-(h) DSGVO in the AVV profile."""
+
+    code: ObligationCode
+    label_de: str
+    question_de: str
+    legal_basis: str
+
+
+class ObligationFinding(BaseModel):
+    """The AVV agent's answer for one obligation mentioned by one clause."""
+
+    obligation: ObligationCode
+    fulfilled: bool
+    confidence: float = Field(ge=0.0, le=1.0)
+    legal_basis: list[str] = Field(default_factory=list)
+    reason_de: str = ""
+    reason_unavailable: bool = False
 
 
 class Rect(BaseModel):
@@ -60,6 +82,8 @@ class Document(BaseModel):
     parser_version: str
     splitter_version: str
     text_hash: str
+    # Chosen once at upload. Existing documents and clients remain AGB reviews.
+    document_type: DocumentType = "agb"
     created_at: datetime | None = None
     # Phase 9 (9.E): who owns it. Before login every document belongs to the configured
     # default owner (`auth.default_owner`, DEFAULT_OWNER_ID); migration 006 gives existing
@@ -122,6 +146,8 @@ class ClauseVerdict(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     latency_ms: int | None = None
+    # Empty for AGB. An AVV clause may answer more than one Art. 28 obligation.
+    obligation_findings: list[ObligationFinding] = Field(default_factory=list)
 
 
 # --- reviews ------------------------------------------------------------------
@@ -163,7 +189,11 @@ class Review(BaseModel):
     review_id: str
     document_id: str
     agent_version: str
+    # Copied from the document when the review is created; clients never choose it here.
+    document_type: DocumentType = "agb"
     scope: list[Topic]
+    # Empty for AGB; AVV reviews normally carry all letters a-h.
+    obligations: list[ObligationCode] = Field(default_factory=list)
     status: ReviewStatus
     counts: ReviewCounts = Field(default_factory=ReviewCounts)
     cost_usd: float = 0.0
@@ -314,6 +344,8 @@ class Finding(BaseModel):
     # Derived from `decision` on construction: "open" when there is none.
     finding_status: FindingStatus = "open"
     feedback: "Feedback | None" = None  # the latest vote on this clause
+    # Empty for AGB; copied from the clause verdict for AVV presentation and reloads.
+    obligation_findings: list[ObligationFinding] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _derive_finding_status(self) -> "Finding":
@@ -321,6 +353,15 @@ class Finding(BaseModel):
             FINDING_STATUS[self.decision.action] if self.decision is not None else "open"
         )
         return self
+
+
+class MissingObligation(BaseModel):
+    """A document-level AVV finding: no clause mentions one mandatory obligation."""
+
+    review_id: str
+    obligation: Obligation
+    reason_de: str
+    finding_status: FindingStatus = "open"
 
 
 # --- feedback -----------------------------------------------------------------
@@ -360,7 +401,7 @@ Finding.model_rebuild()
 
 # --- events -------------------------------------------------------------------
 
-EVENT_SCHEMA_VERSION = 1
+EVENT_SCHEMA_VERSION = 2
 
 # AG-UI event types the service emits, in `ag_ui.core.EventType` spelling.
 EventType = Literal[
@@ -657,13 +698,19 @@ def default_principal(owner_id: str = DEFAULT_OWNER_ID) -> Principal:
     return Principal(subject=owner_id, authenticated=False)
 
 
-def document_id_for(source_hash: str, owner_id: str = DEFAULT_OWNER_ID) -> str:
+def document_id_for(
+    source_hash: str,
+    owner_id: str = DEFAULT_OWNER_ID,
+    document_type: DocumentType = "agb",
+) -> str:
     """A document's id: per owner, so two users uploading the same file get two documents
     and never see each other's reviews. The default owner keeps the plain source hash, so
     every id (and URL) from before Phase 9 stays valid."""
-    if owner_id == DEFAULT_OWNER_ID:
+    if owner_id == DEFAULT_OWNER_ID and document_type == "agb":
         return source_hash
-    return hashlib.sha256(f"{owner_id}\x00{source_hash}".encode()).hexdigest()
+    if document_type == "agb":
+        return hashlib.sha256(f"{owner_id}\x00{source_hash}".encode()).hexdigest()
+    return hashlib.sha256(f"{owner_id}\x00{document_type}\x00{source_hash}".encode()).hexdigest()
 
 
 def blob_key(document: Document) -> str:
@@ -722,6 +769,7 @@ DELETION_TABLES: tuple[str, ...] = (
     "embeddings",
     "retrievals",
     "topics",
+    "obligation_routes",
     "summary_texts",
 )
 

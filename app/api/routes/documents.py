@@ -11,7 +11,7 @@ from app.api.costs import cache_hit_rate, cost_eur, pricing, wall_time_ms
 from app.api.deps import principal, setting, state
 from app.api.errors import ApiError
 from app.api.schemas import DocumentList, DocumentListItem, DocumentOut, PasteIn
-from app.domain import blob_key
+from app.domain import DocumentType, blob_key
 from app.ingest import IngestError, ingest_file, ingest_text
 from app.store.s3 import S3Settings
 
@@ -60,13 +60,27 @@ async def create_document(request: Request) -> DocumentOut:
                 raise IngestError(
                     "too_large", "Die Datei überschreitet die zulässige Upload-Größe."
                 )
-            result = ingest_file(data, upload.filename or "Dokument", store=dependencies.store)
+            raw_document_type = form.get("document_type", "agb")
+            if not isinstance(raw_document_type, str) or raw_document_type not in ("agb", "avv"):
+                raise ApiError(422, "invalid_document_type", "Unbekannter Dokumenttyp.")
+            document_type: DocumentType = raw_document_type
+            result = ingest_file(
+                data,
+                upload.filename or "Dokument",
+                store=dependencies.store,
+                document_type=document_type,
+            )
         elif content_type.startswith("application/json"):
             try:
                 payload = PasteIn.model_validate(await request.json())
             except (ValidationError, ValueError) as exc:
                 raise ApiError(422, "invalid_request", "Ungültiger eingefügter Text.") from exc
-            result = ingest_text(payload.text, payload.filename, store=dependencies.store)
+            result = ingest_text(
+                payload.text,
+                payload.filename,
+                store=dependencies.store,
+                document_type=payload.document_type,
+            )
         else:
             raise ApiError(
                 415,
