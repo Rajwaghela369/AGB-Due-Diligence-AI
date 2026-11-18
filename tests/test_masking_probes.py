@@ -321,3 +321,23 @@ def test_an_exception_never_leaves_an_observation_open():
     with pytest.raises(ValueError, match="Quast"), _observe(Tracer(), "step"):
         raise ValueError("Frau Quast")
     assert seen == [None]
+
+
+# --- re-check R1 and R2 ------------------------------------------------------------------
+
+
+def test_r1_a_cut_excerpt_does_not_leak_a_lone_first_name():
+    from app.review.summary import _masked_prompt
+
+    masking.configure(PresidioMasker(allow_regex_only=True))
+    clause = "Ansprechpartnerin: Gundula Quast, Musterweg 4, 50667 Köln"
+    with masking.scope("owner", "review", prime=[clause]) as active:
+        prompt = _masked_prompt(active, {"excerpt": "… Ansprechpartnerin: Gundula"})
+    assert "Gundula" not in prompt
+
+
+def test_r2_an_upper_case_genitive_in_a_trace_is_masked():
+    masking.configure(PresidioMasker(allow_regex_only=True))
+    with masking.scope("owner", "clause", prime=["Bürgin ist Frau Gesine Quarck."]):
+        traced = boundary().langfuse_mask(data="GESINE QUARCKS Bürgschaft")
+    assert "QUARCK" not in traced and "GESINE" not in traced

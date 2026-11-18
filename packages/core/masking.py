@@ -923,6 +923,12 @@ class MaskingScope:
                 surname = value.split()[-1] if value.split() else ""
                 if len(surname) >= 3 and surname not in _NOT_A_NAME and surname != value:
                     self._index.setdefault(surname.casefold(), set()).add((surname, 0, "PERSON"))
+                # The first name alone too: a cut excerpt ("… Ansprechpartnerin: Gundula").
+                first_name = value.split()[0] if value.split() else ""
+                if len(first_name) >= 3 and first_name not in _NOT_A_NAME and first_name != value:
+                    self._index.setdefault(first_name.casefold(), set()).add(
+                        (first_name, 0, "PERSON")
+                    )
         return token
 
     def _recurrences(self, text: str, found: list[_Span]) -> list[_Span]:
@@ -964,7 +970,7 @@ class MaskingScope:
                 if start > 0 and _GLUED.match(text[start - 1]):
                     continue
                 tail = text[end : end + 2]
-                if tail[:1] == "s" and not _GLUED.match(tail[1:2] or " "):
+                if tail[:1].casefold() == "s" and not _GLUED.match(tail[1:2] or " "):
                     pass  # genitive: "Brenneckes"; the "s" stays outside the placeholder
                 elif _GLUED.match(tail[:1] or " "):
                     continue
