@@ -8,7 +8,7 @@ import type { ReviewOut } from "../../api/types.gen";
 import "../../i18n";
 import { useReviewUi } from "../review/store";
 import { DocumentViewer } from "./document-viewer";
-import { documentOut, finding, pdfFindings, review, reviewData } from "./fixtures";
+import { documentOut, finding, pdfFindings, rect, review, reviewData } from "./fixtures";
 import type { PdfDocumentLike, PdfPageLike } from "./pdf";
 
 const pdf = vi.hoisted(() => ({ openPdf: vi.fn() }));
@@ -270,15 +270,39 @@ describe("step bar", () => {
     expect(steps).toHaveTextContent("Prüfung 7/31");
   });
 
-  it("is hidden once the review is finished", async () => {
-    await pdfViewer();
-    expect(screen.queryByRole("list", { name: "Fortschritt der Prüfung" })).toBeNull();
-  });
+  it.each([
+    ["queued", true, true],
+    ["running", true, true],
+    ["finished", true, false],
+    ["awaiting_decisions", true, false],
+    ["failed", false, false],
+  ] as const)(
+    "shows the appropriate step bar for a %s review",
+    async (status, visible, spinning) => {
+      await pdfViewer(pdfFindings(), review(status, { total: 3, done: 3 }));
+      const steps = screen.queryByRole("list", { name: "Fortschritt der Prüfung" });
+      if (!visible) {
+        expect(steps).toBeNull();
+        return;
+      }
+      expect(steps).not.toBeNull();
+      expect(steps?.querySelector("svg.animate-spin") !== null).toBe(spinning);
+    },
+  );
 
   it("marks judging done while the lawyer's decisions are still pending", async () => {
-    await pdfViewer(pdfFindings(), review("awaiting_decisions", { total: 3, done: 3 }));
+    const settled = [
+      finding(0, "done", { rects: [rect(1, 100)] }, "valid"),
+      finding(1, "awaiting_decision", { rects: [rect(1, 200)] }, "uncertain"),
+      finding(2, "out_of_scope", { rects: [rect(1, 300)], in_scope: false }),
+    ];
+    await pdfViewer(
+      settled,
+      // This is the stale stream state seen while the stored review is awaiting decisions.
+      review("running", { total: 35, done: 34, awaiting_decision: 1 }),
+    );
     const steps = screen.getByRole("list", { name: "Fortschritt der Prüfung" });
-    expect(steps).toHaveTextContent("Prüfung 3/3");
+    expect(steps).toHaveTextContent("Prüfung 35/35");
     expect(steps).toHaveTextContent("wartet auf Entscheidungen");
     expect(steps.querySelector("svg.animate-spin")).toBeNull();
   });
