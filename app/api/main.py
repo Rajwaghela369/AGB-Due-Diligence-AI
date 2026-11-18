@@ -144,6 +144,7 @@ def build_app() -> FastAPI:
     from core.routing import classify_topics
     from core.settings import load_settings
 
+    from app.agent.avv import norms_from_chunks
     from app.agent.run import make_judge
     from app.api.readiness import production_probes
     from app.review.chat import make_chat_model
@@ -174,6 +175,12 @@ def build_app() -> FastAPI:
     apply_pending(default_owner=setting(config, "auth.default_owner", DEFAULT_OWNER_ID))
     store = postgres_store(file_store_from_config(config, ROOT))
     statutes = load_statutes(PROCESSED / "bgb_chunks.jsonl")
+    # Phase 10: the DSGVO norm set of AVV reviews (avv-kb); absent until it is built, and
+    # then AVV overrides cannot cite a replacement basis.
+    dsgvo_path = PROCESSED / "dsgvo_chunks.jsonl"
+    avv_statutes = load_statutes(dsgvo_path) if dsgvo_path.exists() else {}
+    avv_judge = {"avv_norms": norms_from_chunks(avv_statutes.values())} if avv_statutes else {}
+    avv_service = {"avv_statutes": avv_statutes} if avv_statutes else {}
     limiter = build_limiter(config)
     tracer = None
     if environment.langfuse_public_key and environment.langfuse_secret_key:
@@ -187,6 +194,7 @@ def build_app() -> FastAPI:
         tracer=tracer,
         caches=store.caches,
         checkpointer=checkpointer.saver,
+        **avv_judge,
     )
     # Deletion (9.B) erases a review's checkpoint threads (`{review_id}:*`) on this saver
     # through `judge.forget`; without it every checkpoint erasure would stay pending.
@@ -201,6 +209,7 @@ def build_app() -> FastAPI:
         limiter,
         tracer,
         statutes=statutes,
+        **avv_service,
         router=partial(classify_topics, model=router_model),
         router_model=router_model,
         feedback=feedback,
@@ -216,7 +225,7 @@ def build_app() -> FastAPI:
     return create_app(
         store=store,
         service=service,
-        statutes=statutes,
+        statutes={**statutes, **avv_statutes},  # the UI looks up AVV citations too
         feedback=feedback,
         settings=config,
         readiness=production_probes(

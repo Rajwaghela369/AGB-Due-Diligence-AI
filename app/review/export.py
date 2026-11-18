@@ -21,6 +21,7 @@ from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn
 from docx.shared import Cm
 
+from app.agent.avv import cited_letter
 from app.domain import (
     DRAFT_WATERMARK,
     EXPORT_DISCLAIMER,
@@ -29,6 +30,7 @@ from app.domain import (
     ExportFile,
     ExportFormat,
     Finding,
+    MissingObligation,
     Reviewer,
     decided_verdict,
 )
@@ -93,9 +95,27 @@ def _in_force(finding: Finding) -> tuple[str | None, list[str]]:
     return decided_verdict(finding.decision)
 
 
-def _citation(service: Service, chunk_id: str) -> str:
-    chunk = (service.statutes or {}).get(chunk_id)
+def _citation(statutes: Any, chunk_id: str) -> str:
+    chunk = (statutes or {}).get(chunk_id)
     return chunk.citation if chunk is not None else chunk_id
+
+
+MISSING_HEADING = "Fehlende Pflichten (Art. 28 Abs. 3 DSGVO)"
+
+
+def _missing_basis(statutes: Any, missing: MissingObligation) -> list[str]:
+    """The DSGVO chunks that state a missing obligation, for its row and the appendix."""
+    code = missing.obligation.code
+    return sorted(
+        chunk_id
+        for chunk_id, chunk in (statutes or {}).items()
+        if cited_letter(chunk.citation) == code
+    )
+
+
+def _missing_norms(statutes: Any, missing: MissingObligation) -> str:
+    ids = _missing_basis(statutes, missing)
+    return " | ".join(_citation(statutes, i) for i in ids) or missing.obligation.legal_basis
 
 
 def _reason(finding: Finding) -> str:
@@ -169,9 +189,12 @@ def _statute_sort(chunk: LawChunk) -> tuple[Any, ...]:
     )
 
 
-def _appendix(service: Service, findings: list[Finding]) -> list[LawChunk]:
-    statutes = service.statutes or {}
+def _appendix(
+    statutes: Any, findings: list[Finding], missing: list[MissingObligation] | None = None
+) -> list[LawChunk]:
+    statutes = statutes or {}
     ids = {chunk_id for finding in findings for chunk_id in _in_force(finding)[1]}
+    ids.update(chunk_id for item in missing or [] for chunk_id in _missing_basis(statutes, item))
     return sorted(
         (statutes[chunk_id] for chunk_id in ids if chunk_id in statutes), key=_statute_sort
     )
@@ -185,6 +208,8 @@ def _markdown(
     draft: bool,
     review_date: datetime,
     export_date: datetime,
+    statutes: Any = None,
+    missing: list[MissingObligation] | None = None,
 ) -> bytes:
     title = "AGB-Prüfvermerk" + (f" – {DRAFT_WATERMARK}" if draft else "")
     lines = []
@@ -236,22 +261,46 @@ def _markdown(
             clause,
             _DECISIONS[decision.action if decision else None],
             _result_label(finding, verdict),
-            " | ".join(_citation(service, chunk_id) for chunk_id in basis),
+            " | ".join(_citation(statutes, chunk_id) for chunk_id in basis),
             _reason(finding),
             decision.note if decision else "",
             decision.decided_by if decision else "",
             _utc(decision.decided_at) if decision else "",
         ]
         lines.append("| " + " | ".join(_md_cell(value) for value in values) + " |")
-    statutes = _appendix(service, findings) if service.deliverable.export.statute_appendix else []
-    if statutes:
+    if missing:
+        lines.extend(
+            ["", f"## {MISSING_HEADING}", "", "| Pflicht | Status | Normen | Begründung |"]
+        )
+        lines.append("|---|---|---|---|")
+        for item in missing:
+            values = [
+                f"lit. {item.obligation.code} – {item.obligation.label_de}",
+                "offen",
+                _missing_norms(statutes, item),
+                item.reason_de,
+            ]
+            lines.append("| " + " | ".join(_md_cell(value) for value in values) + " |")
+    appendix = (
+        _appendix(statutes, findings, missing)
+        if service.deliverable.export.statute_appendix
+        else []
+    )
+    if appendix:
         lines.extend(["", "## Anhang: zitierte Normen", ""])
-        for chunk in statutes:
+        for chunk in appendix:
             lines.extend([f"### {chunk.citation}", "", chunk.text, ""])
     return ("\n".join(lines).rstrip() + "\n").encode()
 
 
-def _csv(service: Service, findings: list[Finding], agent_version: str, draft: bool) -> bytes:
+def _csv(
+    service: Service,
+    findings: list[Finding],
+    agent_version: str,
+    draft: bool,
+    statutes: Any = None,
+    missing: list[MissingObligation] | None = None,
+) -> bytes:
     output = io.StringIO(newline="")
     writer = csv.DictWriter(output, fieldnames=_CSV_COLUMNS, delimiter=";", lineterminator="\r\n")
     writer.writeheader()
@@ -268,7 +317,7 @@ def _csv(service: Service, findings: list[Finding], agent_version: str, draft: b
             "modell_konfidenz": str(model.confidence) if model else "",
             "entscheidung": _DECISIONS[decision.action if decision else None],
             "ergebnis": verdict or _result_label(finding, verdict),
-            "normen": " | ".join(_citation(service, chunk_id) for chunk_id in basis),
+            "normen": " | ".join(_citation(statutes, chunk_id) for chunk_id in basis),
             "begruendung": _reason(finding),
             "notiz": decision.note if decision else "",
             "entschieden_von": decision.decided_by if decision else "",
@@ -280,6 +329,25 @@ def _csv(service: Service, findings: list[Finding], agent_version: str, draft: b
         writer.writerow(
             {key: value if key in numeric else _csv_safe(value) for key, value in row.items()}
         )
+    for item in missing or []:  # one row per obligation no clause addresses (AVV only)
+        row = {
+            "position": "",
+            "nummer": f"Art. 28 Abs. 3 lit. {item.obligation.code}",
+            "ueberschrift": item.obligation.label_de,
+            "klausel": "",
+            "modell_ergebnis": "fehlende_pflicht",
+            "modell_konfidenz": "",
+            "entscheidung": _DECISIONS[None],
+            "ergebnis": "fehlende Pflicht",
+            "normen": _missing_norms(statutes, item),
+            "begruendung": item.reason_de,
+            "notiz": "",
+            "entschieden_von": "",
+            "entschieden_am": "",
+            "agent_version": agent_version,
+            "entwurf": DRAFT_WATERMARK if draft else "nein",
+        }
+        writer.writerow({key: _csv_safe(value) for key, value in row.items()})
     return output.getvalue().encode("utf-8-sig")
 
 
@@ -350,6 +418,8 @@ def _docx(
     review_date: datetime,
     export_date: datetime,
     timestamp: datetime,
+    statutes: Any = None,
+    missing: list[MissingObligation] | None = None,
 ) -> bytes:
     template = service.deliverable.export.template_dir / "memo.docx"
     document = DocxDocument(template)
@@ -410,7 +480,7 @@ def _docx(
             f"{finding.clause.number or finding.position + 1}\n{finding.clause.text}",
             _DECISIONS[decision.action if decision else None],
             _result_label(finding, verdict),
-            "\n".join(_citation(service, chunk_id) for chunk_id in basis),
+            "\n".join(_citation(statutes, chunk_id) for chunk_id in basis),
             _reason(finding),
             decision.note if decision else "",
             (f"{decision.decided_by or '—'}\n{_utc(decision.decided_at)}" if decision else "—"),
@@ -418,11 +488,33 @@ def _docx(
         for cell, value in zip(row, values, strict=True):
             cell.text = _xml_safe(value)
 
-    statutes = _appendix(service, findings) if service.deliverable.export.statute_appendix else []
-    if statutes:
+    if missing:
+        document.add_heading(MISSING_HEADING, level=1)
+        gaps = document.add_table(rows=1, cols=4)
+        gaps.style = "AGB Findings"
+        for cell, header in zip(
+            gaps.rows[0].cells, ["Pflicht", "Status", "Normen", "Begründung"], strict=True
+        ):
+            cell.text = header
+        for item in missing:
+            values = [
+                f"lit. {item.obligation.code} – {item.obligation.label_de}",
+                "offen",
+                _missing_norms(statutes, item).replace(" | ", "\n"),
+                item.reason_de,
+            ]
+            for cell, value in zip(gaps.add_row().cells, values, strict=True):
+                cell.text = _xml_safe(value)
+
+    appendix = (
+        _appendix(statutes, findings, missing)
+        if service.deliverable.export.statute_appendix
+        else []
+    )
+    if appendix:
         document.add_page_break()
         document.add_heading("Anhang: zitierte Normen", level=1)
-        for chunk in statutes:
+        for chunk in appendix:
             document.add_heading(_xml_safe(chunk.citation), level=2)
             document.add_paragraph(_xml_safe(chunk.text))
 
@@ -464,6 +556,11 @@ def build_export(
     if review is None:
         raise KeyError(review_id)
     findings = service.findings(review_id)
+    statutes_for = getattr(service, "statutes_for", None)
+    statutes = statutes_for(review.document_type) if statutes_for else service.statutes
+    # Phase 10: an obligation no clause addresses is an open document-level finding. It has
+    # no decision workflow yet, so it keeps a final export blocked (docs/Phase 10 API.md).
+    missing = service.missing_obligations(review_id) if review.document_type == "avv" else []
     blockers = [
         ExportBlocker(
             position=finding.position,
@@ -476,6 +573,16 @@ def build_export(
         and finding.verdict.verdict in ("potentially_void", "uncertain")
         and finding.decision is None
     ]
+    blockers.extend(
+        ExportBlocker(
+            position=-1,  # document level: no clause position
+            number=f"Art. 28 Abs. 3 lit. {item.obligation.code}",
+            heading=item.obligation.label_de,
+            verdict="potentially_void",
+        )
+        for item in missing
+        if item.finding_status == "open"
+    )
     if not draft and review.status in ("queued", "running", "failed"):
         raise ExportBlocked("not_finished", [])
     if not draft and blockers:
@@ -489,9 +596,19 @@ def build_export(
         review_date = review_date.replace(tzinfo=UTC)
     review_date = review_date.astimezone(ZoneInfo("Europe/Berlin"))
     if fmt == "md":
-        content = _markdown(service, summary, rendered_findings, reviewer, draft, review_date, now)
+        content = _markdown(
+            service,
+            summary,
+            rendered_findings,
+            reviewer,
+            draft,
+            review_date,
+            now,
+            statutes,
+            missing,
+        )
     elif fmt == "csv":
-        content = _csv(service, rendered_findings, review.agent_version, draft)
+        content = _csv(service, rendered_findings, review.agent_version, draft, statutes, missing)
     else:
         content = _docx(
             service,
@@ -502,6 +619,8 @@ def build_export(
             review_date,
             now,
             review.finished_at or review.created_at or now,
+            statutes,
+            missing,
         )
     return ExportFile(
         filename=_filename(summary.filename, fmt, draft, now),

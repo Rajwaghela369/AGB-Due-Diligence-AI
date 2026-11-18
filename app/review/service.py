@@ -113,6 +113,7 @@ class Service:
         chat_model: ChatModel | None = None,
         retention_policy: RetentionSettings | None = None,
         avv_judge: Any = None,
+        avv_statutes: Any = None,
     ) -> None:
         if max_concurrency < 1:
             raise ValueError("max_concurrency must be at least 1")
@@ -120,6 +121,8 @@ class Service:
         self.judge = judge
         self.limiter = limiter
         self.statutes = statutes  # kept for the API; the runner itself does not read statutes
+        # Phase 10: the DSGVO chunks AVV overrides and exports cite (None: not loaded).
+        self.avv_statutes = avv_statutes
         self.router = router  # None: clauses keep no topic and every in-scope clause is judged
         self.router_model = router_model
         self.feedback = feedback  # app.review.feedback.FeedbackService, used by `decide`
@@ -508,9 +511,12 @@ class Service:
             return
         if decision.corrected_verdict is None:
             raise InvalidDecision("override requires corrected_verdict")
-        if self.statutes is not None and document_type == "agb":  # AVV cites DSGVO chunks
+        statutes = self.statutes_for(document_type)
+        if document_type == "avv" and decision.corrected_basis and not statutes:
+            raise InvalidDecision("no DSGVO norm set is loaded to cite a corrected basis")
+        if statutes is not None:
             unknown = [
-                chunk_id for chunk_id in decision.corrected_basis if chunk_id not in self.statutes
+                chunk_id for chunk_id in decision.corrected_basis if chunk_id not in statutes
             ]
             if unknown:
                 raise InvalidDecision(f"unknown legal basis: {', '.join(unknown)}")
@@ -855,6 +861,10 @@ class Service:
             clauses, router=self.router, model=self.router_model, caches=self.store.caches
         )
 
+    def statutes_for(self, document_type: str) -> Any:
+        """The norm set a review of this type cites: BGB for AGB, DSGVO for AVV."""
+        return self.avv_statutes if document_type == "avv" else self.statutes
+
     def _judge_for(self, document_type: str) -> Any:
         return self._ctx_for(document_type).judge
 
@@ -903,6 +913,7 @@ def build_service(
     chat_model: ChatModel | None = None,
     retention_policy: RetentionSettings | None = None,
     avv_judge: Any = None,
+    avv_statutes: Any = None,
 ) -> Service:
     """The one review service of a process; see `app.review.limiter.review_settings`."""
     return Service(
@@ -924,4 +935,5 @@ def build_service(
         chat_model=chat_model,
         retention_policy=retention_policy,
         avv_judge=avv_judge,
+        avv_statutes=avv_statutes,
     )
