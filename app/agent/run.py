@@ -88,7 +88,8 @@ class Judge(Protocol):
     def route_obligations(self, clause: ClauseSpan) -> list[ObligationCode]:
         """Route an AVV clause to every applicable Art. 28(3)(a)-(h) obligation.
 
-        Phase 10 Wave 1 implements this from the AVV profile. A clause may cover several
+        `make_judge` implements it with the AVV judge it attaches as `judge.avv`
+        (`app.agent.avv`). A clause may cover several
         letters; an empty result means it does not mention a mandatory obligation.
         """
         raise NotImplementedError
@@ -128,6 +129,8 @@ def make_judge(
     tracer: Any = None,
     caches: Any = None,
     checkpointer: Any = None,
+    avv_router: Any = None,
+    avv_norms: Any = None,
 ) -> Judge:
     """Build one thread-safe clause judge for the review runner.
 
@@ -394,6 +397,22 @@ def make_judge(
 
     judge_clause.resume = resume  # type: ignore[attr-defined]
     judge_clause.forget = erase  # type: ignore[attr-defined]
+
+    # Phase 10 (10.C): the AVV agent rides along with the same models, limiter and caches,
+    # so one judge serves both document types; the service picks `.avv` for AVV reviews.
+    # `route_obligations` is the contract's routing entry point on the judge.
+    from app.agent.avv import make_avv_judge
+
+    avv = make_avv_judge(
+        app_config,
+        limiter=limiter,
+        client=client,
+        router=avv_router,
+        norms=avv_norms,
+        caches=caches,
+    )
+    judge_clause.avv = avv  # type: ignore[attr-defined]
+    judge_clause.route_obligations = avv.route_obligations  # type: ignore[attr-defined]
     return judge_clause  # type: ignore[return-value]
 
 
