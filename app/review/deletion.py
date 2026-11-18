@@ -68,7 +68,7 @@ def delete_review(
 ) -> DeletionReport:
     if principal is not None:
         review = service.store.reviews.get(review_id)
-        if review is None or review.owner_id != principal.owner_id:
+        if review is None or not _may_delete(service, review.owner_id, principal):
             raise KeyError(review_id)
     try:
         report = service.store.deletion.delete_review(
@@ -87,8 +87,16 @@ def process_erasures(service: Service, limit: int = 100) -> tuple[int, int]:
 
 def _check_owner(service: Service, document_id: str, principal: Principal) -> None:
     document = service.store.documents.get(document_id)
-    if document is None or document.owner_id != principal.owner_id:
+    if document is None or not _may_delete(service, document.owner_id, principal):
         raise KeyError(document_id)
+
+
+def _may_delete(service: Service, owner_id: str, principal: Principal) -> bool:
+    """The owner, or a signed-in holder of `auth.oidc.admin_role` (`Service.admin_role`)."""
+    if owner_id == principal.owner_id:
+        return True
+    role = getattr(service, "admin_role", None)
+    return bool(role) and principal.authenticated and role in principal.roles
 
 
 def _run(service: Service, tasks: Iterable[ErasureTask]) -> tuple[int, int]:

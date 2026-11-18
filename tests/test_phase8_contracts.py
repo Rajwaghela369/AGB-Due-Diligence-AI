@@ -46,6 +46,13 @@ PRICED = {
 }
 
 
+def _owned_review(store, review_id="r") -> None:
+    """The routes check the owner first (9.E): the stand-in service's review must exist."""
+    store.reviews.create(
+        Review(review_id=review_id, document_id="d", agent_version="a", scope=[], status="finished")
+    )
+
+
 def _app(settings=None):
     store = memory_store()
     service = build_service(store, FakeJudge(), StubLimiter())
@@ -179,7 +186,9 @@ def test_unknown_review_is_404_and_bad_requests_are_422():
 
 
 def test_export_route_maps_blocked_and_sends_the_file():
-    application, _store, service = _app()
+    application, store, service = _app()
+    _owned_review(store)
+    _owned_review(store, "missing")
     seen = {}
 
     def export(review_id, fmt, *, draft=False, reviewer):
@@ -223,7 +232,8 @@ def test_export_route_maps_blocked_and_sends_the_file():
 
 
 def test_chat_route_streams_events_without_ids_and_maps_errors():
-    application, _store, service = _app()
+    application, store, service = _app()
+    _owned_review(store)
 
     def chat(review_id, position, message, reviewer, *, request_id=None):
         if position == 9:

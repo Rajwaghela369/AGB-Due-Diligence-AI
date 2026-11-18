@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Request
 
-from app.api.deps import state
+from app.api.deps import owned_review, state
 from app.api.errors import ApiError
 from app.api.schemas import FeedbackIn, FeedbackOut
 
@@ -11,6 +11,7 @@ router = APIRouter()
 
 @router.post("/feedback", response_model=FeedbackOut)
 def submit_feedback(payload: FeedbackIn, request: Request) -> FeedbackOut:
+    owned_review(request, payload.review_id)
     try:
         feedback, scored_steps = state(request).feedback.submit(payload)
     except LookupError as exc:

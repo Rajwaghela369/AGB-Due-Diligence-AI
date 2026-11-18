@@ -23,6 +23,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from app.domain import (
+    DEFAULT_OWNER_ID,
     IDLE_REVIEW_STATUSES,
     REASON_STEP,
     Agreement,
@@ -164,13 +165,21 @@ class _Repo:
 
 
 class PostgresDocumentRepo(_Repo):
-    def record_upload(self, document_id: str, filename: str, source_type: str, size: int) -> str:
+    def record_upload(
+        self,
+        document_id: str,
+        filename: str,
+        source_type: str,
+        size: int,
+        *,
+        owner_id: str = DEFAULT_OWNER_ID,
+    ) -> str:
         upload_id = uuid.uuid4().hex
         with self._connect() as conn:
             conn.execute(
-                "insert into uploads (upload_id, document_id, filename, source_type, size)"
-                " values (%s, %s, %s, %s, %s)",
-                (upload_id, document_id, filename, source_type, size),
+                "insert into uploads (upload_id, document_id, filename, source_type, size,"
+                " owner_id) values (%s, %s, %s, %s, %s, %s)",
+                (upload_id, document_id, filename, source_type, size, owner_id),
             )
         return upload_id
 

@@ -14,15 +14,20 @@ from app.api.schemas import ErrorBody
 
 
 class ApiError(Exception):
-    def __init__(self, status_code: int, code: str, message: str) -> None:
+    def __init__(
+        self, status_code: int, code: str, message: str, headers: dict[str, str] | None = None
+    ) -> None:
         self.status_code = status_code
         self.body = ErrorBody(code=code, message=message)
+        self.headers = headers
 
 
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def api_error(_request: Request, exc: ApiError) -> JSONResponse:
-        return JSONResponse(status_code=exc.status_code, content=exc.body.model_dump())
+        return JSONResponse(
+            status_code=exc.status_code, content=exc.body.model_dump(), headers=exc.headers
+        )
 
     @app.exception_handler(Exception)
     async def unhandled(request: Request, _exc: Exception) -> JSONResponse:

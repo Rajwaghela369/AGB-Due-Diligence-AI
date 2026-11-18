@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Request
 
-from app.api.deps import request_id, reviewer, state
+from app.api.deps import owned_review, request_id, reviewer, state
 from app.api.errors import ApiError
 from app.api.routes.reviews import review_out
 from app.api.schemas import AuditOut, DecisionIn, DecisionOut
@@ -19,6 +19,7 @@ def put_decision(
     review_id: str, position: int, payload: DecisionIn, request: Request
 ) -> DecisionOut:
     dependencies = state(request)
+    owned_review(request, review_id)
     who = reviewer(request)
     try:
         finding = dependencies.service.decide(
@@ -51,6 +52,7 @@ def get_audit(
     request: Request,
     position: int | None = None,
 ) -> AuditOut:
+    owned_review(request, review_id)
     try:
         events = state(request).service.audit(review_id, position)
     except KeyError as exc:

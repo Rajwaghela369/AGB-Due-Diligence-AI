@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from app.domain import (
+    DEFAULT_OWNER_ID,
     IDLE_REVIEW_STATUSES,
     Agreement,
     AgreementByVerdict,
@@ -97,7 +98,15 @@ class MemoryDocumentRepo:
         self._texts: dict[str, str] = {}  # content_hash -> text, stored once
         self._text_created: dict[str, datetime] = {}
 
-    def record_upload(self, document_id: str, filename: str, source_type: str, size: int) -> str:
+    def record_upload(
+        self,
+        document_id: str,
+        filename: str,
+        source_type: str,
+        size: int,
+        *,
+        owner_id: str = DEFAULT_OWNER_ID,
+    ) -> str:
         upload_id = uuid.uuid4().hex
         with self._lock:
             self.uploads.append(
@@ -107,6 +116,7 @@ class MemoryDocumentRepo:
                     "filename": filename,
                     "source_type": source_type,
                     "size": size,
+                    "owner_id": owner_id,
                     "uploaded_at": _now(),
                 }
             )

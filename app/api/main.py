@@ -10,10 +10,10 @@ from typing import Any
 
 from core.logging import configure as configure_logging
 from core.schemas import LawChunk
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.deps import REVIEWER_HEADER, setting
+from app.api.deps import REVIEWER_HEADER, require_login, setting
 from app.api.errors import install_error_handlers
 from app.api.middleware import BodyLimitMiddleware, RequestLogMiddleware
 from app.api.rate_limit import IpRateLimiter
@@ -49,11 +49,13 @@ def create_app(
     settings: Any,
     readiness: Mapping[str, Probe] | None = None,
     on_shutdown: Iterable[Callable[[], None]] = (),
+    oidc_verifier: Any = None,
 ) -> FastAPI:
     """Build an application whose external dependencies are all supplied by its caller.
 
     `on_shutdown` closes what the caller opened beyond the store (the checkpoint pool),
-    after the service has stopped using it.
+    after the service has stopped using it. `oidc_verifier` (an `app.api.oidc.OidcVerifier`)
+    replaces the one built from `auth.oidc` on first use; tests pass one with a fake issuer.
     """
     closers = list(on_shutdown)
 
@@ -81,13 +83,14 @@ def create_app(
     capacity = int(setting(settings, "api.rate_limit_burst", per_minute))
     application.state.rate_limiter = IpRateLimiter(capacity=capacity, per_minute=per_minute)
     application.state.readiness = Readiness(readiness or {})
+    application.state.oidc = oidc_verifier
 
     # Only the frontend's origin may call the API from a browser; an empty list refuses all.
     application.add_middleware(
         CORSMiddleware,
         allow_origins=list(setting(settings, "api.cors_origins", [])),
         allow_methods=["GET", "POST", "PUT", "DELETE"],
-        allow_headers=["Content-Type", "Last-Event-ID", REVIEWER_HEADER],
+        allow_headers=["Authorization", "Content-Type", "Last-Event-ID", REVIEWER_HEADER],
         expose_headers=["X-Request-Id", "Content-Disposition", EXPORT_DRAFT_HEADER],
         max_age=600,
     )
@@ -98,6 +101,9 @@ def create_app(
     application.add_middleware(RequestLogMiddleware)
 
     install_error_handlers(application)
+    # With login on (9.E) every route but the health probes needs a valid token, whether or
+    # not the route itself asks who is calling; with login off the dependency is a no-op.
+    signed_in = [Depends(require_login)]
     for route in (
         documents,
         reviews,
@@ -109,9 +115,9 @@ def create_app(
         auth,
         metrics,
         statute_routes,
-        health,
     ):
-        application.include_router(route.router, prefix="/api/v1")
+        application.include_router(route.router, prefix="/api/v1", dependencies=signed_in)
+    application.include_router(health.router, prefix="/api/v1")
     return application
 
 
@@ -199,6 +205,8 @@ def build_app() -> FastAPI:
         **review_settings(config),
     )
     service.corrections = corrections
+    if setting(config, "auth.enabled", False):
+        service.admin_role = setting(config, "auth.oidc.admin_role", None)
     return create_app(
         store=store,
         service=service,

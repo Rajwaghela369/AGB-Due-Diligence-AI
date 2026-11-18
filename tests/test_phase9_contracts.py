@@ -372,7 +372,10 @@ def test_the_delete_route_answers_404_for_an_unknown_document_and_cors_allows_de
 
 
 def test_the_delete_route_maps_the_report_404_and_409():
-    application, _store, service = _app()
+    application, store, service = _app()
+    # The route checks the owner before the service (9.E); "missing" stays unknown.
+    for document_id in ("d", "busy"):
+        store.documents.save(_document(document_id), [], {})
     seen = {}
 
     def delete_document(document_id, principal, *, dry_run=False):
@@ -444,7 +447,7 @@ def test_the_file_store_is_chosen_by_config(tmp_path: Path, monkeypatch):
 # --- 9.E login ------------------------------------------------------------------------
 
 
-def test_me_is_the_default_owner_while_login_is_off_and_501_when_on():
+def test_me_is_the_default_owner_while_login_is_off_and_401_without_a_token_when_on():
     application, _store, _service = _app({"auth": {"default_owner": "kanzlei"}})
     with TestClient(application) as client:
         off = client.get("/api/v1/me")
@@ -460,4 +463,6 @@ def test_me_is_the_default_owner_while_login_is_off_and_501_when_on():
         "authenticated": False,
         "auth_enabled": False,
     }
-    assert on.status_code == 501 and on.json()["code"] == "not_implemented"
+    # Wave 2 wrote the login: no bearer token is 401, never the default owner.
+    assert on.status_code == 401 and on.json()["code"] == "unauthenticated"
+    assert on.headers["www-authenticate"].startswith("Bearer")

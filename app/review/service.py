@@ -121,6 +121,8 @@ class Service:
         self.router_model = router_model
         self.feedback = feedback  # app.review.feedback.FeedbackService, used by `decide`
         self.corrections = corrections
+        # Phase 9 (9.E): `auth.oidc.admin_role`, which may delete any owner's documents.
+        self.admin_role: str | None = None
         # Phase 8: summary, export and chat settings, and the two generating models
         # (None: no LLM recommendation; no chat, which the API answers with 503).
         self.deliverable = deliverable or DeliverableSettings()
@@ -170,7 +172,8 @@ class Service:
             active = self.store.reviews.active_for(document_id, self.agent_version)
             if active is not None:
                 return active
-            if self.store.documents.get(document_id) is None:
+            document = self.store.documents.get(document_id)
+            if document is None:
                 raise KeyError(f"unknown document {document_id}")
             clauses = self.store.documents.clauses(document_id)
             if not clauses:
@@ -189,6 +192,7 @@ class Service:
                     agent_version=self.agent_version,
                     scope=list(scope),
                     status="queued",
+                    owner_id=document.owner_id,  # v1: a review belongs to its document's owner
                 )
             )
             if review.review_id != review_id:

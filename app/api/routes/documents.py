@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from starlette.datastructures import UploadFile
 
 from app.api.costs import cache_hit_rate, cost_eur, pricing, wall_time_ms
-from app.api.deps import principal, setting, state
+from app.api.deps import owned_document, principal, setting, state
 from app.api.errors import ApiError
 from app.api.schemas import DocumentList, DocumentListItem, DocumentOut, PasteIn
 from app.domain import blob_key
@@ -36,6 +36,7 @@ async def create_document(request: Request) -> DocumentOut:
     if not dependencies.rate_limiter.allow(address):
         raise ApiError(429, "rate_limited", "Zu viele Anfragen. Bitte versuchen Sie es später.")
 
+    owner_id = principal(request).owner_id
     content_type = request.headers.get("content-type", "").lower()
     limit = int(setting(dependencies.settings, "ingest.max_upload_mb", 20)) * 1024 * 1024
     content_length = request.headers.get("content-length")
@@ -60,13 +61,17 @@ async def create_document(request: Request) -> DocumentOut:
                 raise IngestError(
                     "too_large", "Die Datei überschreitet die zulässige Upload-Größe."
                 )
-            result = ingest_file(data, upload.filename or "Dokument", store=dependencies.store)
+            result = ingest_file(
+                data, upload.filename or "Dokument", store=dependencies.store, owner_id=owner_id
+            )
         elif content_type.startswith("application/json"):
             try:
                 payload = PasteIn.model_validate(await request.json())
             except (ValidationError, ValueError) as exc:
                 raise ApiError(422, "invalid_request", "Ungültiger eingefügter Text.") from exc
-            result = ingest_text(payload.text, payload.filename, store=dependencies.store)
+            result = ingest_text(
+                payload.text, payload.filename, store=dependencies.store, owner_id=owner_id
+            )
         else:
             raise ApiError(
                 415,
@@ -94,7 +99,8 @@ def list_documents(request: Request) -> DocumentList:
     dependencies = state(request)
     prices = pricing(dependencies.settings)
     items = []
-    for document in dependencies.store.documents.list():
+    # Only the caller's own documents, also for the admin role (it reads others' by id).
+    for document in dependencies.store.documents.list(owner_id=principal(request).owner_id):
         latest = dependencies.store.reviews.latest_for(document.document_id)
         item = DocumentListItem(document=document, latest_review=latest)
         if latest is not None:
@@ -108,9 +114,7 @@ def list_documents(request: Request) -> DocumentList:
 @router.get("/documents/{document_id}", response_model=DocumentOut)
 def get_document(document_id: str, request: Request) -> DocumentOut:
     dependencies = state(request)
-    document = dependencies.store.documents.get(document_id)
-    if document is None:
-        raise ApiError(404, "not_found", "Dokument nicht gefunden.")
+    document = owned_document(request, document_id)
     return DocumentOut(
         document=document,
         clauses=dependencies.store.documents.clauses(document_id),
@@ -122,10 +126,7 @@ def get_document(document_id: str, request: Request) -> DocumentOut:
 def get_document_file(document_id: str, request: Request) -> Response:
     """The source as stored: the PDF, or the pasted text the clause offsets index into."""
     dependencies = state(request)
-    document = dependencies.store.documents.get(document_id)
-    caller = principal(request)
-    if document is None or document.owner_id != caller.owner_id:
-        raise ApiError(404, "not_found", "Dokument nicht gefunden.")
+    document = owned_document(request, document_id)
     is_text = document.source_type == "text"
     key = blob_key(document)
     files = dependencies.store.files
