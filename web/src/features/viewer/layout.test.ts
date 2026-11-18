@@ -29,6 +29,12 @@ describe("layout helpers", () => {
     expect(reviewProgress(review("running"))).toEqual({ done: 0, total: 0 });
   });
 
+  it("counts awaiting decisions as judged and excludes out-of-scope clauses", () => {
+    expect(
+      reviewProgress(review("running", { total: 35, done: 34, awaiting_decision: 1 })),
+    ).toEqual({ done: 35, total: 35 });
+  });
+
   it("offsets search hits across pages", () => {
     expect(hitOffsets([[1, 2], [], [3]])).toEqual([0, 2, 2]);
   });

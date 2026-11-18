@@ -134,8 +134,9 @@ export function DocumentViewer(props: { documentId: string; review: ReviewData }
   }, [zoom]);
 
   const onReady = useCallback(() => setReady(true), []);
-  const showStepBar =
-    review.review !== null && (!review.isFinal || review.review.status === "awaiting_decisions");
+  // Keep the completed judging step visible after a run ends. A failed review has no useful
+  // completion state to show here; its failed clauses expose their retry controls instead.
+  const showStepBar = review.review !== null && review.review.status !== "failed";
 
   return (
     <div
@@ -152,7 +153,7 @@ export function DocumentViewer(props: { documentId: string; review: ReviewData }
         onZoom={changeZoom}
       />
       {showStepBar && review.review && (
-        <StepBar review={review.review} progress={review.progress} />
+        <StepBar review={review.review} findings={review.findings} progress={review.progress} />
       )}
       <div
         ref={scrollRoot}

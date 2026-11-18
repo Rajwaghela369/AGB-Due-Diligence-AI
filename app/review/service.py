@@ -190,6 +190,7 @@ class Service:
                     review_id=review_id,
                     document_id=document_id,
                     agent_version=self.agent_version,
+                    document_type=document.document_type,
                     scope=list(scope),
                     status="queued",
                     owner_id=document.owner_id,  # v1: a review belongs to its document's owner
@@ -229,6 +230,9 @@ class Service:
                     error=error,
                     decision=decisions.get(clause.position),
                     feedback=votes.get(clause.position),
+                    obligation_findings=(
+                        list(verdict.obligation_findings) if verdict is not None else []
+                    ),
                 )
             )
         return findings

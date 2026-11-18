@@ -23,9 +23,11 @@ from app.domain import (
     DeletionReason,
     DeletionReport,
     Document,
+    DocumentType,
     ErasureTarget,
     ErasureTask,
     Feedback,
+    ObligationCode,
     Principal,
     Review,
     ReviewCounts,
@@ -72,7 +74,14 @@ class FileStore(Protocol):
 
 
 class DocumentRepo(Protocol):
-    def record_upload(self, document_id: str, filename: str, source_type: str, size: int) -> str:
+    def record_upload(
+        self,
+        document_id: str,
+        filename: str,
+        source_type: str,
+        size: int,
+        document_type: DocumentType = "agb",
+    ) -> str:
         """Insert one `uploads` row; returns upload_id. One row per upload event."""
         ...
 
@@ -140,6 +149,21 @@ class CacheRepo(Protocol):
         """Store `{content_hash: topic}`; insert-or-reuse per (content_hash, model)."""
         ...
 
+    def get_obligations(
+        self, content_hashes: list[str], model: str, profile: str
+    ) -> dict[str, list[ObligationCode]]:
+        """Cached multi-label AVV routes, keyed by clause, router model and profile."""
+        raise NotImplementedError
+
+    def put_obligations(
+        self,
+        model: str,
+        profile: str,
+        obligations: dict[str, list[ObligationCode]],
+    ) -> None:
+        """Insert-or-reuse AVV routes; Wave 1 implements the backing store."""
+        raise NotImplementedError
+
     def get_summary_text(self, decision_set_hash: str, model: str) -> str | None:
         """The LLM recommendation paragraph generated for this decision set (Phase 8, 8.A)."""
         ...
@@ -195,6 +219,16 @@ class ReviewRepo(Protocol):
     def clause_topics(self, review_id: str) -> dict[int, str]:
         """The topics `set_clause_topics` stored; positions without one are absent."""
         ...
+
+    def set_clause_obligations(
+        self, review_id: str, obligations: dict[int, list[ObligationCode]]
+    ) -> None:
+        """Persist the AVV router's multi-label result per review position."""
+        raise NotImplementedError
+
+    def clause_obligations(self, review_id: str) -> dict[int, list[ObligationCode]]:
+        """The AVV routes stored for this review; absent positions are omitted."""
+        raise NotImplementedError
 
 
 class EventRepo(Protocol):
