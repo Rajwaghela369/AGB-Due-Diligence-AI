@@ -76,13 +76,17 @@ export function createApiClient(options: ApiClientOptions = {}) {
 
   return {
     documents: {
-      create(input: File | PasteIn): Promise<DocumentOut> {
+      create(input: File | PasteIn, documentType: "agb" | "avv" = "agb"): Promise<DocumentOut> {
         if (input instanceof File) {
           const form = new FormData();
           form.set("file", input);
+          form.set("document_type", documentType);
           return request("/documents", { method: "POST", body: form });
         }
-        return request("/documents", jsonRequest("POST", input));
+        return request(
+          "/documents",
+          jsonRequest("POST", { ...input, document_type: input.document_type ?? documentType }),
+        );
       },
       list(): Promise<DocumentList> {
         return request("/documents");

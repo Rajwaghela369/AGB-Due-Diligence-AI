@@ -109,6 +109,28 @@ describe("UploadPage", () => {
     expect(body).toEqual({ document_id: "doc-1", scope: ["liability"] });
   });
 
+  it("sends the selected AVV document type in multipart upload", async () => {
+    let uploadedType = "";
+    server.use(
+      http.post(`${ORIGIN}/api/v1/documents`, async ({ request }) => {
+        uploadedType = (await request.formData()).get("document_type") as string;
+        return HttpResponse.json(
+          documentOut({ document: documentRecord({ document_type: "avv" }) }),
+        );
+      }),
+      http.post(`${ORIGIN}/api/v1/reviews`, () =>
+        HttpResponse.json({ review: review({ review_id: "avv-review", document_type: "avv" }) }),
+      ),
+    );
+    renderPage(<UploadPage />, "/upload");
+    chooseFile();
+    fireEvent.click(screen.getAllByRole("radio")[1]!);
+    start();
+
+    expect(await screen.findByTestId("location")).toHaveTextContent("/reviews/avv-review");
+    expect(uploadedType).toBe("avv");
+  });
+
   it("accepts pasted text", async () => {
     let pasted: unknown;
     server.use(
@@ -126,7 +148,7 @@ describe("UploadPage", () => {
     start();
 
     expect(await screen.findByTestId("location")).toHaveTextContent("/reviews/rev-2");
-    expect(pasted).toEqual({ text: "§ 1 Haftung" });
+    expect(pasted).toEqual({ text: "§ 1 Haftung", document_type: "agb" });
   });
 
   it("opens an already finished review without starting a new one", async () => {

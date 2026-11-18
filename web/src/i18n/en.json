@@ -82,6 +82,21 @@
       "out_of_scope": "out of scope"
     }
   },
+  "avv": {
+    "title": "AVV obligations",
+    "description": "Obligations found in the document and obligations missing under Article 28(3) GDPR.",
+    "filter": "Filter AVV obligations",
+    "filters": { "all": "All", "open": "Open", "fulfilled": "Fulfilled" },
+    "obligation": "Obligation",
+    "allObligations": "All obligations",
+    "fulfilled": "Fulfilled",
+    "open": "Open",
+    "showClause": "Show clause",
+    "noReason": "No reasoning available.",
+    "missingTitle": "Missing obligations",
+    "progress": "{{found}} found · {{missing}} missing",
+    "empty": "No AVV obligations match this filter."
+  },
   "drawer": {
     "close": "Close",
     "description": "Details for the selected clause with legal basis, reasoning and feedback.",
@@ -175,6 +190,13 @@
   "upload": {
     "title": "Add a contract",
     "description": "Upload a PDF or DOCX, or paste the contract text.",
+    "documentType": "Document type",
+    "documentTypes": {
+      "agb": "General terms and conditions (AGB)",
+      "agbHint": "Review typical terms and conditions clauses.",
+      "avv": "Data processing agreement (AVV)",
+      "avvHint": "Review the obligations under Article 28(3) GDPR."
+    },
     "dropzone": "Drop a file here",
     "formats": "PDF or DOCX",
     "chooseFile": "Choose file",

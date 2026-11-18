@@ -10,6 +10,7 @@ import { useReviewUi, type FindingFilter, type StatusFilter } from "../review/st
 import type { ReviewData, ReviewFinding } from "../review/use-review";
 import { ActivityFeed } from "./activity-feed";
 import { FindingCard } from "./finding-card";
+import { AvvObligations } from "../workspace/avv-obligations";
 
 const FILTERS: FindingFilter[] = ["void", "review", "all"];
 const STATUS_FILTERS: StatusFilter[] = ["all", "open", "accepted", "overridden", "dismissed"];
@@ -76,6 +77,7 @@ export function FindingsPanel({ review }: { review: ReviewData }) {
       aria-label={t("findings.title")}
       className={cn("min-h-0 flex-1 flex-col gap-3", detailOpen ? "hidden" : "flex")}
     >
+      {review.review?.document_type === "avv" && <AvvObligations review={review} />}
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold tracking-wide">{t("findings.title")}</h2>
         <div role="group" aria-label={t("findings.filter")} className="flex gap-1">

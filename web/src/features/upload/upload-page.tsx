@@ -41,6 +41,7 @@ export function UploadPage() {
   const [file, setFile] = useState<File | null>(null);
   const [text, setText] = useState("");
   const [pasteMode, setPasteMode] = useState(false);
+  const [documentType, setDocumentType] = useState<"agb" | "avv">("agb");
   const [liability, setLiability] = useState(true);
   const [warranty, setWarranty] = useState(true);
   const [error, setError] = useState<UploadError | null>(null);
@@ -63,7 +64,10 @@ export function UploadPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const document = await api.documents.create(file ?? { text: text.trim() });
+      const document = await api.documents.create(
+        file ?? { text: text.trim(), document_type: documentType },
+        documentType,
+      );
       if (document.reused && document.latest_review?.status === "finished") {
         navigate(`/reviews/${document.latest_review.review_id}`, {
           state: { alreadyReviewed: true },
@@ -151,6 +155,44 @@ export function UploadPage() {
           </button>
         </div>
       )}
+      <fieldset
+        className="space-y-2 rounded-xl border border-border p-4"
+        data-testid="document-type"
+      >
+        <legend className="px-1 font-medium">{t("upload.documentType")}</legend>
+        <label className="flex items-start gap-2">
+          <input
+            className="mt-1 accent-accent"
+            type="radio"
+            name="document-type"
+            value="agb"
+            checked={documentType === "agb"}
+            onChange={() => setDocumentType("agb")}
+          />
+          <span>
+            <span className="block font-medium">{t("upload.documentTypes.agb")}</span>
+            <span className="block text-sm text-muted-foreground">
+              {t("upload.documentTypes.agbHint")}
+            </span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2">
+          <input
+            className="mt-1 accent-accent"
+            type="radio"
+            name="document-type"
+            value="avv"
+            checked={documentType === "avv"}
+            onChange={() => setDocumentType("avv")}
+          />
+          <span>
+            <span className="block font-medium">{t("upload.documentTypes.avv")}</span>
+            <span className="block text-sm text-muted-foreground">
+              {t("upload.documentTypes.avvHint")}
+            </span>
+          </span>
+        </label>
+      </fieldset>
       <fieldset className="space-y-2 rounded-xl border border-border p-4">
         <legend className="px-1 font-medium">{t("upload.scope")}</legend>
         <label className="flex items-center gap-2">

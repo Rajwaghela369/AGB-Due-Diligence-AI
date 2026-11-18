@@ -14,6 +14,7 @@ import type {
   ClauseVerdict,
   DocumentOut,
   Finding,
+  MissingObligation,
   FindingStatus,
   Review,
   ReviewOut,
@@ -33,6 +34,7 @@ export interface ReviewFinding {
   /** What the lawyer did with it: open until a decision exists (docs/Phase 7 API.md). */
   findingStatus: FindingStatus;
   feedback: Finding["feedback"];
+  obligationFindings?: NonNullable<Finding["obligation_findings"]>;
 }
 
 export interface ReviewData {
@@ -48,6 +50,7 @@ export interface ReviewData {
   progress: ReviewProgress | null;
   /** The reviewed document (clauses, source type), fetched once and cached. */
   document: DocumentOut | null;
+  missingObligations?: MissingObligation[];
   pricing?: ReviewOut["pricing"];
   costEur?: ReviewOut["cost_eur"];
   wallTimeMs?: ReviewOut["wall_time_ms"];
@@ -156,6 +159,7 @@ export function useReview(reviewId: string | undefined): ReviewData {
       decision: f.decision,
       findingStatus: f.finding_status ?? "open",
       feedback: f.feedback,
+      obligationFindings: f.obligation_findings ?? [],
     }));
     const clauses = liveState?.clauses ?? {};
     const findings = base.map((f) => {
@@ -182,6 +186,7 @@ export function useReview(reviewId: string | undefined): ReviewData {
         review !== null && ["finished", "awaiting_decisions", "failed"].includes(review.status),
       progress: live.progress,
       document: documentData,
+      missingObligations: stored.data?.missing_obligations ?? [],
       pricing: details.data?.pricing,
       costEur: details.data?.cost_eur,
       wallTimeMs: details.data?.wall_time_ms,
