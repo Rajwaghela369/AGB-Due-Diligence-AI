@@ -134,6 +134,7 @@ def make_judge(
     The compiled LangGraph is immutable; per-clause tracing is supplied in its
     invocation state, so worker threads do not share trace context.
     """
+    from core import masking
     from core.budget import BudgetExceeded
     from core.config import load_yaml
     from core.llm import complete, decide
@@ -200,7 +201,26 @@ def make_judge(
         except Exception:  # noqa: BLE001 - never fails a verdict
             log.warning("could not delete checkpoint thread %s", thread_id, exc_info=True)
 
+    def clause_scope(clause: ClauseSpan, subject: str | None) -> Any:
+        """Phase 9 (9.A): one masking scope per clause. Primed with the clause text first
+        (so its placeholders are numbered the same for every owner and every cached
+        embedding and verdict), then the heading. Answers may only get back values the
+        clause text itself contains: the verdict is cached for every document with this
+        text, and a name from one owner's heading must not reach another owner."""
+        return masking.scope(
+            None,
+            subject or clause.content_hash,
+            prime=[clause.text, clause.heading],
+            restore_from=[clause.text],
+        )
+
     def judge_clause(
+        clause: ClauseSpan, *, parent: Any = None, thread_id: str | None = None
+    ) -> ClauseVerdict:
+        with clause_scope(clause, thread_id):
+            return _judge_clause(clause, parent=parent, thread_id=thread_id)
+
+    def _judge_clause(
         clause: ClauseSpan, *, parent: Any = None, thread_id: str | None = None
     ) -> ClauseVerdict:
         span_tracer = parent or tracer
@@ -216,59 +236,80 @@ def make_judge(
                 )
 
         started = time.monotonic()
+
+        def inside(clause_observation: Any) -> ClauseVerdict:
+            config, durable = None, {}
+            if checkpointer is not None:
+                config = {"configurable": {"thread_id": thread_id or uuid.uuid4().hex}}
+                durable = {"durability": "exit"}  # one checkpoint write, not one per step
+            state = compiled.invoke(
+                {
+                    "clause": {
+                        "clause_id": clause.content_hash,
+                        "title": clause.heading,
+                        "text": clause.text,
+                    },
+                    "retries": 0,
+                },
+                config,
+                context=AgentContext(tracer=clause_observation or tracer),
+                **durable,
+            )
+            if "__interrupt__" in state:  # uncertain: the checkpoint waits for the lawyer
+                result = state["__interrupt__"][0].value
+            else:
+                result = state["result"]
+                if config is not None:
+                    forget(config["configurable"]["thread_id"])
+            if result.get("verdict") is None:
+                raise ClauseFailed(str(result.get("error") or "no verdict returned"))
+            observation_ids = dict(result.get("observations", {}))
+            observation_ids["clause_span"] = getattr(clause_observation, "id", None)
+            verdict = ClauseVerdict(
+                content_hash=clause.content_hash,
+                agent_version=version,
+                verdict=result["verdict"],
+                legal_basis=result.get("legal_basis", []),
+                candidates=result.get("candidates", []),
+                basis_scores=result.get("basis_scores", {}),
+                reason_de=result.get("reason_de", ""),
+                reason_unavailable=bool(result.get("reason_unavailable", False)),
+                confidence=float(result.get("confidence", 0.0)),
+                void_probability=result.get("void_probability"),
+                check=result.get("check"),
+                # A span has no get_current_trace_id(); it carries its trace id.
+                trace_id=result.get("langfuse_trace_id")
+                or getattr(clause_observation, "trace_id", None),
+                observations=observation_ids,
+                input_tokens=int(result.get("input_tokens", 0)),
+                output_tokens=int(result.get("output_tokens", 0)),
+                latency_ms=round((time.monotonic() - started) * 1000),
+            )
+            if clause_observation is not None:
+                with suppress(Exception):
+                    clause_observation.update(output=verdict.model_dump(mode="json"))
+            return verdict
+
+        failure: Exception | None = None
+        verdict: ClauseVerdict | None = None
         try:
             with context as clause_observation:
-                config, durable = None, {}
-                if checkpointer is not None:
-                    config = {"configurable": {"thread_id": thread_id or uuid.uuid4().hex}}
-                    durable = {"durability": "exit"}  # one checkpoint write, not one per step
-                state = compiled.invoke(
-                    {
-                        "clause": {
-                            "clause_id": clause.content_hash,
-                            "title": clause.heading,
-                            "text": clause.text,
-                        },
-                        "retries": 0,
-                    },
-                    config,
-                    context=AgentContext(tracer=clause_observation or tracer),
-                    **durable,
-                )
-                if "__interrupt__" in state:  # uncertain: the checkpoint waits for the lawyer
-                    result = state["__interrupt__"][0].value
-                else:
-                    result = state["result"]
-                    if config is not None:
-                        forget(config["configurable"]["thread_id"])
-                if result.get("verdict") is None:
-                    raise ClauseFailed(str(result.get("error") or "no verdict returned"))
-                observation_ids = dict(result.get("observations", {}))
-                observation_ids["clause_span"] = getattr(clause_observation, "id", None)
-                verdict = ClauseVerdict(
-                    content_hash=clause.content_hash,
-                    agent_version=version,
-                    verdict=result["verdict"],
-                    legal_basis=result.get("legal_basis", []),
-                    candidates=result.get("candidates", []),
-                    basis_scores=result.get("basis_scores", {}),
-                    reason_de=result.get("reason_de", ""),
-                    reason_unavailable=bool(result.get("reason_unavailable", False)),
-                    confidence=float(result.get("confidence", 0.0)),
-                    void_probability=result.get("void_probability"),
-                    check=result.get("check"),
-                    # A span has no get_current_trace_id(); it carries its trace id.
-                    trace_id=result.get("langfuse_trace_id")
-                    or getattr(clause_observation, "trace_id", None),
-                    observations=observation_ids,
-                    input_tokens=int(result.get("input_tokens", 0)),
-                    output_tokens=int(result.get("output_tokens", 0)),
-                    latency_ms=round((time.monotonic() - started) * 1000),
-                )
-                if clause_observation is not None:
-                    with suppress(Exception):
-                        clause_observation.update(output=verdict.model_dump(mode="json"))
-                return verdict
+                # Phase 9 (9.A): an exception leaving the observation is recorded by
+                # OpenTelemetry with its message and stack, which no mask hook sees. So it
+                # is caught inside and raised again outside; the span gets only its type.
+                try:
+                    verdict = inside(clause_observation)
+                except Exception as exc:  # noqa: BLE001 - re-raised below
+                    failure = exc
+                    if clause_observation is not None:
+                        with suppress(Exception):
+                            clause_observation.update(
+                                level="ERROR", status_message=type(exc).__name__
+                            )
+            if failure is not None:
+                raise failure
+            assert verdict is not None
+            return verdict
         except ClauseFailed:
             raise
         except Exception as exc:  # noqa: BLE001 - runner needs a clause-scoped failure
@@ -276,6 +317,10 @@ def make_judge(
 
     def explain_only(clause: ClauseSpan, verdict: ClauseVerdict) -> ClauseVerdict:
         """The explain step alone: find the cited norms again (cached, no Gemini), then explain."""
+        with clause_scope(clause, None):
+            return _explain_only(clause, verdict)
+
+    def _explain_only(clause: ClauseSpan, verdict: ClauseVerdict) -> ClauseVerdict:
         retrieval = app_config.get("retrieval", {})
         try:
             cited = find_cited(
@@ -311,6 +356,10 @@ def make_judge(
     ) -> Resumed | None:
         if checkpointer is None:
             return None
+        with clause_scope(clause, thread_id):
+            return _resume(thread_id, verdict, basis)
+
+    def _resume(thread_id: str, verdict: str | None, basis: list[str]) -> Resumed | None:
         config = {"configurable": {"thread_id": thread_id}}
         waiting = compiled.get_state(config)
         if not waiting.next:  # never interrupted, already resumed, or deleted

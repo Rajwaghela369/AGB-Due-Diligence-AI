@@ -64,8 +64,9 @@ does not know they are one person) but the same exact string twice is one placeh
 Detection uses **Presidio**, Microsoft's open-source PII framework, with a **German spaCy
 model** for names and addresses (named-entity recognition, NER), plus **regular
 expressions** for the things with a fixed shape: IBANs (with the checksum), phone numbers,
-e-mail addresses and register numbers (HRA/HRB, for sole traders). Regexes are exact and
-cheap; NER finds what has no fixed shape but makes mistakes in both directions.
+e-mail addresses and register numbers (HRA/HRB, for sole traders); Wave 1 added tax
+numbers, dates of birth and personal URLs (see "How masking works" below). Regexes are
+exact and cheap; NER finds what has no fixed shape but makes mistakes in both directions.
 
 ### Where it sits: one boundary, inside the outbound functions
 
@@ -144,8 +145,96 @@ their masked texts might differ too). The hash itself never leaves the server.
   the gate's eval: verdicts on the AGB-DE dev slice must not change (run only with
   explicit approval, ≤ 5 Gemini calls in the live check).
 - **Masker failure**: nothing is sent. The call fails like a provider error, so one clause
-  fails and the run continues; with `required: true` the API does not even start without
-  a working masker.
+  fails and the run continues. A missing spaCy model stops the API at start, unless
+  `allow_regex_only: true` explicitly accepts the regex layer alone.
+
+### How masking works (as built in Wave 1)
+
+One clause, followed through one call. The judge's explain step sends the clause plus the
+cited statute:
+
+```
+Before (what the lawyer uploaded, and what we store):
+  Für die Verbindlichkeiten des Bestellers bürgt Frau Lieselotte Brennecke, geb. Hartmann,
+  geboren am 14.07.1961, wohnhaft Kastanienallee 3a, 04109 Leipzig, Steuer-ID
+  47 036 892 815. Die Haftung nach § 309 Nr. 7 BGB bleibt unberührt.
+
+After (what Gemini, Jina and Langfuse see):
+  Für die Verbindlichkeiten des Bestellers bürgt Frau <PERSON_1>, geb. <PERSON_2>,
+  geboren am <DATE_OF_BIRTH_1>, wohnhaft <ADDRESS_1>, Steuer-ID
+  <TAX_ID_1>. Die Haftung nach § 309 Nr. 7 BGB bleibt unberührt.
+
+The map, in memory for this one call only:
+  <PERSON_1> → Lieselotte Brennecke   <PERSON_2> → Hartmann   <DATE_OF_BIRTH_1> → 14.07.1961
+  <ADDRESS_1> → Kastanienallee 3a, 04109 Leipzig   <TAX_ID_1> → 47 036 892 815
+
+The model answers:        {"reason_de": "Die Bürgschaft von <PERSON_1> ist …"}
+The lawyer reads:         Die Bürgschaft von Lieselotte Brennecke ist …
+```
+
+The steps inside `PresidioMasker.mask`:
+
+1. **Protect.** Statute citations (`§ 309 Nr. 7 BGB`, `§§ 305 ff. BGB`, `Art. 28 Abs. 3
+   lit. a DSGVO`, `BGBl. I S. 2909`) and placeholders already in the text are marked as
+   protected; nothing that touches them is masked. The statute texts themselves contain no
+   personal-data shapes, and a test runs every statute chunk through the masker and
+   expects it back unchanged.
+2. **Detect, by regex.** German patterns for what has a shape: e-mail; phone numbers
+   (international, or national with a separator after the area code, or after "Tel."/"Fax");
+   IBAN (mod-97 checksum, or after "IBAN"); USt-IdNr (`DE` + 9 digits) and Steuer-ID or
+   Steuernummer after their label; HRA/HRB register numbers; dates only after "geb.",
+   "geboren am" or "Geburtsdatum" (a contract date is not personal); street + house number
+   (+ postcode and city), "Postfach …"; URLs only when the path or host is personal
+   (`linkedin.com/in/…`, `/~name`, `/team/…`, `?email=`). Names have no shape, so the regex
+   layer finds them by **context**: after Herr/Frau/Dr./RA, after a role or label
+   ("Geschäftsführer:", "Inhaberin", "Kontakt:", "Verantwortlich i.S.d. § 18 MStV:",
+   "z. Hd.", "Kontoinhaber:", "gez."), also when the name is on the next line; after
+   "geb."; on a line directly above an address; under a signature date ("Berlin, den
+   1.3.2026"); or when a common German first name is followed by a capitalised word
+   ("Anna Kowalczyk"), unless a company form follows ("Paul Hartmann AG") or the run is
+   title-case prose ("Notar Kosten Trägt Der Käufer").
+3. **Detect, by NER (optional).** If the spaCy model (`de_core_news_sm`) is installed,
+   Presidio's spaCy recogniser adds names with no context at all. Without the model the
+   API refuses to start, unless `privacy.masking.allow_regex_only: true` says the
+   deployment accepts the regex layer's gaps. The default is to refuse: a silent
+   regex-only run would leak exactly the names nobody labelled.
+4. **Spread, within a scope.** Masking runs inside a **scope**: one owner's unit of work
+   (one clause judged, one summary, one chat message, one comment), primed with the texts
+   it is about. Every value detected in the scope is masked wherever it recurs, also in
+   another case or with a genitive "s" ("<PERSON_1>s Haftung"), and a detected name's
+   surname on its own. This is what keeps traces clean: the model's answer "Lieselotte
+   Brennecke haftet" has no "Frau" in front of it when the Langfuse hook sees it, but the
+   scope of the request that produced it knows the name. The scope ends with the work;
+   there is no process-wide memory, so another owner's documents can never change what
+   this owner's clause looks like to the model.
+5. **Resolve and number.** A hit that touches a protected citation keeps only its part
+   outside it; overlapping hits keep the longest (an IBAN beats the phone number inside
+   it); the rest become `<KIND_n>`, numbered per scope in order of first appearance, the
+   same value always the same placeholder.
+
+Where the way back happens: `core.llm.complete` restores the placeholders inside the
+parsed JSON answer (so an address with a line break stays valid JSON), and
+`core.llm.complete_stream` restores them chunk by chunk, holding back a tail like `<PERS`
+until the next chunk shows whether it is a placeholder. The chat, the summary and the
+reasoning therefore never show a placeholder, and no caller ever holds the map.
+
+**Restored only what the cache may hold.** A clause's reasoning is cached by its text and
+shared by every owner who uploads the same clause. The explain prompt also contains the
+heading, which belongs to one owner ("§ 9 Haftung von Herrn Dr. Klaus Brenner"). So the
+scope says which values may come back: only those in the clause text itself. A
+placeholder from the heading, from a lawyer's note or name, or one the model invented,
+reads `[unbekannt]`. We chose "cache only owner-independent text" over keying the cache
+by owner: keying by owner would multiply every model call by the number of owners, for
+names the reasoning does not need.
+
+What it costs: the regex layer masks all 3,764 AGB-DE clauses in under a second; a
+36-clause document takes a few milliseconds, and a 40-candidate retrieval trace about
+10 ms (a review measured 684 ms when the first version still kept a global memory). Presidio itself is only imported when the
+spaCy model is there (its import pulls in `transformers` and takes seconds).
+
+What it does not catch on regexes alone: a name with no context and an uncommon first name
+("Die Ware holt Gundula Quast ab"). That is the NER layer's job, which is why production
+should install the model, and why the 9.A gate still asks for a live check.
 
 ## Owners and login (9.E)
 

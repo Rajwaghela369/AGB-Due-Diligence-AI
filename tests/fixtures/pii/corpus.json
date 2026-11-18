@@ -1,0 +1,71 @@
+{
+  "_comment": "Seeded German PII corpus for 9.A. Every person, address, number and account here is fictional; the IBANs are checksum-valid test values, not real accounts. `pii` lists every value that must never reach a provider or a trace.",
+  "clauses": [
+    {
+      "id": "imprint",
+      "heading": "§ 1 Anbieter",
+      "text": "Anbieter ist die Brennecke Feinkost GmbH, Lindenstraße 14, 10969 Berlin, vertreten durch die Geschäftsführerin Erika Mustermann. Amtsgericht Charlottenburg HRB 214365 B, USt-IdNr.: DE287654321.",
+      "pii": ["Lindenstraße 14", "10969 Berlin", "Erika Mustermann", "HRB 214365 B", "DE287654321"]
+    },
+    {
+      "id": "contact",
+      "heading": "§ 2 Kontakt",
+      "text": "Ansprechpartner ist Herr Dr. Jürgen Schmitz-Behrens (juergen.schmitz-behrens@brennecke-feinkost.example), Tel.: +49 30 98765432, Fax 030 / 987 654-33. Herr Schmitz-Behrens beantwortet Anfragen werktags.",
+      "pii": ["Jürgen Schmitz-Behrens", "Schmitz-Behrens", "juergen.schmitz-behrens@brennecke-feinkost.example", "+49 30 98765432", "987 654-33"]
+    },
+    {
+      "id": "payment",
+      "heading": "§ 5 Zahlung",
+      "text": "Der Kunde überweist den Kaufpreis auf das Konto der Inhaberin Sabine Okonkwo, IBAN DE89 3704 0044 0532 0130 00, binnen 14 Tagen. Die Haftung nach § 309 Nr. 7 BGB bleibt unberührt.",
+      "pii": ["Sabine Okonkwo", "DE89 3704 0044 0532 0130 00", "Okonkwo"]
+    },
+    {
+      "id": "sole-trader",
+      "heading": "§ 1 Geltungsbereich",
+      "text": "Diese AGB gelten für alle Verträge mit Tobias Wendland e.K., Inhaber Tobias Wendland, Am Mühlbach 7, 79098 Freiburg, eingetragen unter HRA 702144 beim Amtsgericht Freiburg, Steuernummer 06/123/45678.",
+      "pii": ["Tobias Wendland", "Wendland", "Am Mühlbach 7", "79098 Freiburg", "HRA 702144", "06/123/45678"]
+    },
+    {
+      "id": "guarantor",
+      "heading": "§ 9 Bürgschaft",
+      "text": "Für die Verbindlichkeiten des Bestellers bürgt Frau Lieselotte Brennecke, geb. Hartmann, geboren am 14.07.1961, wohnhaft Kastanienallee 3a, 04109 Leipzig, Steuer-ID 47 036 892 815.",
+      "pii": ["Lieselotte Brennecke", "Hartmann", "14.07.1961", "Kastanienallee 3a", "04109 Leipzig", "47 036 892 815"]
+    },
+    {
+      "id": "privacy",
+      "heading": "§ 11 Datenschutz",
+      "text": "Datenschutzbeauftragter: Konstantin Aydemir, datenschutz.aydemir@mailbox.example, Mobil 0171 2345678. Weitere Hinweise unter https://www.linkedin.com/in/konstantin-aydemir-7731 und https://brennecke-feinkost.example/team/k.aydemir sowie in § 12.",
+      "pii": ["Konstantin Aydemir", "datenschutz.aydemir@mailbox.example", "0171 2345678", "https://www.linkedin.com/in/konstantin-aydemir-7731", "https://brennecke-feinkost.example/team/k.aydemir", "Aydemir"]
+    },
+    {
+      "id": "liability-named",
+      "heading": "§ 7 Haftung",
+      "text": "Die Haftung von Anna Kowalczyk und Max Feldhaus für leichte Fahrlässigkeit ist ausgeschlossen, soweit nicht Leben, Körper oder Gesundheit verletzt sind. Kowalczyk haftet nur für Vorsatz.",
+      "pii": ["Anna Kowalczyk", "Max Feldhaus", "Kowalczyk", "Feldhaus"]
+    },
+    {
+      "id": "returns",
+      "heading": "§ 8 Widerruf",
+      "text": "Der Widerruf ist zu richten an: Brennecke Feinkost GmbH, z. Hd. Frau Petra Lindqvist, Postfach 61 02 33, 10923 Berlin, E-Mail widerruf@brennecke-feinkost.example, Telefon (030) 2233445.",
+      "pii": ["Petra Lindqvist", "Postfach 61 02 33", "10923 Berlin", "widerruf@brennecke-feinkost.example", "(030) 2233445", "2233445"]
+    },
+    {
+      "id": "signature",
+      "heading": "§ 15 Schlussbestimmungen",
+      "text": "Gerichtsstand ist Berlin, soweit der Kunde Kaufmann ist (§ 38 ZPO). Berlin, den 01.03.2026, gez. Henrik Sørensen-Albers, Prokurist.",
+      "pii": ["Henrik Sørensen-Albers"]
+    },
+    {
+      "id": "account-holder",
+      "heading": "§ 6 Lastschrift",
+      "text": "Kontoinhaber: Fatma Yıldırım-Kranz, IBAN: AT61 1904 3002 3457 3201, Geburtsdatum: 3. Mai 1985. Die Vorabankündigung erfolgt per E-Mail an f.kranz@posteo.example.",
+      "pii": ["AT61 1904 3002 3457 3201", "3. Mai 1985", "f.kranz@posteo.example"]
+    },
+    {
+      "id": "plain",
+      "heading": "§ 3 Vertragsschluss",
+      "text": "Die Darstellung der Waren im Online-Shop stellt kein rechtlich bindendes Angebot dar. Ergänzend gelten §§ 305 ff. BGB sowie Art. 246a § 1 Abs. 2 EGBGB.",
+      "pii": []
+    }
+  ]
+}

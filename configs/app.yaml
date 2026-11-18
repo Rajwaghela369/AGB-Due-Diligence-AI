@@ -146,12 +146,14 @@ privacy:
     # 9.A: personal data is replaced by placeholders before every model call and every
     # Langfuse payload (core.masking). Off until Wave 1's masker passes the PII corpus.
     enabled: false
-    # true: the API refuses to start when masking is enabled but the masker cannot load,
-    # instead of running without it.
-    required: false
+    # With masking enabled and the spaCy model (or Presidio) missing, the API refuses to
+    # start. true accepts the German regexes alone instead: labelled names, addresses and
+    # numbers are masked, but a name with no context ("Die Ware holt Gundula Quast ab")
+    # goes through. Install the model: uv run python -m spacy download de_core_news_sm
+    allow_regex_only: false
     language: de
-    spacy_model: de_core_news_lg
-    entities: [PERSON, ADDRESS, EMAIL, PHONE, IBAN, REGISTER_NUMBER]
+    spacy_model: de_core_news_sm
+    entities: [PERSON, ADDRESS, EMAIL, PHONE, IBAN, REGISTER_NUMBER, TAX_ID, DATE_OF_BIRTH, URL]
     score_threshold: 0.5
     # Words the German NER model tends to mistake for names in AGB; never masked.
     allow_list: [BGB, HGB, AGB, Verwender, Kunde, Käufer, Verkäufer, Auftraggeber,

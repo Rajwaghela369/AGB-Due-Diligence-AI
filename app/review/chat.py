@@ -47,6 +47,7 @@ from ag_ui.core import (
     TextMessageEndEvent,
     TextMessageStartEvent,
 )
+from core import masking
 from core.budget import BudgetExceeded, LimiterClosed
 from core.llm import complete_stream
 from core.logging import get_logger
@@ -467,7 +468,11 @@ def _stream_events(
     input_tokens = output_tokens = 0
     model_name = str(settings.model.get("name", ""))
     failure: str | None = None
-    model_stream = iter(model(system, user))
+    # Phase 9 (9.A): the prompt is masked in a scope primed with the clause, so a name the
+    # clause introduced is masked in the note, the history and the question too. The answer
+    # is shown to this owner only and not cached, so every placeholder may be restored.
+    with masking.scope(None, thread_id, prime=[original]):
+        model_stream = iter(model(system, user))
     control.bind(model_stream)
     try:
         for chunk in model_stream:

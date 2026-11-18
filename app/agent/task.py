@@ -8,7 +8,7 @@ agent's number comparable to the Phase 3 baseline.
 from contextlib import suppress
 from typing import Any
 
-from core import langfuse_client
+from core import langfuse_client, masking
 from core.budget import RequestBudget
 from core.config import index_config_hash, load_yaml
 from core.hashing import content_hash
@@ -176,6 +176,17 @@ def make_task(
     def run(*, item: Any, **_: Any) -> dict[str, Any]:
         clause = item["input"] if isinstance(item, dict) else item.input
         hashes[clause["clause_id"]] = content_hash(clause["text"])
+        # Phase 9 (9.A): one masking scope per clause, as in app.agent.run.make_judge:
+        # clause text first, heading second, answers restored only from the clause text.
+        with masking.scope(
+            None,
+            hashes[clause["clause_id"]],
+            prime=[clause.get("text"), clause.get("title")],
+            restore_from=[clause.get("text") or ""],
+        ):
+            return _run_clause(clause)
+
+    def _run_clause(clause: dict[str, Any]) -> dict[str, Any]:
         try:
             with _observe(
                 tracer,

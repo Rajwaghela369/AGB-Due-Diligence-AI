@@ -14,6 +14,7 @@ from contextlib import suppress
 from typing import Any
 
 from core.logging import get_logger
+from core.masking import boundary
 
 from app.domain import Review
 
@@ -35,7 +36,10 @@ class ReviewTrace:
             return
         try:
             if error is not None:
-                self.span.update(output=output, level="ERROR", status_message=error)
+                # Phase 9 (9.A): the SDK's mask hook does not cover `status_message`.
+                self.span.update(
+                    output=output, level="ERROR", status_message=boundary().trace_text(error)
+                )
             elif output is not None:
                 self.span.update(output=output)
         except Exception:  # noqa: BLE001 - tracing never fails a review
