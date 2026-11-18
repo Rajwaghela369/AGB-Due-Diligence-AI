@@ -184,3 +184,7 @@ auth:
     roles_claim: realm_access.roles
     name_claim: name
     admin_role: agb-admin  # may delete any owner's documents and run the sweep
+    # Asymmetric only; `none` and HS* are refused whatever is listed (app.api.oidc).
+    algorithms: [RS256, ES256]
+    leeway_seconds: 30  # clock skew allowed on exp, nbf and iat
+    jwks_ttl_seconds: 600  # the key set is re-read this often; an unknown kid refetches once

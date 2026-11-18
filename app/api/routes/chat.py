@@ -13,7 +13,7 @@ from core.budget import BudgetExceeded
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import request_id, reviewer, state
+from app.api.deps import owned_review, request_id, reviewer, state
 from app.api.errors import ApiError
 from app.api.schemas import ChatIn
 from app.api.sse import stream_events
@@ -40,6 +40,7 @@ def post_chat(review_id: str, position: int, payload: ChatIn, request: Request):
     address = request.client.host if request.client else "unknown"
     if not dependencies.rate_limiter.allow(address):
         raise ApiError(429, "rate_limited", "Zu viele Anfragen. Bitte versuchen Sie es später.")
+    owned_review(request, review_id)
     who = reviewer(request)
     try:
         events = dependencies.service.chat(

@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from app.domain import (
+    DEFAULT_OWNER_ID,
     IDLE_REVIEW_STATUSES,
     Agreement,
     AgreementByVerdict,
@@ -105,6 +106,8 @@ class MemoryDocumentRepo:
         source_type: str,
         size: int,
         document_type: str = "agb",
+        *,
+        owner_id: str = DEFAULT_OWNER_ID,
     ) -> str:
         upload_id = uuid.uuid4().hex
         with self._lock:
@@ -116,6 +119,7 @@ class MemoryDocumentRepo:
                     "source_type": source_type,
                     "document_type": document_type,
                     "size": size,
+                    "owner_id": owner_id,
                     "uploaded_at": _now(),
                 }
             )

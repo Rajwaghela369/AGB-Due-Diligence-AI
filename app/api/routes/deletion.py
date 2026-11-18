@@ -8,7 +8,7 @@ is the contract.
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from app.api.deps import principal, state
+from app.api.deps import owned_document, principal, state
 from app.api.errors import ApiError
 from app.api.schemas import DeletionBlockedBody, DeletionOut
 from app.review.interfaces import DeletionBlocked
@@ -28,6 +28,7 @@ _BLOCKED_MESSAGE = (
 )
 def delete_document(document_id: str, request: Request, dry_run: bool = False):
     caller = principal(request)
+    owned_document(request, document_id)
     try:
         report = state(request).service.delete_document(document_id, caller, dry_run=dry_run)
     except KeyError as exc:

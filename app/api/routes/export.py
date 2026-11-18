@@ -10,7 +10,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
 
-from app.api.deps import reviewer, state
+from app.api.deps import owned_review, reviewer, state
 from app.api.errors import ApiError
 from app.api.schemas import ExportBlockedBody, ReviewSummary
 from app.domain import ExportFormat
@@ -29,6 +29,7 @@ _BLOCKED_MESSAGE = {
 
 @router.get("/reviews/{review_id}/summary", response_model=ReviewSummary)
 def get_summary(review_id: str, request: Request) -> ReviewSummary:
+    owned_review(request, review_id)
     try:
         return state(request).service.summary(review_id)
     except KeyError as exc:
@@ -49,6 +50,7 @@ def get_export(
     fmt: Annotated[ExportFormat, Query(alias="format")],
     draft: bool = False,
 ) -> Response:
+    owned_review(request, review_id)
     try:
         exported = state(request).service.export(
             review_id, fmt, draft=draft, reviewer=reviewer(request)

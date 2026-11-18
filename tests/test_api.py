@@ -300,7 +300,7 @@ def test_file_redirect_checks_the_document_owner_before_presigning(api, monkeypa
     store.files = SignedFiles()
     application.state.settings = {"files": {"s3": {"download": "redirect"}}}
     monkeypatch.setattr(
-        "app.api.routes.documents.principal", lambda _request: Principal(subject="another-owner")
+        "app.api.deps.principal", lambda _request: Principal(subject="another-owner")
     )
     with TestClient(application) as client:
         response = client.get("/api/v1/documents/doc-1/file", follow_redirects=False)

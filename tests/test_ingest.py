@@ -194,7 +194,9 @@ class _Documents:
     def clauses(self, document_id):
         return self.saved_clauses[document_id]
 
-    def record_upload(self, document_id, filename, source_type, size, document_type="agb"):
+    def record_upload(
+        self, document_id, filename, source_type, size, document_type="agb", *, owner_id="local"
+    ):
         self.uploads.append((document_id, filename, source_type, size, document_type))
         return str(len(self.uploads))
 

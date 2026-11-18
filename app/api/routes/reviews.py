@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse
 
 from app.agent.run import ExplainFailed
 from app.api.costs import cache_hit_rate, cost_eur, pricing, wall_time_ms
-from app.api.deps import state
+from app.api.deps import owned_document, owned_review, state
 from app.api.errors import ApiError
 from app.api.schemas import Finding, FindingsOut, ReviewIn, ReviewOut
 from app.api.sse import stream_events
@@ -44,11 +44,13 @@ def create_review(payload: ReviewIn, request: Request) -> ReviewOut:
     address = request.client.host if request.client else "unknown"
     if not dependencies.rate_limiter.allow(address):
         raise ApiError(429, "rate_limited", "Zu viele Anfragen. Bitte versuchen Sie es später.")
+    owned_document(request, payload.document_id)
     return review_out(request, dependencies.service.start(payload.document_id, payload.scope))
 
 
 @router.get("/reviews/{review_id}", response_model=ReviewOut)
 def get_review(review_id: str, request: Request) -> ReviewOut:
+    owned_review(request, review_id)
     review = state(request).service.get(review_id)
     if review is None:
         raise ApiError(404, "not_found", "Prüfung nicht gefunden.")
@@ -57,6 +59,7 @@ def get_review(review_id: str, request: Request) -> ReviewOut:
 
 @router.get("/reviews/{review_id}/findings", response_model=FindingsOut)
 def get_findings(review_id: str, request: Request) -> FindingsOut:
+    owned_review(request, review_id)
     service = state(request).service
     review = service.get(review_id)
     if review is None:
@@ -66,6 +69,7 @@ def get_findings(review_id: str, request: Request) -> FindingsOut:
 
 @router.post("/reviews/{review_id}/clauses/{position}/retry", response_model=ReviewOut)
 def retry_clause(review_id: str, position: int, request: Request) -> ReviewOut:
+    owned_review(request, review_id)
     service = state(request).service
     service.retry_clause(review_id, position)
     review = service.get(review_id)
@@ -81,6 +85,7 @@ def explain_clause(review_id: str, position: int, request: Request) -> Finding:
     address = request.client.host if request.client else "unknown"
     if not dependencies.rate_limiter.allow(address):
         raise ApiError(429, "rate_limited", "Zu viele Anfragen. Bitte versuchen Sie es später.")
+    owned_review(request, review_id)
     try:
         return dependencies.service.explain_clause(review_id, position)
     except ExplainFailed as exc:
@@ -95,6 +100,7 @@ def review_events(
     request: Request,
     last_event_id: str | None = Header(default=None),
 ) -> StreamingResponse:
+    owned_review(request, review_id)
     service = state(request).service
     if service.get(review_id) is None:
         raise ApiError(404, "not_found", "Prüfung nicht gefunden.")
