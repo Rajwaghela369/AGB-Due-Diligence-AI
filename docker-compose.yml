@@ -73,6 +73,22 @@ services:
       /bin/sh -c "mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD
       && mc mb --ignore-existing local/agb-check-files"
 
+  keycloak:
+    # Development login (9.E, decision #2). Only with `docker compose --profile auth up
+    # keycloak`; the API checks tokens against it once `auth.enabled: true`. Production
+    # points `auth.oidc.issuer` at the firm's provider instead. Dev mode: no TLS, an
+    # in-memory database, and the realm (test client and users) imported on every start.
+    image: quay.io/keycloak/keycloak:26.4.2
+    profiles: ["auth"]
+    command: start-dev --import-realm --http-port 8080
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./configs/keycloak:/opt/keycloak/data/import:ro
+
 volumes:
   files:
   minio:

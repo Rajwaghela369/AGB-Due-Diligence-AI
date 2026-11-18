@@ -105,7 +105,7 @@ call.
   With login off: `{owner_id: auth.default_owner, name: null, roles: [], authenticated:
   false, auth_enabled: false}`.
 - **401 `unauthenticated`** (Wave 2): login on and no valid bearer token.
-- **501** until Wave 2 when `auth.enabled` is true (fails closed).
+- **503 `auth_unavailable`:** login on, and the issuer's key set was never readable.
 
 ### Login rules for Wave 2
 
@@ -123,6 +123,32 @@ call.
 - Every repository read and write that takes an id is checked against the owner (Wave 2
   decides between a `owner_id` parameter on each method and Postgres row-level security;
   see the design doc).
+
+### What Wave 2 built (auth-scale)
+
+- `app/api/oidc.py`: `OidcVerifier` (discovery, cached JWKS, one rate-limited refetch on
+  an unknown `kid`, asymmetric allow-list `auth.oidc.algorithms`, `leeway_seconds`).
+  Signatures go through PyJWT when installed, else `cryptography`.
+- With login on, every router except `/health` and `/ready` depends on `require_login`,
+  and the 401 carries `WWW-Authenticate: Bearer`.
+- **Owner checks at the API boundary, not in each repository method.** Every route that
+  takes a document or review id (path or body) loads it through `deps.owned_document` or
+  `deps.owned_review` first, which answers 404 for another owner's row; `GET /documents`
+  lists only the caller's. `tests/test_access.py` runs user B against all of user A's
+  routes, and fails when a new id-taking route is not in its matrix. Repository methods
+  stay owner-agnostic (the protocols are unchanged); RLS remains a later option.
+- `ingest_file`/`ingest_text(…, owner_id=)` make per-owner ids; `record_upload` takes
+  `owner_id=`; `Service.start` gives the review its document's owner.
+- Development login: `docker compose --profile auth up keycloak` imports
+  `configs/keycloak/agb-check-realm.json` (public client `agb-check-web` with PKCE and an
+  `agb-check-api` audience mapper; users `anna` (agb-user) and `ben` (agb-user, agb-admin),
+  dev-only passwords). Then set `auth.enabled: true`.
+- **Web login is not built yet.** To enable it: add `oidc-client-ts`, sign in with the
+  authorization code flow plus PKCE against `auth.oidc.issuer` as `agb-check-web`, and
+  send `Authorization: Bearer <access token>` from `web/src/api/client.ts` and
+  `web/src/api/events.ts` (both use `fetch`, so SSE works with the header). Take the
+  reviewer name from `GET /me` instead of the localStorage name. Until then, turn login
+  on only for API clients.
 
 ## Deletion (9.B)
 
