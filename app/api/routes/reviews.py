@@ -64,7 +64,14 @@ def get_findings(review_id: str, request: Request) -> FindingsOut:
     review = service.get(review_id)
     if review is None:
         raise ApiError(404, "not_found", "Prüfung nicht gefunden.")
-    return FindingsOut(review=review, findings=service.findings(review_id))
+    return FindingsOut(
+        review=review,
+        findings=service.findings(review_id),
+        # Phase 10: AVV document-level findings; always empty for AGB.
+        missing_obligations=(
+            service.missing_obligations(review_id) if review.document_type == "avv" else []
+        ),
+    )
 
 
 @router.post("/reviews/{review_id}/clauses/{position}/retry", response_model=ReviewOut)

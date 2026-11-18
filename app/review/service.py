@@ -12,6 +12,7 @@ which is exactly what `resume_running()` looks for on the next start, and the
 verdict cache makes the resumed run pay only for clauses never judged.
 """
 
+import dataclasses
 import hashlib
 import threading
 import time
@@ -46,6 +47,7 @@ from app.domain import (
     ExportFile,
     ExportFormat,
     Finding,
+    MissingObligation,
     Principal,
     Review,
     Reviewer,
@@ -56,7 +58,7 @@ from app.domain import (
     decided_verdict,
     kept_model_verdict,
 )
-from app.review import deletion, retention
+from app.review import avv, deletion, retention
 from app.review.chat import start_chat
 from app.review.corrections import Corrections
 from app.review.deliverable import DeliverableSettings
@@ -110,6 +112,7 @@ class Service:
         summary_model: SummaryModel | None = None,
         chat_model: ChatModel | None = None,
         retention_policy: RetentionSettings | None = None,
+        avv_judge: Any = None,
     ) -> None:
         if max_concurrency < 1:
             raise ValueError("max_concurrency must be at least 1")
@@ -143,6 +146,14 @@ class Service:
             prices=dict(prices or {}),
             poll_seconds=poll_seconds,
         )
+        # Phase 10 (10.C): the AVV agent (`app.agent.avv.AvvJudge`), by default the one
+        # `make_judge` attached as `judge.avv`. AVV runs share every other dependency.
+        self.avv_judge = avv_judge if avv_judge is not None else getattr(judge, "avv", None)
+        self._avv_ctx = (
+            dataclasses.replace(self._ctx, judge=self.avv_judge)
+            if self.avv_judge is not None
+            else None
+        )
         self._lock = threading.RLock()
         self._runs: dict[str, ReviewRun] = {}
         self._decision_locks = KeyedLocks()
@@ -169,19 +180,24 @@ class Service:
         """
         with self._lock:
             self._check_open()
-            active = self.store.reviews.active_for(document_id, self.agent_version)
-            if active is not None:
-                return active
             document = self.store.documents.get(document_id)
             if document is None:
                 raise KeyError(f"unknown document {document_id}")
+            version = self._version_for(document.document_type)
+            active = self.store.reviews.active_for(document_id, version)
+            if active is not None:
+                return active
             clauses = self.store.documents.clauses(document_id)
             if not clauses:
                 raise ValueError(f"document {document_id} has no clauses")
-        topics = self._tag(clauses)
+        routes: dict = {}
+        if document.document_type == "avv":
+            routes, topics = avv.route_clauses(clauses, self.avv_judge)
+        else:
+            topics = self._tag(clauses)
         with self._lock:
             self._check_open()
-            active = self.store.reviews.active_for(document_id, self.agent_version)
+            active = self.store.reviews.active_for(document_id, version)
             if active is not None:
                 return active
             review_id = uuid.uuid4().hex
@@ -189,9 +205,12 @@ class Service:
                 Review(
                     review_id=review_id,
                     document_id=document_id,
-                    agent_version=self.agent_version,
+                    agent_version=version,
                     document_type=document.document_type,
                     scope=list(scope),
+                    obligations=(
+                        self.avv_judge.profile.codes if document.document_type == "avv" else []
+                    ),
                     status="queued",
                     owner_id=document.owner_id,  # v1: a review belongs to its document's owner
                 )
@@ -200,6 +219,8 @@ class Service:
                 return review  # another process won the race (reviews_one_active_idx)
             try:
                 self.store.reviews.set_clause_topics(review_id, topics)
+                if routes:
+                    self.store.reviews.set_clause_obligations(review_id, routes)
             except Exception as exc:
                 self.store.reviews.set_status(review_id, "failed", f"{type(exc).__name__}: {exc}")
                 raise
@@ -237,6 +258,14 @@ class Service:
             )
         return findings
 
+    def missing_obligations(self, review_id: str) -> list[MissingObligation]:
+        """See `ReviewService.missing_obligations`; implemented in `app.review.avv`."""
+        review = self._review(review_id)
+        if review.document_type != "avv":
+            return []
+        entries = load_entries(self.store, review, review_clauses(self.store, review))
+        return avv.review_missing(self.store, review, self._profile(), entries)
+
     def retry_clause(self, review_id: str, position: int) -> None:
         """Re-judge a failed clause. KeyError for an unknown review, ValueError if not failed."""
         with self._lock:
@@ -249,7 +278,7 @@ class Service:
             status = self.store.reviews.clause_statuses(review_id).get(position, ("queued",))[0]
             if status != "failed":
                 raise ValueError(f"clause {position} is {status}, not failed")
-            if review.agent_version != self.agent_version:
+            if review.agent_version != self._version_for(review.document_type):
                 raise ValueError("the agent has changed since this review; start a new review")
             active = self.store.reviews.active_for(review.document_id, review.agent_version)
             if active is not None and active.review_id != review_id:
@@ -266,7 +295,7 @@ class Service:
         with self._lock:
             self._check_open()
             review = self._review(review_id)
-        explain = getattr(self.judge, "explain_only", None)
+        explain = getattr(self._judge_for(review.document_type), "explain_only", None)
         if explain is None:
             raise RuntimeError("this agent cannot regenerate a reasoning")
         clause = next(
@@ -281,7 +310,7 @@ class Service:
         if verdict is None:
             raise ValueError(f"clause {position} has no verdict yet")
         regenerate_reason(
-            self._ctx,
+            self._ctx_for(review.document_type),
             review_id,
             clause,
             verdict,
@@ -338,7 +367,9 @@ class Service:
             # and is replayed below is a `replace`, so applying it twice changes nothing.
             review = self._review(review_id)
             clauses = review_clauses(self.store, review)
-            state = build_state(review, load_entries(self.store, review, clauses))
+            entries = load_entries(self.store, review, clauses)
+            missing = avv.review_missing(self.store, review, self._profile(), entries)
+            state = build_state(review, entries, missing)
             first.append(
                 StoredEvent(
                     review_id=review_id,
@@ -384,7 +415,7 @@ class Service:
                 verdict = self.store.verdicts.get(clause.content_hash, review.agent_version)
                 if verdict is None:
                     raise NotDecidable(f"clause {position} has no verdict")
-                self._validate_decision(decision, verdict)
+                self._validate_decision(decision, verdict, review.document_type)
                 previous = self.store.decisions.for_review(review_id).get(position)
                 stored = Decision(
                     review_id=review_id,
@@ -468,14 +499,16 @@ class Service:
             rows[0] if rows else Agreement(agent_version=version, by_verdict=AgreementByVerdict())
         )
 
-    def _validate_decision(self, decision: DecisionIn, verdict: ClauseVerdict) -> None:
+    def _validate_decision(
+        self, decision: DecisionIn, verdict: ClauseVerdict, document_type: str = "agb"
+    ) -> None:
         if decision.action != "override":
             if decision.corrected_verdict is not None or decision.corrected_basis:
                 raise InvalidDecision("corrected verdict and basis are only allowed on override")
             return
         if decision.corrected_verdict is None:
             raise InvalidDecision("override requires corrected_verdict")
-        if self.statutes is not None:
+        if self.statutes is not None and document_type == "agb":  # AVV cites DSGVO chunks
             unknown = [
                 chunk_id for chunk_id in decision.corrected_basis if chunk_id not in self.statutes
             ]
@@ -524,7 +557,8 @@ class Service:
             self.bus.emit_many(review_id, [change, progress])
             return
 
-        snapshot = StateSnapshotEvent(snapshot=build_state(review, entries))
+        missing = avv.review_missing(self.store, review, self._profile(), entries)
+        snapshot = StateSnapshotEvent(snapshot=build_state(review, entries, missing))
         if review.status == "failed":
             terminal: Any = RunErrorEvent(
                 message=review.error or "the review failed", code="review_failed"
@@ -608,7 +642,8 @@ class Service:
         decided, basis = decided_verdict(decision)
         wants_reason = decided == "potentially_void"
         unavailable = decision.model_copy(update={"reason_de": "", "reason_unavailable": True})
-        resume = getattr(self.judge, "resume", None)
+        judge = self._judge_for(review.document_type)
+        resume = getattr(judge, "resume", None)
         if resume is not None:
             try:
                 resumed = resume(
@@ -636,7 +671,7 @@ class Service:
                 return decision.model_copy(update=update), cost
         if not wants_reason:
             return decision, 0.0
-        explain = getattr(self.judge, "explain_only", None)
+        explain = getattr(judge, "explain_only", None)
         if explain is None:
             return unavailable, 0.0
         target = verdict.model_copy(
@@ -722,10 +757,11 @@ class Service:
             for review in self.store.reviews.running():
                 if review.review_id in self._runs:
                     continue
-                if review.agent_version != self.agent_version:
+                current = self._version_for(review.document_type)
+                if review.agent_version != current:
                     message = (
                         f"agent version changed from {review.agent_version} to "
-                        f"{self.agent_version}; start a new review"
+                        f"{current}; start a new review"
                     )
                     self.store.reviews.set_status(review.review_id, "failed", message)
                     self.bus.emit(
@@ -788,7 +824,7 @@ class Service:
     def _launch(self, review: Review, clauses, *, positions: list[int] | None, reason: str) -> None:
         """Open a run, mark the review running and start its thread. Caller holds the lock."""
         run = ReviewRun(
-            self._ctx,
+            self._ctx_for(review.document_type),
             review,
             clauses,
             positions=positions,
@@ -818,6 +854,23 @@ class Service:
         return tag_topics(
             clauses, router=self.router, model=self.router_model, caches=self.store.caches
         )
+
+    def _judge_for(self, document_type: str) -> Any:
+        return self._ctx_for(document_type).judge
+
+    def _ctx_for(self, document_type: str) -> RunContext:
+        """The run context of a document type: the AVV agent's for an AVV."""
+        if document_type != "avv":
+            return self._ctx
+        if self._avv_ctx is None:
+            raise ValueError("Für AVV-Prüfungen ist kein Agent konfiguriert.")
+        return self._avv_ctx
+
+    def _version_for(self, document_type: str) -> str:
+        return self._judge_for(document_type).agent_version
+
+    def _profile(self) -> Any:
+        return getattr(self.avv_judge, "profile", None)
 
     def _review(self, review_id: str) -> Review:
         review = self.store.reviews.get(review_id)
@@ -849,6 +902,7 @@ def build_service(
     summary_model: SummaryModel | None = None,
     chat_model: ChatModel | None = None,
     retention_policy: RetentionSettings | None = None,
+    avv_judge: Any = None,
 ) -> Service:
     """The one review service of a process; see `app.review.limiter.review_settings`."""
     return Service(
@@ -869,4 +923,5 @@ def build_service(
         summary_model=summary_model,
         chat_model=chat_model,
         retention_policy=retention_policy,
+        avv_judge=avv_judge,
     )

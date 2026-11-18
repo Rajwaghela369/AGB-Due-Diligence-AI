@@ -87,6 +87,7 @@ from app.domain import (
     Review,
     ReviewCounts,
 )
+from app.review import avv
 from app.review.events import EventBus
 from app.review.tracing import ReviewTrace, start_review_trace
 from app.store.interfaces import Store
@@ -169,6 +170,8 @@ def review_clauses(store: Store, review: Review) -> list[ClauseSpan]:
 def in_scope(clause: ClauseSpan, review: Review) -> bool:
     if not clause.in_scope:
         return False
+    if review.document_type == "avv":  # topics are AVV routes there (app.review.avv)
+        return clause.topic != avv.UNROUTED
     return clause.topic is None or clause.topic in review.scope
 
 
@@ -226,10 +229,14 @@ def price(prices: dict[str, float], input_tokens: int, output_tokens: int) -> fl
     return (input_tokens * per_input + output_tokens * per_output) / 1e6
 
 
-def build_state(review: Review, entries: dict[int, tuple]) -> dict[str, Any]:
-    """The state document of docs/Events.md."""
+def build_state(
+    review: Review, entries: dict[int, tuple], missing: list | None = None
+) -> dict[str, Any]:
+    """The state document of docs/Events.md. `missing`: the AVV document-level findings
+    (`app.review.avv.review_missing`), always empty for AGB."""
     return {
         "review": review.model_dump(mode="json"),
+        "missing_obligations": [item.model_dump(mode="json") for item in missing or []],
         "clauses": {
             str(pos): clause_entry(status, error, verdict)
             for pos, (status, error, verdict) in sorted(entries.items())
@@ -339,7 +346,11 @@ def regenerate_reason(
             events: list = [delta]
             if not runs and review.status in IDLE_REVIEW_STATUSES:
                 clauses = review_clauses(ctx.store, review)
-                state = build_state(review, load_entries(ctx.store, review, clauses))
+                entries = load_entries(ctx.store, review, clauses)
+                missing = avv.review_missing(
+                    ctx.store, review, getattr(ctx.judge, "profile", None), entries
+                )
+                state = build_state(review, entries, missing)
                 if review.status != "failed":
                     terminal: Any = RunFinishedEvent(
                         thread_id=review.document_id,
@@ -664,6 +675,8 @@ class ReviewRun:
                 counts = count(self._entries, self._cache_hits, self._decisions)
                 result = {"counts": counts.model_dump(mode="json"), "cost_usd": self._cost}
                 waiting = any(s == "awaiting_decision" for s, _, _ in self._entries.values())
+                if self.review.document_type == "avv":
+                    self._emit_missing()
                 # Status first: a client that sees RUN_FINISHED and reloads must see it.
                 self.ctx.store.reviews.set_status(
                     self.review_id, "awaiting_decisions" if waiting else "finished"
@@ -677,6 +690,26 @@ class ReviewRun:
             self._trace.end(result)
             self._on_closed(self)
         return True
+
+    def _emit_missing(self) -> None:
+        """The AVV document-level check, once every clause has its route and verdict:
+        one `replace /missing_obligations` before the terminal event (docs/Events.md)."""
+        letters = avv.mentioned(self.ctx.store, self.review, self._entries)
+        missing = avv.missing_obligations(
+            self.review, getattr(self.ctx.judge, "profile", None), letters
+        )
+        self.ctx.bus.emit(
+            self.review_id,
+            StateDeltaEvent(
+                delta=[
+                    {
+                        "op": "replace",
+                        "path": "/missing_obligations",
+                        "value": [item.model_dump(mode="json") for item in missing],
+                    }
+                ]
+            ),
+        )
 
     def _fail_run(self, exc: Exception) -> None:
         message = f"{type(exc).__name__}: {exc}"
