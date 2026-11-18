@@ -43,7 +43,7 @@ from typing import Any
 
 from core.budget import BudgetExceeded, RequestBudget
 from core.logging import get_logger
-from core.masking import MaskedText, MaskingError, StreamUnmasker, boundary
+from core.masking import PLACEHOLDER, MaskedText, MaskingError, StreamUnmasker, boundary
 
 log = get_logger("core.llm")
 
@@ -278,15 +278,17 @@ def complete(
 
 
 def _unmasked(completion: Completion, masked: str) -> Completion:
-    """The answer with the prompt's placeholders restored. The answer is JSON, and an
-    original value may need escaping (a line break in an address), so strings are restored
-    inside the parsed JSON; text that is not JSON is restored as it is."""
-    if not isinstance(masked, MaskedText) or not masked.placeholders:
+    """The answer for the caller: placeholders restored where the masking scope allows
+    their value (`MaskedText.display`), any other placeholder (one the model invented, or
+    one whose value may not go into a shared cache) shown as `[unbekannt]`. The answer is
+    JSON, and an original value may need escaping (a line break in an address), so
+    strings are restored inside the parsed JSON; text that is not JSON as it is."""
+    if not isinstance(masked, MaskedText) or not PLACEHOLDER.search(completion.text):
         return completion
     try:
         parsed = json.loads(completion.text)
     except ValueError:
-        text = masked.unmask(completion.text)
+        text = masked.display(completion.text)
     else:
         text = json.dumps(_unmask_json(parsed, masked), ensure_ascii=False)
     return Completion(
@@ -296,7 +298,7 @@ def _unmasked(completion: Completion, masked: str) -> Completion:
 
 def _unmask_json(value: Any, masked: MaskedText) -> Any:
     if isinstance(value, str):
-        return masked.unmask(value)
+        return masked.display(value)
     if isinstance(value, list):
         return [_unmask_json(item, masked) for item in value]
     if isinstance(value, dict):
@@ -524,7 +526,7 @@ def complete_stream(
     except MaskingError as exc:
         return iter([_failed_completion(name, exc)])
     stream = _GeminiCompletionStream(system, masked, name, max_tokens, budget, client)
-    if isinstance(masked, MaskedText) and masked.placeholders:
+    if isinstance(masked, MaskedText):
         return _UnmaskingStream(stream, masked)
     return stream
 

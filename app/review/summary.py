@@ -15,6 +15,7 @@ import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from core import masking
 from core.llm import complete
 from core.logging import get_logger
 
@@ -282,7 +283,20 @@ def _build_summary(service: Service, review_id: str, *, allow_model_call: bool) 
     if settings.llm_enabled and service.summary_model is not None:
         cached = service.store.caches.get_summary_text(decision_hash, model_name)
         if cached is None and allow_model_call:
-            cached = _cached_or_generate(service, decision_hash, model_name, canonical)
+            # Phase 9 (9.A): the prompt is built field by field inside one masking scope of
+            # this owner's review, primed with the clause texts. The recommendation is cached
+            # by the decision hash, so it may only get back values of those clause texts.
+            texts = [finding.clause.text for finding in findings]
+            with masking.scope(
+                review.owner_id, review.review_id, prime=texts, restore_from=texts
+            ) as active:
+                try:
+                    prompt = canonical if active is None else _masked_prompt(active, deterministic)
+                except masking.MaskingError:
+                    log.warning("summary prompt could not be masked; rule-based only")
+                    prompt = None
+                if prompt is not None:
+                    cached = _cached_or_generate(service, decision_hash, model_name, prompt)
         if cached:
             recommendation = cached
             from_llm = True
@@ -306,6 +320,31 @@ def _build_summary(service: Service, review_id: str, *, allow_model_call: bool) 
         reviewers=sorted(reviewers),
         last_decided_at=max(decided_at) if decided_at else None,
         generated_at=_now(),
+    )
+
+
+# Structured fields that hold a person as a whole: masked as one placeholder each, because
+# a bare "Raj Waghela" has no context for the detectors to find.
+_PERSON_FIELDS = frozenset({"decided_by", "reviewer", "author", "name"})
+
+
+def _masked_prompt(active: masking.MaskingScope, deterministic: dict[str, Any]) -> str:
+    """The summary prompt with every string field masked on its own (real line breaks, no
+    JSON escaping to hide a label from the detectors) before it is serialised."""
+
+    def walk(value: Any, key: str | None = None) -> Any:
+        if isinstance(value, str):
+            if key in _PERSON_FIELDS:
+                return str(active.mask_as(value, "PERSON"))
+            return str(active.mask(value))
+        if isinstance(value, dict):
+            return {name: walk(item, name) for name, item in value.items()}
+        if isinstance(value, list):
+            return [walk(item) for item in value]
+        return value
+
+    return json.dumps(
+        walk(deterministic), ensure_ascii=False, sort_keys=True, separators=(",", ":")
     )
 
 

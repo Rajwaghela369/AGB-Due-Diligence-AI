@@ -158,8 +158,8 @@ def build_app() -> FastAPI:
     environment = load_settings()
     # Phase 9 (9.A): the masking boundary every model and trace payload passes through;
     # None (masking off) until `privacy.masking.enabled`. The masker loads now, not on the
-    # first clause: with `privacy.masking.required` a missing spaCy model or Presidio stops
-    # the start (MaskerUnavailable) instead of failing every call.
+    # first clause: a missing spaCy model or Presidio stops the start (MaskerUnavailable)
+    # unless `privacy.masking.allow_regex_only` accepts the regex layer alone.
     masker = masker_from_config(config)
     configure_masking(masker)
     load_masker = getattr(masker, "load", None)

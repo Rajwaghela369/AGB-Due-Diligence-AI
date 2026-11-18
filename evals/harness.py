@@ -282,7 +282,11 @@ def configure_masking(app_config: dict[str, Any] | None = None) -> None:
     if masking.boundary().enabled:
         return
     config = app_config if app_config is not None else load_yaml(CONFIGS / "app.yaml")
-    masking.configure(masking.masker_from_config(config))
+    masker = masking.masker_from_config(config)
+    load = getattr(masker, "load", None)
+    if callable(load):
+        load()  # a model that is missing stops the run here, not clause by clause
+    masking.configure(masker)
 
 
 def run(

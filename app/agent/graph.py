@@ -123,8 +123,17 @@ def _observe(tracer: Any, name: str, *, as_type: str = "span", **kwargs: Any):
         context = tracer.start_as_current_observation(name=name, as_type=as_type, **kwargs)
     except Exception:  # noqa: BLE001 - observability is never load-bearing
         context = nullcontext()
+    # Phase 9 (9.A): an exception leaving the observation would be recorded by
+    # OpenTelemetry with its message and stack, which no mask hook sees; it is raised
+    # again only after the observation closed.
+    failure: Exception | None = None
     with context as observation:
-        yield observation
+        try:
+            yield observation
+        except Exception as exc:  # noqa: BLE001 - re-raised below
+            failure = exc
+    if failure is not None:
+        raise failure
 
 
 def _update(observation: Any, **kwargs: Any) -> None:

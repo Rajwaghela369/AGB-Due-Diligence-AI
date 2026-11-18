@@ -68,7 +68,10 @@ class FeedbackService:
         scored_steps: list[str] = []
         # Score comments are plain API calls, not observations: Langfuse's `mask=` hook does
         # not see them, so they are masked here (9.A). A masking failure drops the comment.
-        score_comment = boundary().trace_text(self._score_comment(request))
+        score_comment = boundary().trace_text(
+            self._score_comment(request),
+            context=self._clause_texts(request.review_id, request.position),
+        )
         for step in steps:
             observation_id = getattr(verdict.observations, step)
             observations[step] = observation_id
@@ -172,7 +175,10 @@ class FeedbackService:
                         observation_id=verdict.observations.clause_span,
                         score_id=dismissed_id,
                         data_type="NUMERIC",
-                        comment=boundary().trace_text(decision.note),
+                        comment=boundary().trace_text(
+                            decision.note,
+                            context=self._clause_texts(decision.review_id, decision.position),
+                        ),
                     )
                 except Exception:  # noqa: BLE001 - tracing cannot reject a decision
                     log.warning("could not record Langfuse dismissal score", exc_info=True)
@@ -208,7 +214,16 @@ class FeedbackService:
         except Exception:  # noqa: BLE001 - tracing is best effort by contract
             log.warning("could not delete stale Langfuse score %s", score_id, exc_info=True)
 
-    def _verdict(self, review_id: str, position: int):
+    def _clause_texts(self, review_id: str, position: int) -> list[str | None]:
+        """The clause a comment is about (text, heading): the masking scope of the comment
+        is primed with it, so a name the clause introduced is masked in the comment."""
+        try:
+            clause = self._clause(review_id, position)
+        except LookupError:
+            return []
+        return [clause.text, clause.heading]
+
+    def _clause(self, review_id: str, position: int):
         review = self.store.reviews.get(review_id)
         if review is None:
             raise LookupError("review not found")
@@ -222,6 +237,13 @@ class FeedbackService:
         )
         if clause is None:
             raise LookupError("clause not found")
+        return clause
+
+    def _verdict(self, review_id: str, position: int):
+        review = self.store.reviews.get(review_id)
+        if review is None:
+            raise LookupError("review not found")
+        clause = self._clause(review_id, position)
         verdict = self.store.verdicts.get(clause.content_hash, review.agent_version)
         if verdict is None:
             raise LookupError("verdict not found")

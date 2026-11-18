@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from core import masking
 from core.hashing import content_hash
 from core.logging import get_logger
 from core.masking import boundary
@@ -84,34 +85,42 @@ class Corrections:
                 description="Lawyer overrides approved for continuous evaluation.",
             )
             # Dataset items are not observations, so the `mask=` hook does not see them; they
-            # are masked here (9.A). A masking failure raises before anything is sent.
+            # are masked here (9.A), in one scope of this review primed with the clause, so
+            # the title and the text share placeholders. A masking failure raises before
+            # anything is sent.
             mask = boundary().langfuse_mask
-            self.langfuse.create_dataset_item(
-                id=item_id,
-                dataset_name=self.settings.dataset,
-                input=mask(
+            with masking.scope(
+                review.owner_id, review.review_id, prime=[clause.text, clause.heading]
+            ):
+                item_input = mask(
                     data={
                         "clause_id": clause.content_hash,
                         "title": clause.heading or clause.number or "",
                         "text": clause.text,
                         "topics": [clause.topic] if clause.topic else [],
                     }
-                ),
-                expected_output=mask(
+                )
+                expected = mask(
                     data={
                         "model_verdict": verdict.verdict,
                         "corrected_verdict": decision.corrected_verdict,
                         "corrected_basis": list(decision.corrected_basis or decision.model_basis),
                     }
-                ),
-                metadata=mask(
+                )
+                metadata = mask(
                     data={
                         "agent_version": review.agent_version,
                         "review_id": review.review_id,
                         "review_link": f"/reviews/{review.review_id}",
                         "content_hash": clause.content_hash,
                     }
-                ),
+                )
+            self.langfuse.create_dataset_item(
+                id=item_id,
+                dataset_name=self.settings.dataset,
+                input=item_input,
+                expected_output=expected,
+                metadata=metadata,
             )
         except Exception:  # noqa: BLE001 - dataset publishing cannot reject a decision
             log.warning("could not upsert correction %s", item_id, exc_info=True)
@@ -130,6 +139,12 @@ def evaluate(*, approved: bool) -> int:
     from app.review.limiter import build_limiter
 
     config = load_yaml(CONFIGS / "app.yaml")
+    # Phase 9 (9.A): mask this run as the app would; the items are masked already, but the
+    # traces of the new verdicts carry the model's answers.
+    masker = masking.masker_from_config(config)
+    if masker is not None:
+        masker.load()  # type: ignore[attr-defined]
+    masking.configure(masker)
     settings = CorrectionSettings.from_config(config)
     client = langfuse_client.client()
     items = list(client.get_dataset(settings.dataset).items)
