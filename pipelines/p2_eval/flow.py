@@ -249,7 +249,10 @@ def eval_prep(dry_run: bool = False, skip_recheck: bool = False) -> None:
     config = load_yaml(CONFIGS / "eval.yaml")
     # P1's config decides which collection and embedding the re-check reads.
     kb = load_yaml(CONFIGS / "kb.yaml")
-    lineage = config_hash(config)
+    # The AVV answer key has its own source and publication path; merely adding
+    # that profile must not rewrite the lineage of the established AGB-DE set.
+    agb_config = {key: value for key, value in config.items() if key != "avv"}
+    lineage = config_hash(agb_config)
     source, scope = config["source"], config["scope"]
     splits, gate, publish_cfg = config["splits"], config["gate"], config["publish"]
 

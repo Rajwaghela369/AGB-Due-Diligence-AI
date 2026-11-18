@@ -45,3 +45,22 @@ publish:
   table: clauses
   # Langfuse dataset carrying the answer key. Held-out split only.
   dataset: agb-de-lw-test-v1
+
+# Phase 10 uses a separate, file-backed gold set. The production clause store
+# never receives these labels; only the held-out split is uploaded to Langfuse.
+avv:
+  source:
+    provider: eu_publications_office
+    celex: 32021D0915
+    language: de
+    url: https://eur-lex.europa.eu/legal-content/DE/TXT/?uri=CELEX:32021D0915
+  splits:
+    dev: dev
+    held_out: held_out
+  gate:
+    clauses: 40
+    dev_clauses: 30
+    held_out_clauses: 10
+    failed_examples: 8
+  publish:
+    dataset: avv-art28-de-held-out-v1

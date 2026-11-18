@@ -41,6 +41,28 @@ gate:
   # shape it.
   primary_at_5: 0.90
 
+# Phase 10 AVV norm set. It deliberately reuses the embedding contract while
+# keeping a separate versioned collection and stable application alias.
+dsgvo_avv:
+  source:
+    provider: eu_publications_office
+    celex: 32016R0679
+    config: CELEX-32016R0679-de
+    language: de
+    articles: [4, 28, 32]
+    definitions: [1, 2, 7, 8, 26]
+    url: https://eur-lex.europa.eu/legal-content/DE/TXT/?uri=CELEX:32016R0679
+  store:
+    backend: qdrant
+    collection: dsgvo_avv_v1
+    alias: dsgvo_avv
+    distance: Cosine
+    id_strategy: uuid5_of_chunk_id
+    payload_indexes: [paragraph, kind]
+  chunking:
+    level: paragraph_or_letter
+    include_stem_sentence: false
+
 # Retrieval policy (top_k, always-included topics and paragraphs, search depth)
 # is runtime configuration in app.yaml. The index lineage ends at chunking and
 # embedding and must not change when candidate breadth changes.

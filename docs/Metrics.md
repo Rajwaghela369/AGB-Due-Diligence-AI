@@ -3,7 +3,7 @@
 Every number this project is judged on, where it came from, and how to reproduce it.
 Read this before quoting a figure: two of them look much better than they are.
 
-Last updated after the Phase 4 retrieval experiment.
+Last updated with the Phase 10 AVV evaluation-set definition.
 
 ## The scoreboard
 
@@ -120,6 +120,22 @@ No figures are recorded until the Phase 7 gate supplies reviewed decisions.
 | Agent version | Kept | Overridden | Dismissed | Agreement |
 | --- | ---: | ---: | ---: | ---: |
 | _Recorded after the Phase 7 gate_ | — | — | — | — |
+
+## AVV obligation classification (Phase 10)
+
+The file-backed gold set has **40 clauses**: 30 development and 10 held out. It covers
+Art. 28 Abs. 3 lit. a–h with a complete three-way label (`fulfilled`, `failed`, `silent`)
+for every letter on every clause. Thirty-two rows are verbatim fragments of the European
+Commission's controller–processor standard clauses (Decision (EU) 2021/915); eight are
+clearly identified counterfactual negatives, one per letter. Provenance, reuse terms, and
+the labelling rules are in `data/gold/avv/_rules.md`.
+
+The future headline metric is micro-F1 over non-silent obligation decisions on the ten
+held-out clauses, accompanied by per-letter precision and recall and a separate
+document-level missing-obligation recall. No number is recorded yet: producing one needs
+an explicitly approved Gemini/Langfuse evaluation. The held-out set is not lawyer-verified
+and comes from one drafting source, so it measures clause recognition rather than
+generalisation to a new template publisher.
 
 Run `make agreement` with `DATABASE_URL` set to print the live table for recording here.
 

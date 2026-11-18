@@ -134,7 +134,10 @@ def kb_ingest(dataset_config: str = FULL_CONFIG, publish: bool = True) -> None:
     paragraphs = load_yaml(CONFIGS / "kb_paragraphs.yaml")
     # Both configs decide what the index contains, so both belong in its lineage;
     # the retrieval policy and the gate threshold do not (core.config.LINEAGE_EXCLUDED).
-    lineage = index_config_hash(kb, paragraphs)
+    # The Phase 10 AVV profile builds a separate collection and must not change
+    # the lineage of the existing BGB vectors merely by sharing this config file.
+    bgb_kb = {key: value for key, value in kb.items() if key != "dsgvo_avv"}
+    lineage = index_config_hash(bgb_kb, paragraphs)
     sampling = dataset_config != FULL_CONFIG
 
     log.info(
