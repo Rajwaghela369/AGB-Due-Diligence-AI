@@ -31,10 +31,39 @@ MaskingError(RuntimeError)        # the masker failed; nothing was sent
 UnmaskedPayload(RuntimeError)     # a strict client got unmasked text
 ```
 
-Placeholders are `<KIND_n>` with `KIND` one of `PERSON, ADDRESS, EMAIL, PHONE, IBAN,
-REGISTER_NUMBER`, numbered from 1 per masked text in order of first appearance; the same
-value twice in one text is one placeholder. `MaskedText.placeholders` maps placeholder →
-original. The map is never stored, logged or traced.
+Placeholders are `<KIND_n>` with `KIND` one of the nine `ENTITY_KINDS`: `PERSON,
+ADDRESS, EMAIL, PHONE, IBAN, REGISTER_NUMBER, TAX_ID, DATE_OF_BIRTH, URL`. They are numbered
+from 1 per **masking scope** in order of first appearance; the same value is always one
+placeholder. `MaskedText.placeholders` maps placeholder → original. The map is never
+stored, logged or traced.
+
+### Scopes (Wave 1 review fix)
+
+```python
+with masking.scope(owner_id, subject_id, prime=[clause_text, heading],
+                   restore_from=[clause_text]) as active:   # None while masking is off
+    ...  # every outbound() and langfuse_mask() in here shares one map
+active.mask(text) -> MaskedText; active.mask_as(value, "PERSON") -> MaskedText
+MaskedText.display(answer) -> str   # restores only `restorable` values, else "[unbekannt]"
+```
+
+- A scope is one owner's unit of work: one clause judged (`make_judge`: the clause, its
+  explanation, its resume, its traces), one summary, one chat message, one feedback
+  comment, one correction. It is primed with the texts the work is about, so a model's
+  answer traced on its own is masked from the very map of the request that produced it.
+- Nothing outlives the `with` block: there is no process-wide memory of values, so one
+  owner's data never changes another owner's prompts, and masking a text alone is
+  deterministic (`PresidioMasker.mask` uses a fresh scope).
+- Outside a scope each `outbound` call, and each `langfuse_mask` payload, gets a fresh one.
+- **Caches stay owner-independent.** Verdicts are cached by the clause text for every
+  owner, and summary recommendations by the decision hash. So `restore_from` is the clause
+  text (or the clause texts of the review): an answer gets back only values those texts
+  contain. A placeholder from a heading, a note or a reviewer's name, or one the model
+  invented, is shown as `[unbekannt]`. The clause text is primed first, so its
+  placeholders are numbered the same for every owner (stable embeddings and verdicts).
+- Structured fields are masked field by field before serialisation: the summary prompt
+  masks each string on its own, and `decided_by` as one `PERSON` value (`mask_as`).
+- Dict keys are ours and are not masked; values in one payload share one numbering.
 
 ### Where it sits (every outbound path)
 
@@ -57,23 +86,28 @@ Rules every caller keeps:
    A `MaskedText` survives no string operation, so a prompt assembled from masked parts is
    a plain `str` and would be masked again (harmless) or refused by a strict client.
 3. **A masker failure fails the call, not the run.** `outbound` raises `MaskingError`;
-   `decide`/`complete` turn it into a failed result (`error="MaskingError: …"`) **without
-   sending**, like any provider error. `NotImplementedError` (the Wave 0 stub) propagates.
+   `decide`/`complete`/`complete_stream` turn it into a failed result
+   (`error="MaskingError: …"`) **without sending**, like any provider error. Every masker
+   exception, `NotImplementedError` included, becomes `MaskingError`.
 4. **Cache keys stay on the unmasked text.** `content_hash` is computed before masking,
    so verdicts, embeddings and retrievals cached before 9.A are still found.
 5. **Unmask only for display, inside the same function.** `core.llm.complete` (and
    `complete_stream`, per chunk, holding back a partial `<KIND_` at a chunk's end) return
-   the answer already restored with `masked.unmask(answer)`, so callers never see
-   placeholders and never hold the map. The answer is stored unmasked, in our own
+   the answer already restored with `masked.display(answer)` (see "Scopes"), so callers
+   never see placeholders and never hold the map. The answer is stored unmasked, in our own
    database, like the clause itself. The Langfuse observation of that call records the
    masked prompt and the masked answer.
 6. **Tests use strict fakes.** Every fake provider client calls
    `boundary().require_masked(payload)` on what it receives;
    `tests/test_phase9_contracts.py` shows one (`StrictClient`).
 
-`privacy.masking.required: true` makes `build_app` refuse to start when masking is enabled
-but the masker cannot load (Presidio or the spaCy model missing), instead of failing every
-call.
+`build_app` loads the masker at start. With masking enabled and the spaCy model or
+Presidio missing it refuses to start (`MaskerUnavailable`), unless
+`privacy.masking.allow_regex_only: true` accepts the regex layer alone (labelled names,
+addresses and numbers are caught; a name with no context is not). The eval harness and the
+corrections runner load it the same way. Fields the `mask=` hook does not see are handled at
+the source: a review's failure `status_message` goes through `trace_text`, and an
+exception never leaves an open observation (OpenTelemetry would record its message).
 
 ## Owners and login (9.E)
 

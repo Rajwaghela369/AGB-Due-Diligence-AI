@@ -43,7 +43,7 @@ def _masking_off():
 
 @pytest.fixture
 def masker() -> PresidioMasker:
-    return PresidioMasker(allow_list=("BGB", "AGB", "Verwender", "Kunde"))
+    return PresidioMasker(allow_regex_only=True, allow_list=("BGB", "AGB", "Verwender", "Kunde"))
 
 
 # --- detection --------------------------------------------------------------------------
@@ -134,21 +134,37 @@ def test_placeholders_already_in_the_text_keep_their_meaning(masker):
 
 
 def test_the_allow_list_and_the_entity_list_are_respected():
-    masker = PresidioMasker(allow_list=("Kunde",), entities=("EMAIL",))
+    masker = PresidioMasker(allow_regex_only=True, allow_list=("Kunde",), entities=("EMAIL",))
     text = "Herr Kunde zahlt an Frau Weber, weber@example.de."
     masked = masker.mask(text)
     assert masked == "Herr Kunde zahlt an Frau Weber, <EMAIL_1>."
 
 
-def test_values_seen_before_are_masked_without_their_context():
-    """The Langfuse hook masks each string alone: a model's answer naming a person found
-    in the prompt carries no "Frau" or "Geschäftsführer" for the regexes to see."""
-    masker = PresidioMasker()
-    masker.mask("Bürge ist Frau Lieselotte Brennecke.")
-    assert masker.mask("Lieselotte Brennecke haftet.") == "<PERSON_1> haftet."
-    forgetful = PresidioMasker(remember=0)
-    forgetful.mask("Bürge ist Frau Lieselotte Brennecke.")
-    assert forgetful.mask("Lieselotte Brennecke haftet.") == "Lieselotte Brennecke haftet."
+def test_a_scope_masks_later_texts_from_its_own_map_and_nothing_outlives_it():
+    """A model's answer, traced on its own, has no "Frau" in front of the name: the scope
+    of the request that produced it knows the name. After the scope, nothing is known."""
+    masking.configure(PresidioMasker(allow_regex_only=True))
+    with masking.scope("owner-a", "review-1", prime=["Bürge ist Frau Gesine Quarck."]):
+        answer = boundary().outbound("Gesine Quarck haftet; Quarcks Bürgschaft.")
+        assert answer == "<PERSON_1> haftet; <PERSON_2>s Bürgschaft."
+        traced = boundary().langfuse_mask(data={"output": "GESINE QUARCK haftet."})
+        assert "GESINE" not in traced["output"]
+    assert boundary().outbound("Gesine Quarck haftet.") == "Gesine Quarck haftet."
+
+
+def test_masking_is_deterministic_and_never_crosses_owners():
+    """Finding 3: owner A's imprint must not change owner B's clause (or its cached
+    verdict). Masking a text gives the same result whatever was masked before."""
+    masker = PresidioMasker(allow_regex_only=True)
+    clause = "Ist der Kunde Kaufmann, so ist Gerichtsstand Hamburg (§ 38 ZPO)."
+    masking.configure(masker)
+    before = masker.mask(clause)
+    with masking.scope("owner-a", "review-a", prime=["Ansprechpartnerin: Frau Kaufmann"]):
+        pass
+    masker.mask("Ansprechpartnerin ist Frau Sommer, Vertreter Herr Lange.")
+    with masking.scope("owner-b", "review-b", prime=[clause]):
+        sent = boundary().outbound(clause)
+    assert before == clause == sent == masker.mask(clause)
 
 
 # --- statutes ---------------------------------------------------------------------------
@@ -190,7 +206,7 @@ def test_the_whole_statute_index_passes_unchanged(masker):
 
 
 def test_a_36_clause_document_masks_well_under_two_seconds():
-    masker = PresidioMasker(remember=0)
+    masker = PresidioMasker(allow_regex_only=True)
     clauses = [clause["text"] for clause in CORPUS] + [chunk["text"] for chunk in STATUTES]
     document = (clauses * 4)[:36]
     masker.mask("warm-up")
@@ -203,31 +219,26 @@ def test_a_36_clause_document_masks_well_under_two_seconds():
 # --- NER layer, model and start-up ------------------------------------------------------
 
 
-def test_a_missing_spacy_model_degrades_to_regexes_with_a_warning(caplog):
-    masker = PresidioMasker(spacy_model="de_core_news_not_installed")
-    assert masker.mask("Frau Weber zahlt.") == "Frau <PERSON_1> zahlt."
-    assert masker.ner_available is False
+def test_a_missing_spacy_model_refuses_unless_regex_only_is_allowed(caplog):
+    strict = PresidioMasker(spacy_model="de_core_news_not_installed")
+    with pytest.raises(MaskerUnavailable):
+        strict.load()  # build_app calls this: the API does not start
+    masking.configure(strict)
+    with pytest.raises(MaskingError):
+        boundary().outbound("Frau Weber zahlt.")  # and a call would send nothing
+
+    lenient = PresidioMasker(spacy_model="de_core_news_not_installed", allow_regex_only=True)
+    assert lenient.mask("Frau Weber zahlt.") == "Frau <PERSON_1> zahlt."
+    assert lenient.ner_available is False
     assert "regexes only" in caplog.text
 
 
-def test_a_required_model_that_is_missing_fails_closed():
-    masker = masker_from_config(
-        {
-            "privacy": {
-                "masking": {
-                    "enabled": True,
-                    "required": True,
-                    "spacy_model": "de_core_news_not_installed",
-                }
-            }
-        }
-    )
-    assert isinstance(masker, PresidioMasker) and masker.require_ner
-    with pytest.raises(MaskerUnavailable):
-        masker.load()  # build_app calls this: the API does not start
-    masking.configure(masker)
-    with pytest.raises(MaskingError):
-        boundary().outbound("Frau Weber zahlt.")  # and a call would send nothing
+def test_the_config_defaults_to_refusing_regex_only():
+    def masker(**block):
+        return masker_from_config({"privacy": {"masking": {"enabled": True, **block}}})
+
+    assert masker().allow_regex_only is False
+    assert masker(allow_regex_only=True).allow_regex_only is True
 
 
 def test_presidio_ner_finds_a_name_without_any_context():
@@ -236,7 +247,7 @@ def test_presidio_ner_finds_a_name_without_any_context():
     nlp = spacy.blank("de")
     ruler = nlp.add_pipe("entity_ruler")
     ruler.add_patterns([{"label": "PER", "pattern": "Gundula Quast"}])
-    masker = PresidioMasker(nlp=nlp, score_threshold=0.1)
+    masker = PresidioMasker(nlp=nlp, score_threshold=0.1)  # NER present: no flag needed
     assert masker.ner_available
     masked = masker.mask("Die Ware holt Gundula Quast ab, siehe § 309 Nr. 7 BGB.")
     assert masked == "Die Ware holt <PERSON_1> ab, siehe § 309 Nr. 7 BGB."
@@ -259,15 +270,17 @@ def test_the_langfuse_hook_masks_every_string_at_any_depth():
         "input": [{"clause": "Ansprechpartnerin ist Frau Weber, weber@example.de."}],
         "output": Payload(text="Rückruf unter 0171 2345678"),
         "metadata": {"note": Record("IBAN DE89 3704 0044 0532 0130 00"), "tokens": 12},
-        "weber@example.de": True,
+        "reason_de": "Kein Personenbezug.",
     }
     assert boundary().langfuse_mask(data=data) is data  # off: unchanged
 
-    masking.configure(PresidioMasker())
+    masking.configure(PresidioMasker(allow_regex_only=True))
     sent = json.dumps(boundary().langfuse_mask(data=data), ensure_ascii=False)
     for value in ("Weber", "weber@example.de", "0171 2345678", "DE89 3704"):
         assert value not in sent
     assert '"tokens": 12' in sent
+    # Keys are our own field names and stay; values get one numbering per payload.
+    assert set(json.loads(sent)) == set(data)
 
 
 def test_a_failing_masker_never_lets_trace_data_through():
@@ -299,7 +312,7 @@ def test_feedback_comments_and_dataset_items_are_masked():
     from app.domain import ClauseSpan, ClauseVerdict, Decision, Document, Review
     from app.review.corrections import Corrections, CorrectionSettings
 
-    masking.configure(PresidioMasker())
+    masking.configure(PresidioMasker(allow_regex_only=True))
     recorded = []
     langfuse = SimpleNamespace(
         create_dataset=lambda **kwargs: None,
@@ -378,7 +391,7 @@ CLAUSE = "Inhaberin ist Frau Weber, Hauptstraße 5\n10115 Berlin."
 
 def test_decide_sends_only_masked_text_and_a_masker_failure_sends_nothing():
     client = Strict()
-    masking.configure(PresidioMasker())
+    masking.configure(PresidioMasker(allow_regex_only=True))
     assert llm.decide(CLAUSE, {}, GEMINI, client=client).error is None
     assert "Weber" not in client.sent[0] and "<PERSON_1>" in client.sent[0]
 
@@ -393,7 +406,7 @@ def test_decide_sends_only_masked_text_and_a_masker_failure_sends_nothing():
 
 def test_complete_restores_placeholders_inside_the_json_answer():
     client = Strict(answer='{"reason_de": "<PERSON_1> wohnt in <ADDRESS_1>."}')
-    masking.configure(PresidioMasker())
+    masking.configure(PresidioMasker(allow_regex_only=True))
     result = llm.complete("System", CLAUSE, {}, GEMINI, client=client)
     assert "Weber" not in client.sent[0]
     # The address holds a line break: restored inside the parsed JSON, it stays valid.
@@ -402,7 +415,7 @@ def test_complete_restores_placeholders_inside_the_json_answer():
 
 def test_complete_stream_restores_a_placeholder_split_across_pieces():
     client = Strict(pieces=["Frau <PER", "SON_1> und <", "ADDRESS_1", ">!"])
-    masking.configure(PresidioMasker())
+    masking.configure(PresidioMasker(allow_regex_only=True))
     pieces = list(llm.complete_stream("System", CLAUSE, GEMINI, client=client))
     assert "".join(p.text for p in pieces) == "Frau Weber und Hauptstraße 5\n10115 Berlin!"
     assert pieces[-1].input_tokens == 3
@@ -411,7 +424,7 @@ def test_complete_stream_restores_a_placeholder_split_across_pieces():
 
 def test_complete_stream_keeps_its_cancel_hook_and_fails_closed():
     client = Strict(pieces=["Frau <PERSON_1>"])
-    masking.configure(PresidioMasker())
+    masking.configure(PresidioMasker(allow_regex_only=True))
     stream = llm.complete_stream("System", CLAUSE, GEMINI, client=client)
     assert callable(stream.cancel) and callable(stream.close)
     stream.cancel()
@@ -476,7 +489,7 @@ def test_embeddings_key_the_cache_on_the_original_and_send_the_masked_text(monke
 
     monkeypatch.setattr(embeddings.requests, "post", post)
     monkeypatch.setattr(embeddings, "load_settings", lambda: SimpleNamespace(jina_api_key="k"))
-    masking.configure(PresidioMasker())
+    masking.configure(PresidioMasker(allow_regex_only=True))
     cache = Cache()
     embeddings.embed_texts([CLAUSE], "m", 2, "retrieval.query", cache=cache)
     assert "Weber" not in sent[0] and "<PERSON_1>" in sent[0]
@@ -497,13 +510,13 @@ def test_the_topic_router_sends_masked_text(monkeypatch):
 
     monkeypatch.setattr(routing.requests, "post", post)
     monkeypatch.setattr(routing, "load_settings", lambda: SimpleNamespace(jina_api_key="k"))
-    masking.configure(PresidioMasker())
+    masking.configure(PresidioMasker(allow_regex_only=True))
     assert routing.classify_topics([CLAUSE]) == ["liability"]
     assert "Weber" not in sent[0]
 
 
 def test_a_strict_client_would_refuse_a_path_that_skipped_the_boundary():
-    masking.configure(PresidioMasker())
+    masking.configure(PresidioMasker(allow_regex_only=True))
     with pytest.raises(UnmaskedPayload):
         boundary().require_masked(["schon maskiert?"])
 
@@ -514,9 +527,11 @@ def test_a_strict_client_would_refuse_a_path_that_skipped_the_boundary():
 def test_the_eval_harness_masks_as_the_app_config_says():
     from evals import harness
 
-    harness.configure_masking({"privacy": {"masking": {"enabled": True}}})
+    with pytest.raises(MaskerUnavailable):  # no model: the run stops before any clause
+        harness.configure_masking({"privacy": {"masking": {"enabled": True}}})
+    harness.configure_masking({"privacy": {"masking": {"enabled": True, "allow_regex_only": True}}})
     assert isinstance(boundary().masker, PresidioMasker)
-    custom = PresidioMasker(allow_list=("X",))
+    custom = PresidioMasker(allow_regex_only=True, allow_list=("X",))
     masking.configure(custom)
     harness.configure_masking({"privacy": {"masking": {"enabled": False}}})
     assert boundary().masker is custom  # a configured boundary is left alone
@@ -526,7 +541,7 @@ def test_feedback_and_dismissal_score_comments_are_masked():
     from app.domain import Decision
     from tests.test_decisions import seeded_service
 
-    masking.configure(PresidioMasker())
+    masking.configure(PresidioMasker(allow_regex_only=True))
     _store, _service, feedback, langfuse = seeded_service()
     request = SimpleNamespace(
         review_id="review-1",

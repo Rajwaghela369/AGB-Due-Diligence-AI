@@ -199,7 +199,7 @@ def test_the_presidio_masker_and_the_langfuse_hook_mask_when_enabled():
     payload = {"input": [CLAUSE], "metadata": {"review_id": "r"}}
     assert boundary().langfuse_mask(data=payload) is payload  # off: unchanged
 
-    masking.configure(PresidioMasker())
+    masking.configure(PresidioMasker(allow_regex_only=True))
     assert "anna.mueller@example.de" not in boundary().outbound(CLAUSE)
     assert "anna.mueller@example.de" not in str(boundary().langfuse_mask(data=payload))
 

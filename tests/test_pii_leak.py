@@ -51,14 +51,19 @@ STATUTES = [
     LawChunk.model_validate(row)
     for row in json.loads((FIXTURES / "statutes.json").read_text(encoding="utf-8"))
 ]
-PII = sorted({value for clause in CORPUS for value in clause["pii"]}, key=len, reverse=True)
+PII = sorted(
+    {value for clause in CORPUS for value in clause["pii"]} | {"Konrad Pfefferle", "Pfefferle"},
+    key=len,
+    reverse=True,
+)
 MODEL = {"provider": "gemini", "name": "fake-gemini", "max_output_tokens": 400}
+REVIEWER = "Konrad Pfefferle"  # a lawyer's name: structured, with no context to detect
 ALLOW = ("BGB", "HGB", "AGB", "Verwender", "Kunde", "Käufer", "Verkäufer")
 
 
 @pytest.fixture(autouse=True)
 def _masking_on():
-    masking.configure(PresidioMasker(allow_list=ALLOW))
+    masking.configure(PresidioMasker(allow_regex_only=True, allow_list=ALLOW))
     yield
     masking.configure(None)
 
@@ -213,10 +218,46 @@ def test_the_judge_sends_and_traces_no_pii_and_shows_the_names_again(monkeypatch
     # The statute reached the model unmangled, and its citation stayed readable.
     explain_prompts = [p for p in client.payloads if "Maßgebliche Normen" in p]
     assert explain_prompts and all(statute.text in p for p in explain_prompts)
+    # One scope per clause: the decision and the explanation of a clause number the same
+    # person the same way, so the explanation's trace is masked from the request's map.
+    guarantor = next(i for i, clause in enumerate(CORPUS) if clause["id"] == "guarantor")
+    decided, explained = client.payloads[2 * guarantor : 2 * guarantor + 2]
+    assert "<PERSON_1>" in decided and "<PERSON_1>" in explained
     # The reasoning the lawyer reads quotes the real name, not a placeholder.
     reasons = {v.reason_de for v in verdicts}
     assert any("Erika Mustermann" in (reason or "") for reason in reasons)
     assert not any(masking.PLACEHOLDER.search(reason or "") for reason in reasons)
+
+
+def test_a_cached_reasoning_never_carries_a_name_from_one_owners_heading(monkeypatch):
+    """Finding 8: the verdict is cached by the clause text for every owner; a name only
+    the heading had must not be restored into it."""
+    prompts.clear_cache()
+    monkeypatch.setattr(task, "index_hash", lambda: "index")
+    client = StrictGemini()
+    judge = run.make_judge(
+        {
+            "models": {"judge": {"provider": "gemini", "name": "judge"}, "explain": MODEL},
+            "prompts": {"label": "evaluation"},
+            "retrieval": {"top_k": 1, "search_depth": 1},
+            "agent": {"explain_enabled": True},
+        },
+        limiter=SharedLimiter(),
+        client=client,
+        router=lambda text: "liability",
+        retriever=lambda *args, **kwargs: [_retrieved(STATUTES[-1])],
+    )
+    text = "Die Haftung für leichte Fahrlässigkeit ist ausgeschlossen."
+    clause = ClauseSpan(
+        position=0,
+        number="9",
+        heading="§ 9 Haftung von Herrn Dr. Klaus Brenner",
+        text=text,
+        content_hash=content_hash(text),
+    )
+    verdict = judge(clause)
+    assert "Brenner" not in "".join(client.payloads)
+    assert "Brenner" not in verdict.reason_de and "[unbekannt]" in verdict.reason_de
 
 
 # --- summary and chat -------------------------------------------------------------------
@@ -267,7 +308,7 @@ def _service(client: StrictGemini, tracer: MaskingTracer):
             position=0,
             action="accept",
             note="Rücksprache mit Erika Mustermann (Tel. 0171 2345678) gehalten.",
-            decided_by="RA Test",
+            decided_by=REVIEWER,
             model_verdict="potentially_void",
             model_basis=[statute.chunk_id],
         ),
@@ -299,6 +340,8 @@ def test_the_summary_recommendation_sends_no_pii():
     assert _leaks(tracer.sent) == []
     assert summary.recommendation_from_llm
     assert not masking.PLACEHOLDER.search(summary.recommendation)
+    # The cached recommendation names nobody who is not in the clauses (not the lawyer).
+    assert "Pfefferle" not in summary.recommendation
 
 
 def test_the_chat_streams_no_pii_out_and_the_names_back_in():
