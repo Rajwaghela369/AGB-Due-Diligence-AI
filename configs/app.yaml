@@ -116,7 +116,7 @@ ingest:
 
 api:
   # The frontend's origin only; every other origin is refused by CORS.
-  cors_origins: ["http://localhost:5173"]
+  cors_origins: ["https://agb-check.app.raj-waghela.de"]
   # Uploads and reviews share one token bucket per client IP.
   rate_limit_per_minute: 30
   rate_limit_burst: 10
