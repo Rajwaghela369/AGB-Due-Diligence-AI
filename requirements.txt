@@ -1,0 +1,33 @@
+# Convenience mirror of pyproject.toml, which stays the source of truth.
+# Prefer `make install` (uv sync --all-extras); use this only for plain pip.
+
+# core
+pydantic
+pydantic-settings
+pyyaml
+
+# pipelines
+datasets
+huggingface-hub
+pandas
+pyarrow
+requests
+lxml
+openai
+qdrant-client
+prefect
+
+# app
+langgraph
+langchain-openai
+fastapi
+uvicorn
+langfuse
+
+# evals
+scikit-learn
+
+# dev
+ruff
+pytest
+import-linter

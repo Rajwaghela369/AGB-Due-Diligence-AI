@@ -1,0 +1,164 @@
+"""Document ingest and immutable source-file retrieval."""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Request
+from fastapi.responses import RedirectResponse, Response
+from pydantic import ValidationError
+from starlette.datastructures import UploadFile
+
+from app.api.costs import cache_hit_rate, cost_eur, pricing, wall_time_ms
+from app.api.deps import owned_document, principal, setting, state
+from app.api.errors import ApiError
+from app.api.schemas import DocumentList, DocumentListItem, DocumentOut, PasteIn
+from app.domain import DocumentType, blob_key
+from app.ingest import IngestError, ingest_file, ingest_text
+from app.store.s3 import S3Settings
+
+router = APIRouter()
+
+
+_STATUS_BY_CODE = {
+    "too_large": 413,
+    "archive_too_large": 413,
+    "unsupported_type": 415,
+}
+
+
+def _ingest_error(exc: IngestError) -> ApiError:
+    return ApiError(_STATUS_BY_CODE.get(exc.code, 422), exc.code, exc.message)
+
+
+@router.post("/documents", response_model=DocumentOut)
+async def create_document(request: Request) -> DocumentOut:
+    dependencies = state(request)
+    address = request.client.host if request.client else "unknown"
+    if not dependencies.rate_limiter.allow(address):
+        raise ApiError(429, "rate_limited", "Zu viele Anfragen. Bitte versuchen Sie es später.")
+
+    owner_id = principal(request).owner_id
+    content_type = request.headers.get("content-type", "").lower()
+    limit = int(setting(dependencies.settings, "ingest.max_upload_mb", 20)) * 1024 * 1024
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            if int(content_length) > limit:
+                raise ApiError(
+                    413,
+                    "too_large",
+                    "Die Datei überschreitet die zulässige Upload-Größe.",
+                )
+        except ValueError as exc:
+            raise ApiError(400, "invalid_content_length", "Ungültige Content-Length.") from exc
+    try:
+        if content_type.startswith("multipart/form-data"):
+            form = await request.form()
+            upload = form.get("file")
+            if not isinstance(upload, UploadFile):
+                raise ApiError(422, "invalid_request", "Das Feld 'file' fehlt.")
+            data = await upload.read(limit + 1)
+            if len(data) > limit:
+                raise IngestError(
+                    "too_large", "Die Datei überschreitet die zulässige Upload-Größe."
+                )
+            raw_document_type = form.get("document_type", "agb")
+            if not isinstance(raw_document_type, str) or raw_document_type not in ("agb", "avv"):
+                raise ApiError(422, "invalid_document_type", "Unbekannter Dokumenttyp.")
+            document_type: DocumentType = raw_document_type
+            result = ingest_file(
+                data,
+                upload.filename or "Dokument",
+                store=dependencies.store,
+                document_type=document_type,
+                owner_id=owner_id,
+            )
+        elif content_type.startswith("application/json"):
+            try:
+                payload = PasteIn.model_validate(await request.json())
+            except (ValidationError, ValueError) as exc:
+                raise ApiError(422, "invalid_request", "Ungültiger eingefügter Text.") from exc
+            result = ingest_text(
+                payload.text,
+                payload.filename,
+                store=dependencies.store,
+                document_type=payload.document_type,
+                owner_id=owner_id,
+            )
+        else:
+            raise ApiError(
+                415,
+                "unsupported_media_type",
+                "Erwartet wird multipart/form-data oder application/json.",
+            )
+    except IngestError as exc:
+        raise _ingest_error(exc) from exc
+    # The upload page opens a reused document's stored review instead of starting another.
+    latest = (
+        dependencies.store.reviews.latest_for(result.document.document_id)
+        if result.reused
+        else None
+    )
+    return DocumentOut(
+        document=result.document,
+        clauses=result.clauses,
+        reused=result.reused,
+        latest_review=latest,
+    )
+
+
+@router.get("/documents", response_model=DocumentList)
+def list_documents(request: Request) -> DocumentList:
+    dependencies = state(request)
+    prices = pricing(dependencies.settings)
+    items = []
+    # Only the caller's own documents, also for the admin role (it reads others' by id).
+    for document in dependencies.store.documents.list(owner_id=principal(request).owner_id):
+        latest = dependencies.store.reviews.latest_for(document.document_id)
+        item = DocumentListItem(document=document, latest_review=latest)
+        if latest is not None:
+            item.cache_hit_rate = cache_hit_rate(latest)
+            item.cost_eur = cost_eur(latest, prices)
+            item.wall_time_ms = wall_time_ms(latest)
+        items.append(item)
+    return DocumentList(items=items, pricing=prices)
+
+
+@router.get("/documents/{document_id}", response_model=DocumentOut)
+def get_document(document_id: str, request: Request) -> DocumentOut:
+    dependencies = state(request)
+    document = owned_document(request, document_id)
+    return DocumentOut(
+        document=document,
+        clauses=dependencies.store.documents.clauses(document_id),
+        latest_review=dependencies.store.reviews.latest_for(document_id),
+    )
+
+
+@router.get("/documents/{document_id}/file", response_class=Response)
+def get_document_file(document_id: str, request: Request) -> Response:
+    """The source as stored: the PDF, or the pasted text the clause offsets index into."""
+    dependencies = state(request)
+    document = owned_document(request, document_id)
+    is_text = document.source_type == "text"
+    key = blob_key(document)
+    files = dependencies.store.files
+    download = setting(dependencies.settings, "files.s3.download", "proxy")
+    if download == "redirect":
+        # S3Settings validates this again at the request boundary: a local backend can
+        # otherwise conceal a bad redirect value until it is switched on in production.
+        expires_in = S3Settings.from_config(dependencies.settings).presign_seconds
+        url = files.presign(key, expires_in)
+        if url is not None:
+            return RedirectResponse(url=url, status_code=307, headers={"Cache-Control": "no-store"})
+    try:
+        content = files.get(key)
+    except FileNotFoundError as exc:
+        raise ApiError(404, "not_found", "Datei nicht gefunden.") from exc
+    return Response(
+        content=content,
+        media_type="text/plain; charset=utf-8" if is_text else "application/pdf",
+        headers={
+            "Cache-Control": "private, no-store",
+            "ETag": f'"{document_id}"',
+        },
+    )

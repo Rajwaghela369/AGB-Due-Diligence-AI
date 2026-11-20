@@ -1,0 +1,299 @@
+# Retrieval answer key for the Phase 2 re-check: void dev-half clause -> BGB chunk.
+#
+# PROVENANCE, and its limits
+#
+# Three links in this chain, and only two are independent of us:
+#   1. clause text          - AGB-DE, verbatim                          (independent)
+#   2. "this clause is void" - AGB-DE's annotators                      (independent)
+#   3. "void under THIS §"   - written by Claude, reviewed by the author (NOT independent)
+#
+# Phase 1's gold set was synthetic on all three. This is better on two. A fully
+# independent key would need a lawyer to supply link 3; that is the ceiling here
+# and it is recorded rather than papered over.
+#
+# Scope: the 31 void clauses of the DEV half only. The held-out half stays sealed.
+#
+# `confidence: low` marks the clauses whose mapping is genuinely arguable - read
+# those first. `note` says what the doubt is.
+#
+# `primary_chunk_id` is scored. `also_relevant` is diagnostic only, never scored,
+# and holds further defensible grounds.
+# `topic` overrides the router topic used for the search filter; only needed when
+# the clause carries more than one in-scope topic.
+
+clauses:
+  - clause_id: agb-187
+    primary_chunk_id: bgb-475-abs2
+    also_relevant: [bgb-307-abs2, bgb-307-abs1]
+    reasoning: >
+      Shifts the risk of postal carriage to the buyer. In a consumer sale
+      § 475 Abs. 2 keeps the risk of accidental loss with the seller until the
+      goods reach the consumer, so § 447 cannot be invoked against them.
+
+  - clause_id: agb-344
+    primary_chunk_id: bgb-475-abs2
+    also_relevant: [bgb-307-abs1]
+    reasoning: >
+      "ab Lager auf Rechnung und Gefahr des Auftraggebers" is the same risk
+      shift as agb-187, dressed as a delivery term.
+
+  - clause_id: agb-347
+    primary_chunk_id: bgb-309-8-b
+    also_relevant: [bgb-476-abs1, bgb-307-abs1]
+    reasoning: >
+      An 8-day complaint window forfeiting defect claims is a notification
+      deadline under § 309 Nr. 8 lit. b sublit. ee.
+
+  - clause_id: agb-348
+    primary_chunk_id: bgb-439-abs1
+    also_relevant: [bgb-309-8-b, bgb-476-abs1, bgb-307-abs2]
+    confidence: low
+    note: >
+      The defect is clear - the seller takes the choice of remedy, and
+      § 439 Abs. 1 gives it to the buyer. What is arguable is which chunk a
+      reviewer should retrieve: § 439 Abs. 1 as the norm deviated from, or
+      § 309 Nr. 8 lit. b as the AGB prohibition. I chose the former because it
+      is the more instructive citation.
+    reasoning: >
+      Seller reserves Nachbesserung, Ersatzlieferung, Minderung or Wandlung at
+      its own election; § 439 Abs. 1 gives the buyer the choice between repair
+      and replacement.
+
+  - clause_id: agb-349
+    primary_chunk_id: bgb-309-7-a
+    also_relevant: [bgb-309-7-b]
+    reasoning: >
+      Limiting damages to intent and gross negligence excludes simple
+      negligence, which § 309 Nr. 7 lit. a forbids outright for injury to
+      life, body or health.
+
+  - clause_id: agb-350
+    primary_chunk_id: bgb-309-8-b
+    also_relevant: [bgb-476-abs1, bgb-444]
+    reasoning: >
+      Refuses defect claims for any processed goods, a blanket exclusion for a
+      class of goods rather than a limitation tied to the processing itself.
+
+  - clause_id: agb-354
+    primary_chunk_id: bgb-439-abs2
+    also_relevant: [bgb-307-abs1, bgb-476-abs1]
+    confidence: low
+    note: >
+      The clause mixes two regimes. As a Nacherfüllung return it is § 439
+      Abs. 2, which puts transport costs on the seller unconditionally. As a
+      withdrawal return it would be § 357, which is NOT in the index at all -
+      so if a reviewer reads it that way, no correct answer exists here.
+    reasoning: >
+      Puts the risk and cost of returning goods on the buyer and refuses
+      unpaid returns.
+
+  - clause_id: agb-441
+    primary_chunk_id: bgb-309-8-b
+    also_relevant: [bgb-437, bgb-476-abs1]
+    reasoning: >
+      Conditions the defect remedy on notifying "unverzüglich" and routes it
+      into a refund procedure, narrowing the § 437 remedy set behind a
+      notification deadline.
+
+  - clause_id: agb-454
+    primary_chunk_id: bgb-309-7-a
+    also_relevant: [bgb-309-7-b, bgb-307-abs1]
+    reasoning: >
+      Liability confined to "zumutbare, vorhersehbare" losses caps damages for
+      life, body and health injuries too, which § 309 Nr. 7 lit. a bars.
+
+  - clause_id: agb-456
+    primary_chunk_id: bgb-309-7-a
+    also_relevant: [bgb-309-7-b]
+    reasoning: >
+      A cap at the order value applies equally to personal injury and gross
+      negligence, both protected by § 309 Nr. 7.
+
+  - clause_id: agb-458
+    primary_chunk_id: bgb-309-8-b
+    also_relevant: [bgb-476-abs1]
+    reasoning: >
+      Obvious material or manufacturing defects must be returned
+      "unverzüglich" - a notification deadline under § 309 Nr. 8 lit. b
+      sublit. ee, despite the clause's claim to honour all statutory rights.
+
+  - clause_id: agb-606
+    primary_chunk_id: bgb-309-12
+    also_relevant: [bgb-477-abs1, bgb-476-abs1]
+    reasoning: >
+      "In jedem Fall obliegt Ihnen die Beweispflicht" reverses the burden of
+      proof onto the consumer. § 309 Nr. 12 voids exactly that; § 477 Abs. 1
+      is the presumption it overrides.
+
+  - clause_id: agb-719
+    primary_chunk_id: bgb-309-8-b
+    also_relevant: [bgb-476-abs1, bgb-307-abs1]
+    confidence: low
+    note: >
+      Wear and tear genuinely is not a defect, so part of this clause restates
+      the law. What tips it is the undefined "angemessene Produktlebensdauer"
+      as a ground for refusing replacement - which is as much a transparency
+      failure under § 307 Abs. 1 S. 2 as a warranty exclusion.
+    reasoning: >
+      Excludes replacement for damage attributed to normal wear or to an
+      unspecified reasonable product lifetime.
+
+  - clause_id: agb-901
+    primary_chunk_id: bgb-308-4
+    also_relevant: [bgb-306-abs2, bgb-307-abs1, bgb-305c-abs1]
+    confidence: low
+    note: >
+      A six-part grab-bag clause - choice of Dutch law, jurisdiction,
+      electronic communication, no contract storage, severability, and
+      unilateral amendment without notice. I picked the amendment reservation
+      (§ 308 Nr. 4) as the clearest AGB violation, but a reviewer could
+      reasonably land on the severability clause against § 306 Abs. 2. Expect
+      retrieval to struggle, and that is informative rather than wrong.
+    reasoning: >
+      "jederzeit ohne vorherige Ankündigung zu ändern" is an unrestricted
+      amendment reservation, void under § 308 Nr. 4 absent a reasonable ground.
+
+  - clause_id: agb-1039
+    primary_chunk_id: bgb-309-7-a
+    also_relevant: [bgb-309-7-b, bgb-308-9]
+    reasoning: >
+      Excludes damages claims entirely, which reaches life, body and health.
+      The assignment ban is a second, independent defect under § 308 Nr. 9.
+
+  - clause_id: agb-1040
+    primary_chunk_id: bgb-309-7-b
+    also_relevant: [bgb-309-7-a, bgb-307-abs2]
+    reasoning: >
+      Excludes all further claims including lost profit and extends the
+      exclusion to employees and agents, covering gross negligence and so
+      failing § 309 Nr. 7 lit. b.
+
+  - clause_id: agb-1198
+    primary_chunk_id: bgb-309-7-a
+    also_relevant: [bgb-309-7-b]
+    reasoning: >
+      Total liability capped at the purchase price, personal injury included.
+
+  - clause_id: agb-1204
+    primary_chunk_id: bgb-309-7-a
+    also_relevant: [bgb-309-7-b]
+    reasoning: >
+      Liability capped at the value of the last order, personal injury
+      included.
+
+  - clause_id: agb-1209
+    primary_chunk_id: bgb-309-8-b
+    also_relevant: [bgb-476-abs1, bgb-307-abs1]
+    reasoning: >
+      A four-hour window to report visible defects is a notification deadline
+      under § 309 Nr. 8 lit. b sublit. ee, and an unreasonably short one.
+
+  - clause_id: agb-1360
+    primary_chunk_id: bgb-476-abs1
+    also_relevant: [bgb-307-abs1, bgb-437]
+    confidence: low
+    note: >
+      This substitutes the Italian Codice del Consumo for the German warranty
+      regime. The voidness really flows from Art. 6(2) Rome I keeping § 437
+      ff. applicable for a German consumer - and Rome I is not in the index.
+      § 476 Abs. 1 is the closest BGB hook. A legitimate miss.
+    reasoning: >
+      Declares Italian statutory warranty rights applicable in place of the
+      German ones.
+
+  - clause_id: agb-1464
+    primary_chunk_id: bgb-309-3
+    also_relevant: [bgb-307-abs1]
+    confidence: low
+    note: >
+      Read literally this clause permits set-off with claims that are
+      undisputed or finally adjudicated - exactly what § 309 Nr. 3 protects -
+      so on its face it complies. The annotators marked it void anyway, and
+      I cannot reconstruct why from the text alone. § 309 Nr. 3 is still the
+      governing norm a reviewer should retrieve. Worth a lawyer's eye.
+    reasoning: >
+      Restricts the customer's right of set-off to finally established or
+      undisputed counterclaims.
+
+  - clause_id: agb-1607
+    primary_chunk_id: bgb-309-3
+    also_relevant: [bgb-307-abs1]
+    confidence: low
+    note: Same tension as agb-1464, in near-identical wording from another shop.
+    reasoning: >
+      Restricts set-off to counterclaims that are established, undisputed or
+      acknowledged by the seller.
+
+  - clause_id: agb-2256
+    primary_chunk_id: bgb-309-8-b
+    also_relevant: [bgb-439-abs5, bgb-476-abs1, bgb-307-abs1]
+    reasoning: >
+      Makes warranty claims conditional on surrendering the goods at the
+      seller's election and declares claims forfeited on any third-party
+      intervention or non-specified consumables - a bundle of exclusions
+      beyond § 439 Abs. 5's cooperation duty.
+
+  - clause_id: agb-2299
+    primary_chunk_id: bgb-309-7-b
+    also_relevant: [bgb-309-7-a, bgb-307-abs2]
+    reasoning: >
+      Caps damages at ten times the order value except for breach of an
+      essential obligation, which still covers grossly negligent breaches of
+      non-essential duties.
+
+  - clause_id: agb-2479
+    primary_chunk_id: bgb-309-8-b
+    also_relevant: [bgb-475-abs2, bgb-476-abs1]
+    reasoning: >
+      Refuses all later complaints for non-hidden defects and puts full
+      responsibility on the recipient for a drop-off authorisation.
+
+  - clause_id: agb-2794
+    primary_chunk_id: bgb-309-8-a
+    also_relevant: [bgb-307-abs2, bgb-276-abs1]
+    reasoning: >
+      Excludes liability for delay and impossibility including a supplier's
+      failure to deliver, which is the seller's own procurement risk, so the
+      exclusion fails § 309 Nr. 8 lit. a.
+
+  - clause_id: agb-2802
+    primary_chunk_id: bgb-309-7-a
+    also_relevant: [bgb-309-7-b]
+    reasoning: >
+      Limits fault-based liability to intent and gross negligence and caps the
+      sum, excluding simple negligence for personal injury.
+
+  - clause_id: agb-2808
+    primary_chunk_id: bgb-439-abs2
+    also_relevant: [bgb-439-abs3, bgb-476-abs1]
+    reasoning: >
+      Makes the seller's duty to bear Nacherfüllung expenses conditional on a
+      defect being established. § 439 Abs. 2, which the clause itself cites,
+      imposes that duty unconditionally.
+
+  - clause_id: agb-3123
+    primary_chunk_id: bgb-439-abs2
+    also_relevant: [bgb-439-abs3, bgb-476-abs1]
+    reasoning: >
+      Word-for-word identical to agb-2808 in a different shop. Kept as a
+      consistency check: retrieval must rank the same chunk for both.
+
+  - clause_id: agb-3160
+    primary_chunk_id: bgb-439-abs1
+    also_relevant: [bgb-476-abs1, bgb-307-abs2]
+    reasoning: >
+      "nach unserer Wahl" takes the choice between repair and replacement from
+      the buyer, where § 439 Abs. 1 places it.
+
+  - clause_id: agb-3490
+    primary_chunk_id: bgb-308-4
+    also_relevant: [bgb-434-abs2, bgb-307-abs1]
+    confidence: low
+    note: >
+      An omnibus reservation - manufacturer specifications, technical changes,
+      colour deviation, errors, input mistakes, stock limits. § 308 Nr. 4 fits
+      the change reservation; § 434 Abs. 2 fits the agreed-quality angle.
+      Which one a reviewer should cite is genuinely open.
+    reasoning: >
+      Reserves technical changes and deviations to the goods without naming a
+      reasonable ground.

@@ -1,28 +1,187 @@
 # Runtime configuration for the agent. Not part of the index lineage.
 
 models:
-  # Two slots on purpose: routing is cheap classification, judging needs reasoning.
   router:
-    provider: openai
-    name: gpt-4o-mini
-    temperature: 0
+    provider: gemini
+    name: gemini-decision-1
+  # The judge runs on the Decisions API: typed questions, calibrated
+  # probabilities, zero output tokens. Model id verified from
+  # aistudio.google.com/docs/decisions-api.
   judge:
-    provider: openai
-    name: gpt-4o
-    temperature: 0
+    provider: gemini
+    name: gemini-decision-1
+  # The Decisions API cannot generate text, so the German reasoning needs one
+  # short generating call - and only on potentially_void verdicts, which is
+  # ~30% of clauses. Without it there is no error analysis.
+  explain:
+    provider: gemini
+    # Confirmed available by the Gemini API on this project's key.
+    name: gemini-3.8-flash
+    max_output_tokens: 300
+  # Phase 8. Both generate text like explain and default to its model; neither is called
+  # unless its feature is used (summary: only with summary.llm_enabled).
+  summary:
+    provider: gemini
+    name: gemini-3.8-flash
+    max_output_tokens: 300
+  chat:
+    provider: gemini
+    name: gemini-3.8-flash
+
+prompts:
+  # Evaluation runs use a labelled Langfuse version. Promote a version to
+  # `production` once an evaluation run shows it is worth keeping.
+  label: evaluation
+
+retrieval:
+  # Topic routing uses the Gemini Decisions API; Jina remains the embedding provider
+  # for the legal-query search itself. Force AGB-control paragraphs into every set.
+  top_k: 10
+  always_include_topics: [general]
+  always_include_paragraphs: [305, 305a, 305b, 305c, 306, 306a, 307, 308, 309, 310]
+  # How many hits to read before cutting to top_k; deep enough to see where a
+  # miss actually ranked.
+  search_depth: 20
 
 agent:
-  max_retrieval_retries: 1
+  # A noul answer is the calibrated probability that the statement holds, and
+  # the API clamps it to 0.01-0.99 - so no threshold at or above 0.99 can ever
+  # fire.
+  void_threshold: 0.5
+  basis_threshold: 0.5
+  # Confidence comes from the API rather than a model self-reporting a number,
+  # which is what makes this threshold meaningful.
   confidence_uncertain_below: 0.6
+  max_retrieval_retries: 1
+  explain_enabled: true
 
 store:
-  # Must match the collection the pipeline built; checked against the manifest at startup.
-  backend: chroma
-  path: stores/chroma
-  collection: bgb_agb_v1
-
-database:
-  path: stores/app.db
+  # The app reads the ALIAS, never a versioned collection directly.
+  # The manifest behind it is asserted on first use.
+  backend: qdrant
+  alias: bgb_agb
 
 langfuse:
   enabled: true
+
+corrections:
+  # Contract text is not exported until Phase 9 masking is in place.
+  enabled: false
+  dataset: agb-lawyer-corrections
+  allowed_sources: [agb_de, public_shop]
+
+review:
+  # Clauses of one review judged at once. Each judge call reserves from the one
+  # shared limiter below, so this bounds threads, not provider requests.
+  max_concurrency: 4
+  # One limiter for the whole server (core.budget.SharedLimiter). Unset means no
+  # limit; a clause that hits either waits, it does not fail. Set both to the
+  # project's Gemini quota before the live gate.
+  rpm: 60  # 180 produced Gemini 429s during the 2026-11-16 live gate
+  daily_budget: 10000  # same as configs/evals.yaml run.request_budget
+  # For `cost_usd` and the cost shown in the UI (Phase 8, 8.D).
+  # TODO(prices): still placeholders. Set the confirmed Gemini prices for this project's
+  # models before the Phase 8 gate; while both are 0 the UI shows „Preise nicht hinterlegt“
+  # (`Pricing.confirmed` is false) instead of a cost. One pair covers every model call.
+  price_usd_per_million_tokens:
+    input: 0  # TODO(prices)
+    output: 0  # TODO(prices)
+  # TODO(prices): USD → EUR rate for the € figures; null shows USD.
+  eur_per_usd: null
+
+# Phase 8 (polish and deliverable); read by app.review.deliverable.deliverable_settings.
+summary:
+  # One generated recommendation paragraph per decision set (cached by its hash), on top
+  # of the rule-based one. Off by default (Phase 7-10 plan, "Decisions taken" #4).
+  llm_enabled: false
+  top_risks: 5
+  excerpt_chars: 240
+
+export:
+  # The DOCX memo template and its assets; configs/export/README.md describes them.
+  template_dir: configs/export
+  statute_appendix: true
+
+chat:
+  # The rewrite chat's length caps: the model's output, and the answer kept and shown.
+  max_output_tokens: 800
+  max_answer_chars: 4000
+  # Earlier turns the client sends back that reach the prompt (the newest ones).
+  max_history_messages: 10
+
+# HTTP API (Phase 5). Read by app.api.main.build_app and passed to create_app.
+ingest:
+  # Upload size limit in MB; larger requests get 413 before they are read.
+  max_upload_mb: 20
+
+api:
+  # The frontend's origin only; every other origin is refused by CORS.
+  cors_origins: ["http://localhost:5173"]
+  # Uploads and reviews share one token bucket per client IP.
+  rate_limit_per_minute: 30
+  rate_limit_burst: 10
+
+files:
+  # Immutable source PDFs, one file per document (Phase 9, 9.D: per source hash, shared by
+  # documents of the same bytes). Credentials come from S3_ACCESS_KEY_ID /
+  # S3_SECRET_ACCESS_KEY, never here.
+  backend: s3
+  root: stores/files
+  s3:
+    endpoint_url: https://br-raspy-block-b924x5c2.storage.c-7.eu-central-1.aws.neon.tech
+    region: eu-central-1
+    bucket: agb-check-files
+    prefix: "agb-check/"
+    server_side_encryption: AES256
+    presign_seconds: 300
+    # proxy: the API streams the file; redirect: 307 to a presigned URL.
+    download: proxy
+
+# Phase 9 (DSGVO hardening); docs/Phase 9 Design.md explains every block below.
+privacy:
+  masking:
+    # 9.A: personal data is replaced by placeholders before every model call and every
+    # Langfuse payload (core.masking). Off until Wave 1's masker passes the PII corpus.
+    enabled: false
+    # With masking enabled and the spaCy model (or Presidio) missing, the API refuses to
+    # start. true accepts the German regexes alone instead: labelled names, addresses and
+    # numbers are masked, but a name with no context ("Die Ware holt Gundula Quast ab")
+    # goes through. Install the model: uv run python -m spacy download de_core_news_sm
+    allow_regex_only: false
+    language: de
+    spacy_model: de_core_news_sm
+    entities: [PERSON, ADDRESS, EMAIL, PHONE, IBAN, REGISTER_NUMBER, TAX_ID, DATE_OF_BIRTH, URL]
+    score_threshold: 0.5
+    # Words the German NER model tends to mistake for names in AGB; never masked.
+    allow_list: [BGB, HGB, AGB, Verwender, Kunde, Käufer, Verkäufer, Auftraggeber,
+      Auftragnehmer]
+
+retention:
+  # 9.C: the nightly job (python -m app.review.retention) deletes each data class once its
+  # period has passed, through the same deletion as a user's (9.B). null keeps a class until
+  # a user deletes it. Off until the periods are agreed with the client (see the design doc).
+  enabled: false
+  files_days: null  # a document and everything only it used, from its last upload
+  reviews_days: null  # a finished review with its events, decisions and feedback
+  traces_days: 30  # Langfuse traces, from the review's or verdict's creation
+  erasure_max_attempts: 10
+  batch: 100
+
+auth:
+  # 9.E: OIDC login, provider-agnostic (decision #2): Keycloak in Docker Compose for
+  # development and tests, the production provider by configuration only.
+  enabled: false
+  # The owner of everything written while login is off, and of every row that existed
+  # before migration 006.
+  default_owner: local
+  oidc:
+    issuer: http://localhost:8080/realms/agb-check
+    audience: agb-check-api
+    client_id: agb-check-web  # the public SPA client (authorization code + PKCE)
+    roles_claim: realm_access.roles
+    name_claim: name
+    admin_role: agb-admin  # may delete any owner's documents and run the sweep
+    # Asymmetric only; `none` and HS* are refused whatever is listed (app.api.oidc).
+    algorithms: [RS256, ES256]
+    leeway_seconds: 30  # clock skew allowed on exp, nbf and iat
+    jwks_ttl_seconds: 600  # the key set is re-read this often; an unknown kid refetches once

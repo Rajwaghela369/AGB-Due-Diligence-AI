@@ -1,8 +1,11 @@
 name: ci
 
+# Disabled for now: manual runs only, from the Actions tab. To re-enable,
+# restore the push and pull_request triggers below.
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
+  # push:
+  # pull_request:
 
 jobs:
   check:
@@ -13,7 +16,22 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --all-extras
+      # `make check` runs the web checks and the Playwright end-to-end test, so it needs
+      # Node, pnpm (the version pinned in web/package.json) and Chromium.
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: web
+      - run: pnpm exec playwright install --with-deps chromium
+        working-directory: web
       - run: make check
 
-# Evals are deliberately NOT in CI yet: they need API keys and cost money per run.
-# They join this workflow in Phase 3, once there is a baseline to regress against.
+# Live evals run in .github/workflows/evals.yml, path-filtered to changes that can
+# actually affect a verdict. `make check` here covers the harness's pure logic -
+# scorers, prompt rendering and answer parsing - on every push, with no spend.

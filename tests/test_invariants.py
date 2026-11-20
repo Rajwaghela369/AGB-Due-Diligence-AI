@@ -1,5 +1,4 @@
 import pytest
-
 from core.invariants import LabelLeakError, assert_no_labels
 
 

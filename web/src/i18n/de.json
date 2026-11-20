@@ -1,0 +1,440 @@
+{
+  "app": {
+    "name": "AGB-Check",
+    "disclaimer": "Keine Rechtsberatung — die Entscheidung trifft der Anwalt.",
+    "theme": "Darstellung wechseln"
+  },
+  "nav": {
+    "home": "Startseite",
+    "upload": "Dokument hochladen"
+  },
+  "health": {
+    "label": "API-Status",
+    "reachable": "API erreichbar",
+    "unreachable": "API nicht erreichbar",
+    "checking": "API wird geprüft"
+  },
+  "pages": {
+    "home": {
+      "title": "Verträge ruhig und nachvollziehbar prüfen",
+      "description": "Hier erscheinen künftig Ihre letzten Prüfungen."
+    },
+    "upload": {
+      "title": "Vertrag hinzufügen",
+      "description": "PDF, DOCX und eingefügter Text werden im nächsten Schritt unterstützt."
+    },
+    "review": {
+      "title": "Prüfung",
+      "description": "Die Dokumentansicht und Fundstellen werden hier zusammengeführt."
+    },
+    "notFound": {
+      "title": "Seite nicht gefunden"
+    }
+  },
+  "risk": {
+    "void": "Potenziell unwirksam",
+    "review": "Zu prüfen",
+    "valid": "Wirksam",
+    "queued": "Wartet",
+    "checking": "Wird geprüft …",
+    "failed": "Konnte nicht geprüft werden",
+    "out": "Außerhalb des Prüfumfangs"
+  },
+  "workspace": {
+    "fit": "Seitenbreite",
+    "nextOpen": "Nächste offene Fundstelle",
+    "date": "Datum",
+    "loading": "Prüfung wird geladen …",
+    "loadError": "Die Prüfung konnte nicht geladen werden.",
+    "document": "Dokument",
+    "viewDocument": "Dokument",
+    "viewTable": "Tabelle",
+    "counts": {
+      "void": "{{count}} potenziell unwirksam",
+      "review": "{{count}} zu prüfen",
+      "valid": "{{count}} wirksam",
+      "out": "{{count}} außerhalb des Umfangs"
+    },
+    "alreadyReviewed": "Bereits geprüft: Ergebnis aus der gespeicherten Prüfung, ohne neue KI-Anfragen.",
+    "views": "Ansichten",
+    "panes": "Bereiche",
+    "selectFinding": "Wählen Sie eine Fundstelle, um die Klausel zu prüfen."
+  },
+  "findings": {
+    "title": "Fundstellen",
+    "filter": "Filter",
+    "filters": {
+      "void": "Unwirksam",
+      "review": "Prüfen",
+      "all": "Alle"
+    },
+    "confidence": {
+      "high": "Hohe Sicherheit",
+      "medium": "Mittlere Sicherheit",
+      "low": "Geringe Sicherheit"
+    },
+    "empty": "Keine Fundstellen in dieser Ansicht.",
+    "waiting": "Die ersten Ergebnisse erscheinen gleich.",
+    "failedHint": "Konnte nicht geprüft werden — Wiederholen unter „Technische Details“.",
+    "activity": "Aktivität",
+    "activityEmpty": "Noch keine Änderungen seit dem Öffnen.",
+    "step": {
+      "queued": "wartet",
+      "checking": "wird geprüft",
+      "done": "geprüft",
+      "failed": "fehlgeschlagen",
+      "out_of_scope": "außerhalb des Prüfumfangs"
+    }
+  },
+  "avv": {
+    "title": "AVV-Pflichten",
+    "description": "Erkannte und im Dokument fehlende Pflichten aus Art. 28 Abs. 3 DSGVO.",
+    "filter": "AVV-Pflichten filtern",
+    "filters": {
+      "all": "Alle",
+      "open": "Offen",
+      "fulfilled": "Erfüllt"
+    },
+    "obligation": "Pflicht",
+    "allObligations": "Alle Pflichten",
+    "fulfilled": "Erfüllt",
+    "open": "Offen",
+    "showClause": "Klausel anzeigen",
+    "noReason": "Keine Begründung verfügbar.",
+    "missingTitle": "Fehlende Pflichten",
+    "progress": "{{found}} gefunden · {{missing}} fehlend",
+    "empty": "Keine AVV-Pflichten für diesen Filter gefunden."
+  },
+  "drawer": {
+    "close": "Schließen",
+    "description": "Details zur ausgewählten Klausel mit Rechtsgrundlage, Begründung und Rückmeldung.",
+    "clause": "Klausel",
+    "confidence": "Sicherheit",
+    "confidenceBands": {
+      "high": "Hoch",
+      "medium": "Mittel",
+      "low": "Gering"
+    },
+    "legalBasis": "Rechtsgrundlage",
+    "noBasis": "Keine Rechtsgrundlage angegeben.",
+    "statuteLoading": "Gesetzestext wird geladen …",
+    "statuteError": "Der Gesetzestext konnte nicht geladen werden.",
+    "statuteSource": "Quelle öffnen",
+    "reasoning": "Begründung",
+    "reasonUnavailable": "Begründung nicht verfügbar",
+    "regenerate": "Begründung erzeugen",
+    "regenerating": "Begründung wird erzeugt …",
+    "regenerateError": "Die Begründung konnte nicht erzeugt werden. Bitte versuchen Sie es erneut.",
+    "noVerdict": "Für diese Klausel liegt noch kein Urteil vor.",
+    "technical": "Technische Details",
+    "confidenceNumeric": "Sicherheit (Zahlenwert)",
+    "candidates": "Kandidaten und Scores",
+    "noCandidates": "Keine Kandidaten.",
+    "retry": "Erneut prüfen",
+    "retryError": "Die Wiederholung konnte nicht gestartet werden.",
+    "trace": "Trace in Langfuse"
+  },
+  "feedback": {
+    "prompt": "War diese Einschätzung hilfreich?",
+    "up": "Hilfreich",
+    "down": "Nicht hilfreich",
+    "sentUp": "Hilfreich",
+    "sentDown": "Nicht hilfreich",
+    "error": "Rückmeldung konnte nicht gespeichert werden.",
+    "reasons": "Was war falsch?",
+    "reason": {
+      "verdict_wrong": "Urteil falsch",
+      "basis_wrong": "§ falsch/fehlt",
+      "reasoning_unclear": "Begründung unklar",
+      "clause_cut": "Klausel falsch geschnitten"
+    },
+    "correctVerdict": "Richtiges Urteil",
+    "chooseVerdict": "Bitte wählen",
+    "verdict": {
+      "valid": "Wirksam",
+      "potentially_void": "Potenziell unwirksam",
+      "uncertain": "Zu prüfen"
+    },
+    "correctBasis": "Richtiger oder fehlender §",
+    "basisPlaceholder": "z. B. § 309 Nr. 7 BGB",
+    "comment": "Kommentar (optional)",
+    "send": "Senden",
+    "cancel": "Abbrechen",
+    "steps": "Bewertung einzelner Schritte",
+    "step": {
+      "clause_span": "Klauselschnitt",
+      "retrieval": "Rechtsgrundlagen-Suche",
+      "judge": "Urteil",
+      "explanation": "Begründung"
+    },
+    "stepDown": "Schritt „{{step}}“ negativ bewerten"
+  },
+  "home": {
+    "loading": "Prüfungen werden geladen …",
+    "loadError": "Die Dokumente konnten nicht geladen werden.",
+    "title": "Ihre Prüfungen",
+    "description": "Öffnen Sie eine frühere Prüfung oder starten Sie eine neue.",
+    "newReview": "Neue Prüfung",
+    "empty": {
+      "title": "Noch keine Prüfung",
+      "description": "Laden Sie einen Vertrag hoch, um die erste Prüfung zu starten."
+    },
+    "notReviewed": "Noch nicht geprüft",
+    "startReview": "Prüfung starten",
+    "aiCostHint": "Die Prüfung verwendet KI-Anfragen und kann Kosten verursachen.",
+    "scope": "Prüfumfang",
+    "cancel": "Abbrechen",
+    "closeDialog": "Dialog schließen",
+    "startError": "Die Prüfung konnte nicht gestartet werden. Bitte erneut versuchen.",
+    "progress": "{{done}} von {{total}} Klauseln geprüft",
+    "status": {
+      "queued": "Wartet",
+      "running": "Läuft",
+      "finished": "Abgeschlossen",
+      "failed": "Fehlgeschlagen",
+      "awaiting_decisions": "Entscheidungen offen"
+    },
+    "table": {
+      "label": "Prüfungen als Tabelle",
+      "title": "Dokumente und Prüfungen",
+      "count": "{{count}} Prüfungen",
+      "search": "Dokumente durchsuchen",
+      "status": "Status filtern",
+      "document": "Dokument",
+      "risk": "Bewertungen",
+      "progress": "Fortschritt",
+      "usage": "Verbrauch",
+      "action": "Aktion",
+      "empty": "Keine Prüfungen entsprechen dem Filter.",
+      "filters": {
+        "all": "Alle",
+        "active": "Aktiv",
+        "decisions": "Offene Entscheidungen",
+        "finished": "Fertig",
+        "failed": "Fehlgeschlagen",
+        "unreviewed": "Ungeprüft"
+      },
+      "reset": "Filter zurücksetzen",
+      "count_one": "1 Prüfung",
+      "count_other": "{{count}} Prüfungen"
+    }
+  },
+  "upload": {
+    "title": "Vertrag hinzufügen",
+    "description": "Laden Sie ein PDF oder DOCX hoch oder fügen Sie den Vertragstext ein.",
+    "documentType": "Dokumenttyp",
+    "documentTypes": {
+      "agb": "Allgemeine Geschäftsbedingungen (AGB)",
+      "agbHint": "Prüfung typischer AGB-Klauseln.",
+      "avv": "Auftragsverarbeitungsvertrag (AVV)",
+      "avvHint": "Prüfung der Pflichten aus Art. 28 Abs. 3 DSGVO."
+    },
+    "dropzone": "Datei hierher ziehen",
+    "formats": "PDF oder DOCX",
+    "chooseFile": "Datei auswählen",
+    "pasteAlternative": "Text einfügen",
+    "pasteLabel": "Vertragstext",
+    "fileAlternative": "Stattdessen Datei hochladen",
+    "scope": "Prüfumfang",
+    "liability": "Haftung",
+    "warranty": "Gewährleistung",
+    "start": "Prüfung starten",
+    "errors": {
+      "too_large": "Die Datei ist zu groß.",
+      "unsupported_type": "Dieser Dateityp wird nicht unterstützt. Bitte PDF oder DOCX verwenden.",
+      "encrypted": "Die Datei ist passwortgeschützt. Bitte ohne Passwortschutz hochladen.",
+      "no_text_layer": "Das PDF enthält keinen Text (vermutlich ein Scan). Bitte ein durchsuchbares PDF verwenden.",
+      "conversion_failed": "Die Datei konnte nicht umgewandelt werden.",
+      "parse_failed": "Die Datei konnte nicht gelesen werden.",
+      "parse_timeout": "Das Lesen der Datei hat zu lange gedauert. Bitte erneut versuchen.",
+      "empty": "Es wurde kein Text gefunden. Bitte Datei oder Text angeben.",
+      "archive_too_large": "Das Archiv ist zu groß.",
+      "rate_limited": "Zu viele Anfragen. Bitte kurz warten und erneut versuchen.",
+      "no_scope": "Bitte mindestens einen Prüfumfang wählen.",
+      "generic": "Das Hochladen ist fehlgeschlagen. Bitte erneut versuchen."
+    }
+  },
+  "table": {
+    "label": "Ergebnisse als Tabelle",
+    "search": "Klauseln durchsuchen",
+    "verdict": "Bewertung",
+    "topic": "Thema",
+    "allVerdicts": "Alle Bewertungen",
+    "allTopics": "Alle Themen",
+    "rows": "{{count}} Klauseln",
+    "number": "Nr.",
+    "clause": "Klausel",
+    "basis": "Rechtsgrundlage",
+    "confidence": "Sicherheit",
+    "status": "Status",
+    "statusDone": "Geprüft",
+    "confidenceBands": {
+      "high": "Hoch",
+      "medium": "Mittel",
+      "low": "Niedrig"
+    },
+    "decision": "Entscheidung",
+    "allDecisions": "Alle Entscheidungen"
+  },
+  "viewer": {
+    "toolbar": "Dokumentwerkzeuge",
+    "loading": "Dokument wird geladen …",
+    "loadError": "Das Dokument konnte nicht geladen werden.",
+    "page": "Seite {{page}} von {{total}}",
+    "clause": "Klausel {{name}}: {{state}}",
+    "retry": "Erneut versuchen",
+    "retrying": "Wird erneut versucht …",
+    "retryClause": "Klausel {{name}} erneut prüfen",
+    "search": {
+      "label": "Im Dokument suchen",
+      "placeholder": "Suchen …",
+      "none": "Keine Treffer",
+      "position": "{{current}} / {{count}}",
+      "next": "Nächster Treffer",
+      "previous": "Vorheriger Treffer"
+    },
+    "nav": {
+      "label": "Fundstellen",
+      "position": "{{current}} / {{total}}",
+      "next": "Nächste Fundstelle",
+      "previous": "Vorherige Fundstelle"
+    },
+    "zoom": {
+      "label": "Zoom",
+      "in": "Vergrößern",
+      "out": "Verkleinern",
+      "reset": "Zoom {{percent}} % – auf 100 % zurücksetzen"
+    },
+    "steps": {
+      "label": "Fortschritt der Prüfung",
+      "upload": "Upload",
+      "read": "Lesen",
+      "split": "Aufteilen",
+      "done": "erledigt",
+      "check": "Prüfung {{done}}/{{total}}",
+      "awaitingDecisions": "wartet auf Entscheidungen",
+      "waiting": {
+        "rate_limit": "wartet auf Rate-Limit",
+        "daily_budget": "Tagesbudget erreicht"
+      }
+    }
+  },
+  "hotkeys": {
+    "title": "Tastenkürzel",
+    "open": "Tastenkürzel anzeigen",
+    "close": "Schließen",
+    "description": "Diese Tastenkürzel gelten in der Prüfansicht, solange kein Eingabefeld aktiv ist.",
+    "next": "Nächste Fundstelle",
+    "previous": "Vorherige Fundstelle",
+    "search": "Suche fokussieren",
+    "escape": "Details schließen oder Suche leeren",
+    "help": "Diese Übersicht ein- und ausblenden",
+    "keys": "Taste",
+    "action": "Aktion",
+    "accept": "Fundstelle akzeptieren",
+    "override": "Fundstelle überschreiben",
+    "dismiss": "Fundstelle verwerfen"
+  },
+  "decision": {
+    "title": "Entscheidung",
+    "status": {
+      "open": "Offen",
+      "accepted": "Akzeptiert",
+      "overridden": "Überschrieben",
+      "dismissed": "Verworfen",
+      "awaiting": "Entscheidung nötig"
+    },
+    "accept": "Akzeptieren",
+    "dismiss": "Verwerfen",
+    "note": "Notiz (optional)",
+    "awaitingHint": "Die KI ist sich bei dieser Klausel nicht sicher. Bitte entscheiden Sie selbst.",
+    "statusFilter": "Entscheidung",
+    "statusFilters": {
+      "all": "Alle",
+      "open": "Offen",
+      "accepted": "Akzeptiert",
+      "overridden": "Überschrieben",
+      "dismissed": "Verworfen"
+    },
+    "verdict": {
+      "valid": "Wirksam",
+      "potentially_void": "Potenziell unwirksam",
+      "uncertain": "Zu prüfen"
+    },
+    "current": {
+      "accept": "Akzeptiert",
+      "dismiss": "Verworfen (nicht relevant)",
+      "override": "Überschrieben: {{verdict}}"
+    },
+    "override": {
+      "open": "Überschreiben",
+      "verdict": "Ihr Urteil",
+      "basis": "Rechtsgrundlage",
+      "noBasis": "Keine Vorschläge vorhanden.",
+      "basisHint": "Ohne Auswahl bleibt der § der KI.",
+      "model": "Urteil der KI",
+      "needVerdict": "Bitte wählen Sie ein Urteil.",
+      "needChange": "Bitte wählen Sie ein anderes Urteil oder einen anderen §.",
+      "confirm": "Überschreiben bestätigen",
+      "cancel": "Abbrechen"
+    },
+    "error": {
+      "generic": "Die Entscheidung konnte nicht gespeichert werden. Bitte erneut versuchen."
+    }
+  },
+  "audit": {
+    "title": "Verlauf",
+    "loading": "Verlauf wird geladen …",
+    "loadError": "Der Verlauf konnte nicht geladen werden.",
+    "empty": "Noch keine Entscheidung.",
+    "unknown": "Unbekannt",
+    "unauthenticated": "nicht angemeldet",
+    "action": {
+      "accept": "Akzeptiert",
+      "override": "Überschrieben",
+      "dismiss": "Verworfen"
+    },
+    "verdict": "Urteil",
+    "basis": "§",
+    "agentVersion": "Agent-Version",
+    "noVerdict": "keines"
+  },
+  "progress": {
+    "label": "Fortschritt der Entscheidungen",
+    "text": "{{decided}} von {{total}} entschieden",
+    "open": "Offene Fundstellen",
+    "openVoid": "Potenziell unwirksam offen: {{count}}",
+    "openReview": "Zu prüfen offen: {{count}}",
+    "decided": "Entschieden: {{count}}",
+    "complete": "Prüfung abschließen",
+    "completeDisabled": "Erst möglich, wenn alle unwirksamen und zu prüfenden Fundstellen entschieden sind.",
+    "confirmTitle": "Prüfung abschließen?",
+    "confirmText": "Alle Fundstellen sind entschieden. Der Export folgt in einer späteren Version; Sie kehren zur Übersicht zurück.",
+    "confirm": "Abschließen",
+    "cancel": "Abbrechen"
+  },
+  "agreement": {
+    "title": "Übereinstimmung mit Ihren Entscheidungen",
+    "version": "Agent-Version {{version}}",
+    "none": "Noch keine Entscheidungen.",
+    "unavailable": "Die Übereinstimmung ist nicht verfügbar.",
+    "decided": "Entschieden: {{count}}",
+    "kept": "Übernommen: {{count}}",
+    "overridden": "Überschrieben: {{count}}",
+    "dismissed": "Verworfen: {{count}}",
+    "explain": "Anteil der Entscheidungen, bei denen das Urteil der KI übernommen wurde; verworfene Fundstellen zählen nicht."
+  },
+  "reviewer": {
+    "title": "Ihr Name",
+    "description": "Er wird mit jeder Entscheidung im Verlauf gespeichert. Es gibt noch keine Anmeldung.",
+    "label": "Name",
+    "hint": "Der Name wird in diesem Browser gespeichert.",
+    "save": "Speichern",
+    "skip": "Ohne Namen fortfahren",
+    "close": "Schließen",
+    "none": "Kein Name festgelegt",
+    "set": "Namen festlegen",
+    "change": "Name ändern (aktuell: {{name}})",
+    "unauthenticated": "nicht angemeldet"
+  }
+}

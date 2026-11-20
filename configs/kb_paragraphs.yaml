@@ -1,24 +1,67 @@
 # BGB paragraph whitelist for the knowledge base.
-#   level:  item   -> one chunk per numbered item (Nr.)
-#           absatz -> one chunk per Absatz
-#   topics: liability | warranty | general   (general is always retrievable)
-# Phase 1 fills in per-paragraph detail; the shape is what matters here.
+#
+# level   item   -> one chunk per numbered item, recursing into lettered sub-items
+#         absatz -> one chunk per Absatz
+# topics  liability | warranty | general | other
+#         general joins every candidate set; other is searchable but never forced in.
+# items   per-item topic overrides, keyed on the DT label without its trailing dot.
+#
+# Section refs match the dump's `section` values verbatim (verified: 31/31 resolve).
 
 paragraphs:
   # --- AGB control, §§ 305-310 ---
   - { ref: "§ 305",  level: absatz, topics: [general] }
-  - { ref: "§ 305a", level: absatz, topics: [general] }
-  - { ref: "§ 305b", level: absatz, topics: [general] }
-  - { ref: "§ 305c", level: absatz, topics: [general] }
-  - { ref: "§ 306",  level: absatz, topics: [general] }
+  - { ref: "§ 305a", level: absatz, topics: [other] }      # Einbeziehung in besonderen Fällen
+  - { ref: "§ 305b", level: absatz, topics: [general] }    # Vorrang der Individualabrede
+  - { ref: "§ 305c", level: absatz, topics: [general] }    # überraschende Klauseln
+  - { ref: "§ 306",  level: absatz, topics: [general] }    # Rechtsfolgen der Unwirksamkeit
   - { ref: "§ 306a", level: absatz, topics: [general] }
-  - { ref: "§ 307",  level: absatz, topics: [general, liability, warranty] }
-  - { ref: "§ 308",  level: item,   topics: [liability, warranty] }
-  - { ref: "§ 309",  level: item,   topics: [liability, warranty] }
-  - { ref: "§ 310",  level: absatz, topics: [general] }
+  - { ref: "§ 307",  level: absatz, topics: [general] }    # Inhaltskontrolle, incl. Transparenzgebot
+  - { ref: "§ 310",  level: absatz, topics: [general] }    # Anwendungsbereich
+
+  # Klauselverbote mit Wertungsmöglichkeit. No item concerns liability or
+  # warranty, so none is tagged general.
+  - ref: "§ 308"
+    level: item
+    topics: [other]
+    items:
+      "1":  [other]       # Annahme- und Leistungsfrist
+      "1a": [other]       # Zahlungsfrist
+      "1b": [other]       # Überprüfungs- und Abnahmefrist
+      "2":  [other]       # Nachfrist
+      "3":  [other]       # Rücktrittsvorbehalt
+      "4":  [other]       # Änderungsvorbehalt
+      "5":  [other]       # fingierte Erklärungen
+      "6":  [other]       # Fiktion des Zugangs
+      "7":  [other]       # Abwicklung von Verträgen
+      "8":  [other]       # Nichtverfügbarkeit der Leistung
+      "9":  [other]       # Abtretungsausschluss
+
+  # Klauselverbote ohne Wertungsmöglichkeit. Nr. 7 is the central liability
+  # prohibition; Nr. 8 lit. b covers defect claims, hence both topics.
+  - ref: "§ 309"
+    level: item
+    topics: [other]
+    split_subitems: ["7", "8"]
+    items:
+      "1":  [other]                  # kurzfristige Preiserhöhungen
+      "2":  [other]                  # Leistungsverweigerungsrechte
+      "3":  [other]                  # Aufrechnungsverbot
+      "4":  [other]                  # Mahnung, Fristsetzung
+      "5":  [liability]              # Pauschalierung von Schadensersatzansprüchen
+      "6":  [other]                  # Vertragsstrafe
+      "7":  [liability]              # Haftungsausschluss Leben/Körper/Gesundheit, grobes Verschulden
+      "8":  [liability, warranty]    # sonstige Haftungsausschlüsse; lit. b betrifft Mängel
+      "9":  [other]                  # Laufzeit bei Dauerschuldverhältnissen
+      "10": [other]                  # Wechsel des Vertragspartners
+      "11": [liability]              # Haftung des Abschlussvertreters
+      "12": [liability, warranty]    # Beweislast
+      "13": [warranty]               # Form von Anzeigen und Erklärungen, Mängelanzeige
+      "14": [other]                  # Klageverzicht
+      "15": [other]                  # Abschlagszahlungen und Sicherheitsleistung
 
   # --- Warranty / Kaufrecht ---
-  - { ref: "§ 434",  level: absatz, topics: [warranty] }
+  - { ref: "§ 434",  level: absatz, topics: [warranty] }   # Sachmangel, post-2022 wording confirmed
   - { ref: "§ 435",  level: absatz, topics: [warranty] }
   - { ref: "§ 437",  level: absatz, topics: [warranty] }
   - { ref: "§ 438",  level: absatz, topics: [warranty] }
@@ -27,7 +70,7 @@ paragraphs:
   - { ref: "§ 441",  level: absatz, topics: [warranty] }
   - { ref: "§ 442",  level: absatz, topics: [warranty] }
   - { ref: "§ 443",  level: absatz, topics: [warranty] }
-  - { ref: "§ 444",  level: absatz, topics: [warranty] }   # open: Arglist, not in the original scope
+  - { ref: "§ 444",  level: absatz, topics: [warranty] }
   - { ref: "§ 445",  level: absatz, topics: [warranty] }
 
   # --- Consumer sale, §§ 474-479 ---
@@ -38,8 +81,8 @@ paragraphs:
   - { ref: "§ 478",  level: absatz, topics: [warranty] }
   - { ref: "§ 479",  level: absatz, topics: [warranty] }
 
-  # --- Liability basics (open: confirm these additions) ---
-  - { ref: "§ 276",  level: absatz, topics: [liability] }   # open: Abs. 3, no waiver for intent
-  - { ref: "§ 278",  level: absatz, topics: [liability] }   # open
-  - { ref: "§ 280",  level: absatz, topics: [liability] }   # open
-  - { ref: "§ 202",  level: absatz, topics: [liability, warranty] }  # open: limitation periods
+  # --- Liability basics (open: prune in W4 if nothing retrieves them) ---
+  - { ref: "§ 276",  level: absatz, topics: [liability] }  # Abs. 3: no waiver for intent
+  - { ref: "§ 278",  level: absatz, topics: [liability] }
+  - { ref: "§ 280",  level: absatz, topics: [liability] }
+  - { ref: "§ 202",  level: absatz, topics: [liability, warranty] }

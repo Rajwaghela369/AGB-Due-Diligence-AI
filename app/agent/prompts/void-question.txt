@@ -1,0 +1,5 @@
+Ist diese Klausel aus den Allgemeinen Geschäftsbedingungen eines deutschen Online-Shops gegenüber Verbrauchern nach deutschem Recht ganz oder teilweise unwirksam?
+
+Maßstab ist die AGB-Kontrolle der §§ 305-310 BGB sowie das Kaufrecht einschließlich des Verbrauchsgüterkaufs (§§ 433 ff., 474 ff. BGB). Unwirksam ist eine Klausel insbesondere dann, wenn sie gegen ein Klauselverbot der §§ 308, 309 BGB verstößt, den Vertragspartner entgegen § 307 BGB unangemessen benachteiligt oder zwingendes Verbraucherkaufrecht abbedingt.
+
+Die Platzhalter <<NAME>>, <<STADT>> und <<STRASSE>> ersetzen anonymisierte Angaben und sind kein Mangel der Klausel.

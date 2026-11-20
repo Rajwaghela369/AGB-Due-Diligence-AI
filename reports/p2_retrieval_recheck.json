@@ -1,0 +1,437 @@
+{
+  "collection": "bgb_agb",
+  "embedding_model": "jina-embeddings-v5-text-small",
+  "query_task": "retrieval.query",
+  "policy": {
+    "top_k": 10,
+    "always_include_topics": [
+      "general"
+    ],
+    "always_include_paragraphs": [
+      305,
+      "305a",
+      "305b",
+      "305c",
+      306,
+      "306a",
+      307,
+      308,
+      309,
+      310
+    ],
+    "search_depth": 20
+  },
+  "metrics": {
+    "queries": 31.0,
+    "primary_at_1": 0.0323,
+    "primary_at_3": 0.2258,
+    "primary_at_5": 0.3548,
+    "mrr": 0.1942,
+    "query_tokens": 4294.0
+  },
+  "queries": [
+    {
+      "query_id": "agb-187",
+      "topic": "liability",
+      "expected": "bgb-475-abs2",
+      "rank": null,
+      "top5": [
+        "bgb-276-abs1",
+        "bgb-309-8-b",
+        "bgb-309-7-b",
+        "bgb-276-abs2",
+        "bgb-309-7-a"
+      ]
+    },
+    {
+      "query_id": "agb-344",
+      "topic": "liability",
+      "expected": "bgb-475-abs2",
+      "rank": null,
+      "top5": [
+        "bgb-309-8-b",
+        "bgb-308-1a",
+        "bgb-308-1b",
+        "bgb-280-abs2",
+        "bgb-276-abs1"
+      ]
+    },
+    {
+      "query_id": "agb-347",
+      "topic": "warranty",
+      "expected": "bgb-309-8-b",
+      "rank": 2,
+      "top5": [
+        "bgb-438-abs3",
+        "bgb-309-8-b",
+        "bgb-477-abs1",
+        "bgb-475-abs6",
+        "bgb-478-abs1"
+      ]
+    },
+    {
+      "query_id": "agb-348",
+      "topic": "warranty",
+      "expected": "bgb-439-abs1",
+      "rank": 9,
+      "top5": [
+        "bgb-439-abs3",
+        "bgb-440",
+        "bgb-437",
+        "bgb-439-abs4",
+        "bgb-475-abs5"
+      ]
+    },
+    {
+      "query_id": "agb-349",
+      "topic": "liability",
+      "expected": "bgb-309-7-a",
+      "rank": 8,
+      "top5": [
+        "bgb-280-abs1",
+        "bgb-276-abs1",
+        "bgb-280-abs3",
+        "bgb-276-abs2",
+        "bgb-309-7-b"
+      ]
+    },
+    {
+      "query_id": "agb-350",
+      "topic": "warranty",
+      "expected": "bgb-309-8-b",
+      "rank": 9,
+      "top5": [
+        "bgb-475-abs6",
+        "bgb-439-abs4",
+        "bgb-443-abs1",
+        "bgb-434-abs3",
+        "bgb-439-abs6"
+      ]
+    },
+    {
+      "query_id": "agb-354",
+      "topic": "liability",
+      "expected": "bgb-439-abs2",
+      "rank": null,
+      "top5": [
+        "bgb-309-8-b",
+        "bgb-276-abs1",
+        "bgb-309-12",
+        "bgb-309-11",
+        "bgb-309-2"
+      ]
+    },
+    {
+      "query_id": "agb-441",
+      "topic": "warranty",
+      "expected": "bgb-309-8-b",
+      "rank": 10,
+      "top5": [
+        "bgb-475-abs6",
+        "bgb-439-abs6",
+        "bgb-437",
+        "bgb-440",
+        "bgb-478-abs2"
+      ]
+    },
+    {
+      "query_id": "agb-454",
+      "topic": "liability",
+      "expected": "bgb-309-7-a",
+      "rank": 7,
+      "top5": [
+        "bgb-276-abs1",
+        "bgb-309-11",
+        "bgb-280-abs1",
+        "bgb-309-7-b",
+        "bgb-278"
+      ]
+    },
+    {
+      "query_id": "agb-456",
+      "topic": "liability",
+      "expected": "bgb-309-7-a",
+      "rank": 5,
+      "top5": [
+        "bgb-276-abs1",
+        "bgb-309-8-b",
+        "bgb-309-5",
+        "bgb-280-abs1",
+        "bgb-309-7-a"
+      ]
+    },
+    {
+      "query_id": "agb-458",
+      "topic": "warranty",
+      "expected": "bgb-309-8-b",
+      "rank": 9,
+      "top5": [
+        "bgb-443-abs1",
+        "bgb-479-abs1",
+        "bgb-475-abs6",
+        "bgb-434-abs3",
+        "bgb-439-abs6"
+      ]
+    },
+    {
+      "query_id": "agb-606",
+      "topic": "warranty",
+      "expected": "bgb-309-12",
+      "rank": null,
+      "top5": [
+        "bgb-438-abs3",
+        "bgb-442-abs1",
+        "bgb-443-abs1",
+        "bgb-479-abs1",
+        "bgb-438-abs1"
+      ]
+    },
+    {
+      "query_id": "agb-719",
+      "topic": "warranty",
+      "expected": "bgb-309-8-b",
+      "rank": 7,
+      "top5": [
+        "bgb-479-abs3",
+        "bgb-443-abs2",
+        "bgb-476-abs2",
+        "bgb-477-abs1",
+        "bgb-479-abs1"
+      ]
+    },
+    {
+      "query_id": "agb-901",
+      "topic": "liability",
+      "expected": "bgb-308-4",
+      "rank": 18,
+      "top5": [
+        "bgb-309-12",
+        "bgb-310-abs3",
+        "bgb-310-abs1",
+        "bgb-307-abs1",
+        "bgb-305-abs2"
+      ]
+    },
+    {
+      "query_id": "agb-1039",
+      "topic": "liability",
+      "expected": "bgb-309-7-a",
+      "rank": 19,
+      "top5": [
+        "bgb-309-8-b",
+        "bgb-280-abs1",
+        "bgb-309-2",
+        "bgb-280-abs3",
+        "bgb-280-abs2"
+      ]
+    },
+    {
+      "query_id": "agb-1040",
+      "topic": "liability",
+      "expected": "bgb-309-7-b",
+      "rank": 4,
+      "top5": [
+        "bgb-309-8-b",
+        "bgb-276-abs1",
+        "bgb-309-11",
+        "bgb-309-7-b",
+        "bgb-309-7-a"
+      ]
+    },
+    {
+      "query_id": "agb-1198",
+      "topic": "liability",
+      "expected": "bgb-309-7-a",
+      "rank": 6,
+      "top5": [
+        "bgb-276-abs1",
+        "bgb-309-8-b",
+        "bgb-309-11",
+        "bgb-280-abs1",
+        "bgb-309-7-b"
+      ]
+    },
+    {
+      "query_id": "agb-1204",
+      "topic": "liability",
+      "expected": "bgb-309-7-a",
+      "rank": 4,
+      "top5": [
+        "bgb-276-abs1",
+        "bgb-309-8-b",
+        "bgb-309-7-b",
+        "bgb-309-7-a",
+        "bgb-309-5"
+      ]
+    },
+    {
+      "query_id": "agb-1209",
+      "topic": "warranty",
+      "expected": "bgb-309-8-b",
+      "rank": 12,
+      "top5": [
+        "bgb-478-abs1",
+        "bgb-434-abs3",
+        "bgb-477-abs1",
+        "bgb-438-abs3",
+        "bgb-439-abs6"
+      ]
+    },
+    {
+      "query_id": "agb-1360",
+      "topic": "warranty",
+      "expected": "bgb-476-abs1",
+      "rank": null,
+      "top5": [
+        "bgb-443-abs1",
+        "bgb-479-abs1",
+        "bgb-477-abs2",
+        "bgb-443-abs2",
+        "bgb-478-abs1"
+      ]
+    },
+    {
+      "query_id": "agb-1464",
+      "topic": "warranty",
+      "expected": "bgb-309-3",
+      "rank": 3,
+      "top5": [
+        "bgb-478-abs2",
+        "bgb-437",
+        "bgb-309-3",
+        "bgb-438-abs4",
+        "bgb-439-abs6"
+      ]
+    },
+    {
+      "query_id": "agb-1607",
+      "topic": "warranty",
+      "expected": "bgb-309-3",
+      "rank": 1,
+      "top5": [
+        "bgb-309-3",
+        "bgb-475-abs4",
+        "bgb-478-abs2",
+        "bgb-475-abs1",
+        "bgb-478-abs3"
+      ]
+    },
+    {
+      "query_id": "agb-2256",
+      "topic": "warranty",
+      "expected": "bgb-309-8-b",
+      "rank": 6,
+      "top5": [
+        "bgb-443-abs1",
+        "bgb-439-abs3",
+        "bgb-434-abs2",
+        "bgb-434-abs3",
+        "bgb-479-abs1"
+      ]
+    },
+    {
+      "query_id": "agb-2299",
+      "topic": "liability",
+      "expected": "bgb-309-7-b",
+      "rank": 13,
+      "top5": [
+        "bgb-309-5",
+        "bgb-280-abs1",
+        "bgb-280-abs3",
+        "bgb-309-8-b",
+        "bgb-276-abs1"
+      ]
+    },
+    {
+      "query_id": "agb-2479",
+      "topic": "warranty",
+      "expected": "bgb-309-8-b",
+      "rank": 5,
+      "top5": [
+        "bgb-475-abs2",
+        "bgb-478-abs2",
+        "bgb-476-abs1",
+        "bgb-475-abs1",
+        "bgb-309-8-b"
+      ]
+    },
+    {
+      "query_id": "agb-2794",
+      "topic": "liability",
+      "expected": "bgb-309-8-a",
+      "rank": 16,
+      "top5": [
+        "bgb-309-8-b",
+        "bgb-280-abs2",
+        "bgb-276-abs1",
+        "bgb-309-9",
+        "bgb-308-8"
+      ]
+    },
+    {
+      "query_id": "agb-2802",
+      "topic": "liability",
+      "expected": "bgb-309-7-a",
+      "rank": 9,
+      "top5": [
+        "bgb-276-abs1",
+        "bgb-276-abs3",
+        "bgb-278",
+        "bgb-276-abs2",
+        "bgb-309-8-b"
+      ]
+    },
+    {
+      "query_id": "agb-2808",
+      "topic": "warranty",
+      "expected": "bgb-439-abs2",
+      "rank": 2,
+      "top5": [
+        "bgb-439-abs3",
+        "bgb-439-abs2",
+        "bgb-439-abs1",
+        "bgb-439-abs6",
+        "bgb-439-abs4"
+      ]
+    },
+    {
+      "query_id": "agb-3123",
+      "topic": "warranty",
+      "expected": "bgb-439-abs2",
+      "rank": 2,
+      "top5": [
+        "bgb-439-abs3",
+        "bgb-439-abs2",
+        "bgb-439-abs1",
+        "bgb-439-abs6",
+        "bgb-439-abs4"
+      ]
+    },
+    {
+      "query_id": "agb-3160",
+      "topic": "warranty",
+      "expected": "bgb-439-abs1",
+      "rank": 3,
+      "top5": [
+        "bgb-439-abs6",
+        "bgb-439-abs3",
+        "bgb-439-abs1",
+        "bgb-475-abs5",
+        "bgb-439-abs4"
+      ]
+    },
+    {
+      "query_id": "agb-3490",
+      "topic": "liability",
+      "expected": "bgb-308-4",
+      "rank": 3,
+      "top5": [
+        "bgb-309-8-b",
+        "bgb-305c-abs1",
+        "bgb-308-4",
+        "bgb-309-1",
+        "bgb-305c-abs2"
+      ]
+    }
+  ]
+}

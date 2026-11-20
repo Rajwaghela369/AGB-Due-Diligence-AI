@@ -8,7 +8,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-Topic = Literal["liability", "warranty", "general"]
+# "general" chunks join every candidate set regardless of the router's choice;
+# "other" chunks are indexed and searchable but never forced in.
+Topic = Literal["liability", "warranty", "general", "other"]
 Verdict = Literal["valid", "potentially_void", "uncertain"]
 
 
@@ -21,6 +23,7 @@ class LawChunk(BaseModel):
     item: str | None = None
     sub_item: str | None = None
     title: str
+    citation: str  # human-readable: "§ 309 Nr. 7 lit. a"
     topics: list[Topic]
     embed_text: str  # law/§/title/stem prefix, used only for embedding
     text: str  # clean text for display and citation
@@ -36,6 +39,7 @@ class Clause(BaseModel):
     title: str
     text: str
     topics: list[Topic]
+    split: str | None = None
 
 
 class LabeledClause(Clause):
@@ -53,7 +57,6 @@ class VerdictRecord(BaseModel):
     legal_basis: list[str] = Field(default_factory=list)  # chunk_ids
     reason_de: str
     confidence: float
-    lawyer_decision: Verdict | None = None
     langfuse_trace_id: str | None = None
 
 

@@ -1,0 +1,66 @@
+# P2 EVAL-PREP configuration.
+# Versioned input to the pipeline: it decides which clauses become the answer
+# key, so it is hashed into reports/p2_counts.json for lineage.
+
+source:
+  provider: agb_de
+  # The corpus CSV is read from GitHub at a pinned commit; the authors'
+  # train/test assignment comes from the HuggingFace mirror of the same data.
+  repo: DaBr01/AGB-DE
+  commit: 9b847807ec38809088e496c7847f94b4266ddf56
+  csv_path: corpus/agb-de-anonym.csv
+  hf_dataset: d4br4/agb-de
+  # Verified against the pinned commit.
+  expected_rows: 3764
+
+scope:
+  # AGB-DE tags every clause with one or more topics; these two are the
+  # prototype's remit. Everything else is carried but never published.
+  topics: [liability, warranty]
+  # Texts this short are section headings, not clauses. Flagged, not dropped:
+  # Phase 5's PDF splitter will produce these by the dozen, so the one real
+  # example in the corpus is worth keeping.
+  fragment_chars: 40
+  # Anonymisation placeholders are part of the clause text and stay verbatim.
+  placeholders: ["<<NAME>>", "<<STADT>>", "<<STRASSE>>"]
+
+splits:
+  # Reused so results stay comparable to the paper. We train nothing: `train`
+  # is the development half (prompts, thresholds, the retrieval answer key)
+  # and `test` is held out for the number we report.
+  dev: train
+  held_out: test
+
+gate:
+  # Asserted on the scoped slice, before any flag-based exclusion.
+  scoped_clauses: 523
+  scoped_void: 39
+  dev_clauses: 419
+  dev_void: 31
+  held_out_clauses: 104
+  held_out_void: 8
+
+publish:
+  # Postgres table the app reads. Holds no labels - see core.invariants.
+  table: clauses
+  # Langfuse dataset carrying the answer key. Held-out split only.
+  dataset: agb-de-lw-test-v1
+
+# Phase 10 uses a separate, file-backed gold set. The production clause store
+# never receives these labels; only the held-out split is uploaded to Langfuse.
+avv:
+  source:
+    provider: eu_publications_office
+    celex: 32021D0915
+    language: de
+    url: https://eur-lex.europa.eu/legal-content/DE/TXT/?uri=CELEX:32021D0915
+  splits:
+    dev: dev
+    held_out: held_out
+  gate:
+    clauses: 40
+    dev_clauses: 30
+    held_out_clauses: 10
+    failed_examples: 8
+  publish:
+    dataset: avv-art28-de-held-out-v1

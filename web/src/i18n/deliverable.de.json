@@ -1,0 +1,35 @@
+{
+  "summary": {
+    "collapse": "Zusammenfassung einklappen",
+    "expand": "Zusammenfassung ausklappen",
+    "title": "Zusammenfassung",
+    "topRisks": "Wichtigste Risiken",
+    "voidGroups": "Unwirksame Klauseln nach Rechtsgrundlage",
+    "unnumbered": "Ohne Nummer"
+  },
+  "cost": {
+    "title": "Kosten und Zeit",
+    "reviewCost": "Kosten der Prüfung",
+    "wallTime": "Laufzeit",
+    "cacheShare": "Cache-Treffer",
+    "firstReview": "Kosten der Erstprüfung",
+    "tokens": "Token (Eingabe / Ausgabe)",
+    "latency": "Latenz",
+    "cost": "Kosten",
+    "unpriced": "Preise nicht hinterlegt"
+  },
+  "export": {
+    "title": "Exportieren",
+    "action": "Exportieren",
+    "description": "Erstellen Sie ein Memo oder eine Tabelle für die Due Diligence.",
+    "close": "Dialog schließen",
+    "format": "Format",
+    "draft": "Als Entwurf exportieren (offene Feststellungen einschließen)",
+    "blocked": "Der finale Export ist noch blockiert.",
+    "notFinished": "Die Prüfung läuft noch.",
+    "useDraft": "Stattdessen als Entwurf exportieren",
+    "cancel": "Abbrechen",
+    "exporting": "Export wird erstellt …",
+    "error": "Der Export konnte nicht erstellt werden."
+  }
+}

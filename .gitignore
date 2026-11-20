@@ -19,7 +19,7 @@ data/interim/**
 data/processed/**
 !data/**/.gitkeep
 
-# Vector store and app database are build artifacts
+# app.db is a build artifact; the vector store now lives in Qdrant Cloud
 stores/**
 !stores/.gitkeep
 
@@ -31,3 +31,12 @@ models/
 .DS_Store
 .idea/
 .vscode/
+
+# Frontend package and build artifacts
+.pnpm-store/
+web/node_modules/
+web/dist/
+
+# Playwright
+web/test-results/
+web/playwright-report/

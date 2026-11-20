@@ -1,0 +1,39 @@
+# Phase 10 agent profile for Auftragsverarbeitungsverträge (Art. 28 DSGVO).
+
+profile: avv
+document_type: avv
+collection_alias: dsgvo_avv
+
+obligations:
+  - code: a
+    label_de: Weisungsbindung
+    legal_basis: Art. 28 Abs. 3 lit. a DSGVO
+    question_de: "Erfüllt die Klausel Art. 28 Abs. 3 lit. a?"
+  - code: b
+    label_de: Vertraulichkeit
+    legal_basis: Art. 28 Abs. 3 lit. b DSGVO
+    question_de: "Erfüllt die Klausel Art. 28 Abs. 3 lit. b?"
+  - code: c
+    label_de: Sicherheit der Verarbeitung
+    legal_basis: Art. 28 Abs. 3 lit. c DSGVO
+    question_de: "Erfüllt die Klausel Art. 28 Abs. 3 lit. c?"
+  - code: d
+    label_de: Unterauftragsverarbeiter
+    legal_basis: Art. 28 Abs. 3 lit. d DSGVO
+    question_de: "Erfüllt die Klausel Art. 28 Abs. 3 lit. d?"
+  - code: e
+    label_de: Betroffenenrechte
+    legal_basis: Art. 28 Abs. 3 lit. e DSGVO
+    question_de: "Erfüllt die Klausel Art. 28 Abs. 3 lit. e?"
+  - code: f
+    label_de: Unterstützungspflichten
+    legal_basis: Art. 28 Abs. 3 lit. f DSGVO
+    question_de: "Erfüllt die Klausel Art. 28 Abs. 3 lit. f?"
+  - code: g
+    label_de: Löschung und Rückgabe
+    legal_basis: Art. 28 Abs. 3 lit. g DSGVO
+    question_de: "Erfüllt die Klausel Art. 28 Abs. 3 lit. g?"
+  - code: h
+    label_de: Nachweise und Kontrollen
+    legal_basis: Art. 28 Abs. 3 lit. h DSGVO
+    question_de: "Erfüllt die Klausel Art. 28 Abs. 3 lit. h?"

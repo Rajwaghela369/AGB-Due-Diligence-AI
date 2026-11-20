@@ -3,22 +3,30 @@
 # so any change here means the index must be rebuilt.
 
 source:
-  # Confirmed against the provider on first download (Phase 0 smoke test).
-  provider: open_legal_data        # open_legal_data | gesetze_im_internet  (open: decide in Phase 1)
+  provider: open_legal_data
   dataset: openlegaldata/laws-germany
-  dump: dump-20260520
+  config: dump-20260520            # the dump to read; -1k and -10k variants exist for sampling
+  revision: ad694182262416ad204f43d0c13ca0a7dd12057e
 
 embedding:
-  provider: local                  # local | openai
-  model: BAAI/bge-m3
-  dimension: 1024
+  provider: jina
+  model: jina-embeddings-v5-text-small
+  dimension: 1024                  # Matryoshka: 1024 | 512 | 128 | 64
   normalize: true
-  batch_size: 32
+  batch_size: 64
+  # Task-specific LoRA adapters: indexing and searching use different ones.
+  task_passage: retrieval.passage
+  task_query: retrieval.query
 
 store:
-  backend: chroma                  # chroma | qdrant
-  path: stores/chroma
+  backend: qdrant                  # Qdrant Cloud; URL and key come from the environment
   collection: bgb_agb_v1
+  alias: bgb_agb                   # what the app reads; flipped only after the gate passes
+  distance: Cosine
+  # Qdrant point IDs must be int or UUID, so chunk_id is hashed to a
+  # deterministic UUID5 and kept verbatim in the payload.
+  id_strategy: uuid5_of_chunk_id
+  payload_indexes: [topics, paragraph, kind]
 
 chunking:
   # Per-paragraph level is set in kb_paragraphs.yaml; this is the fallback.
@@ -26,9 +34,35 @@ chunking:
   # Item chunks are grammatical fragments of the paragraph's stem sentence,
   # so the stem is carried into both embed_text and text.
   include_stem_sentence: true
-  embed_text_template: "{law} {paragraph} {title}{stem}{item_label}: {text}"
 
-retrieval:
-  top_k: 5
-  # Chunks tagged "general" are always in the candidate set, whatever the router says.
-  always_include_topics: ["general"]
+gate:
+  # Phase 1 gate: below this the alias does not move. Excluded from the index
+  # lineage (core.config.LINEAGE_EXCLUDED) - it judges the index, it does not
+  # shape it.
+  primary_at_5: 0.90
+
+# Phase 10 AVV norm set. It deliberately reuses the embedding contract while
+# keeping a separate versioned collection and stable application alias.
+dsgvo_avv:
+  source:
+    provider: eu_publications_office
+    celex: 32016R0679
+    config: CELEX-32016R0679-de
+    language: de
+    articles: [4, 28, 32]
+    definitions: [1, 2, 7, 8, 26]
+    url: https://eur-lex.europa.eu/legal-content/DE/TXT/?uri=CELEX:32016R0679
+  store:
+    backend: qdrant
+    collection: dsgvo_avv_v1
+    alias: dsgvo_avv
+    distance: Cosine
+    id_strategy: uuid5_of_chunk_id
+    payload_indexes: [paragraph, kind]
+  chunking:
+    level: paragraph_or_letter
+    include_stem_sentence: false
+
+# Retrieval policy (top_k, always-included topics and paragraphs, search depth)
+# is runtime configuration in app.yaml. The index lineage ends at chunking and
+# embedding and must not change when candidate breadth changes.

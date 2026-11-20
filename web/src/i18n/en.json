@@ -1,0 +1,440 @@
+{
+  "app": {
+    "name": "AGB Check",
+    "disclaimer": "Not legal advice — the lawyer makes the decision.",
+    "theme": "Change appearance"
+  },
+  "nav": {
+    "home": "Home",
+    "upload": "Upload document"
+  },
+  "health": {
+    "label": "API status",
+    "reachable": "API reachable",
+    "unreachable": "API unreachable",
+    "checking": "Checking API"
+  },
+  "pages": {
+    "home": {
+      "title": "Review contracts calmly and transparently",
+      "description": "Your recent reviews will appear here."
+    },
+    "upload": {
+      "title": "Add a contract",
+      "description": "PDF, DOCX and pasted text will be supported in the next step."
+    },
+    "review": {
+      "title": "Review",
+      "description": "The document view and findings will be brought together here."
+    },
+    "notFound": {
+      "title": "Page not found"
+    }
+  },
+  "risk": {
+    "void": "Potentially void",
+    "review": "To review",
+    "valid": "Valid",
+    "queued": "Queued",
+    "checking": "Checking…",
+    "failed": "Could not be checked",
+    "out": "Out of scope"
+  },
+  "workspace": {
+    "fit": "Fit width",
+    "nextOpen": "Next open finding",
+    "date": "Date",
+    "loading": "Loading review…",
+    "loadError": "The review could not be loaded.",
+    "document": "Document",
+    "viewDocument": "Document",
+    "viewTable": "Table",
+    "counts": {
+      "void": "{{count}} potentially void",
+      "review": "{{count}} to review",
+      "valid": "{{count}} valid",
+      "out": "{{count}} out of scope"
+    },
+    "alreadyReviewed": "Already reviewed: results from the stored review, with no new AI requests.",
+    "views": "Views",
+    "panes": "Areas",
+    "selectFinding": "Select a finding to review the clause."
+  },
+  "findings": {
+    "title": "Findings",
+    "filter": "Filter",
+    "filters": {
+      "void": "Void",
+      "review": "Review",
+      "all": "All"
+    },
+    "confidence": {
+      "high": "High confidence",
+      "medium": "Medium confidence",
+      "low": "Low confidence"
+    },
+    "empty": "No findings in this view.",
+    "waiting": "The first results will appear shortly.",
+    "failedHint": "Could not be checked — retry under “Technical details”.",
+    "activity": "Activity",
+    "activityEmpty": "No changes since opening.",
+    "step": {
+      "queued": "queued",
+      "checking": "checking",
+      "done": "checked",
+      "failed": "failed",
+      "out_of_scope": "out of scope"
+    }
+  },
+  "avv": {
+    "title": "AVV obligations",
+    "description": "Obligations found in the document and obligations missing under Article 28(3) GDPR.",
+    "filter": "Filter AVV obligations",
+    "filters": {
+      "all": "All",
+      "open": "Open",
+      "fulfilled": "Fulfilled"
+    },
+    "obligation": "Obligation",
+    "allObligations": "All obligations",
+    "fulfilled": "Fulfilled",
+    "open": "Open",
+    "showClause": "Show clause",
+    "noReason": "No reasoning available.",
+    "missingTitle": "Missing obligations",
+    "progress": "{{found}} found · {{missing}} missing",
+    "empty": "No AVV obligations match this filter."
+  },
+  "drawer": {
+    "close": "Close",
+    "description": "Details for the selected clause with legal basis, reasoning and feedback.",
+    "clause": "Clause",
+    "confidence": "Confidence",
+    "confidenceBands": {
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    },
+    "legalBasis": "Legal basis",
+    "noBasis": "No legal basis cited.",
+    "statuteLoading": "Loading statute text …",
+    "statuteError": "The statute text could not be loaded.",
+    "statuteSource": "Open source",
+    "reasoning": "Reasoning",
+    "reasonUnavailable": "Reasoning not available",
+    "regenerate": "Generate reasoning",
+    "regenerating": "Generating reasoning …",
+    "regenerateError": "The reasoning could not be generated. Please try again.",
+    "noVerdict": "There is no verdict for this clause yet.",
+    "technical": "Technical details",
+    "confidenceNumeric": "Confidence (number)",
+    "candidates": "Candidates and scores",
+    "noCandidates": "No candidates.",
+    "retry": "Retry check",
+    "retryError": "The retry could not be started.",
+    "trace": "Trace in Langfuse"
+  },
+  "feedback": {
+    "prompt": "Was this assessment helpful?",
+    "up": "Helpful",
+    "down": "Not helpful",
+    "sentUp": "Helpful",
+    "sentDown": "Not helpful",
+    "error": "Feedback could not be saved.",
+    "reasons": "What was wrong?",
+    "reason": {
+      "verdict_wrong": "Verdict wrong",
+      "basis_wrong": "Wrong or missing §",
+      "reasoning_unclear": "Reasoning unclear",
+      "clause_cut": "Clause cut incorrectly"
+    },
+    "correctVerdict": "Correct verdict",
+    "chooseVerdict": "Please choose",
+    "verdict": {
+      "valid": "Valid",
+      "potentially_void": "Potentially void",
+      "uncertain": "Needs review"
+    },
+    "correctBasis": "Correct or missing §",
+    "basisPlaceholder": "e.g. § 309 Nr. 7 BGB",
+    "comment": "Comment (optional)",
+    "send": "Send",
+    "cancel": "Cancel",
+    "steps": "Rate individual steps",
+    "step": {
+      "clause_span": "Clause split",
+      "retrieval": "Legal basis retrieval",
+      "judge": "Verdict",
+      "explanation": "Reasoning"
+    },
+    "stepDown": "Rate step “{{step}}” down"
+  },
+  "home": {
+    "loading": "Loading reviews …",
+    "loadError": "The documents could not be loaded.",
+    "title": "Your reviews",
+    "description": "Open an earlier review or start a new one.",
+    "newReview": "New review",
+    "empty": {
+      "title": "No reviews yet",
+      "description": "Upload a contract to start the first review."
+    },
+    "notReviewed": "Not reviewed yet",
+    "startReview": "Start review",
+    "aiCostHint": "The review uses AI requests and may incur costs.",
+    "scope": "Scope of review",
+    "cancel": "Cancel",
+    "closeDialog": "Close dialog",
+    "startError": "The review could not be started. Please try again.",
+    "progress": "{{done}} of {{total}} clauses checked",
+    "status": {
+      "queued": "Waiting",
+      "running": "Running",
+      "finished": "Finished",
+      "failed": "Failed",
+      "awaiting_decisions": "Decisions pending"
+    },
+    "table": {
+      "label": "Reviews as a table",
+      "title": "Documents and reviews",
+      "count": "{{count}} reviews",
+      "search": "Search documents",
+      "status": "Filter by status",
+      "document": "Document",
+      "risk": "Findings",
+      "progress": "Progress",
+      "usage": "Usage",
+      "action": "Action",
+      "empty": "No reviews match this filter.",
+      "filters": {
+        "all": "All",
+        "active": "Active",
+        "decisions": "Pending decisions",
+        "finished": "Done",
+        "failed": "Failed",
+        "unreviewed": "Unreviewed"
+      },
+      "reset": "Clear filters",
+      "count_one": "1 review",
+      "count_other": "{{count}} reviews"
+    }
+  },
+  "upload": {
+    "title": "Add a contract",
+    "description": "Upload a PDF or DOCX, or paste the contract text.",
+    "documentType": "Document type",
+    "documentTypes": {
+      "agb": "General terms and conditions (AGB)",
+      "agbHint": "Review typical terms and conditions clauses.",
+      "avv": "Data processing agreement (AVV)",
+      "avvHint": "Review the obligations under Article 28(3) GDPR."
+    },
+    "dropzone": "Drop a file here",
+    "formats": "PDF or DOCX",
+    "chooseFile": "Choose file",
+    "pasteAlternative": "Paste text",
+    "pasteLabel": "Contract text",
+    "fileAlternative": "Upload a file instead",
+    "scope": "Scope of review",
+    "liability": "Liability",
+    "warranty": "Warranty",
+    "start": "Start review",
+    "errors": {
+      "too_large": "The file is too large.",
+      "unsupported_type": "This file type is not supported. Please use PDF or DOCX.",
+      "encrypted": "The file is password protected. Please upload it without protection.",
+      "no_text_layer": "The PDF contains no text (probably a scan). Please use a searchable PDF.",
+      "conversion_failed": "The file could not be converted.",
+      "parse_failed": "The file could not be read.",
+      "parse_timeout": "Reading the file took too long. Please try again.",
+      "empty": "No text was found. Please provide a file or text.",
+      "archive_too_large": "The archive is too large.",
+      "rate_limited": "Too many requests. Please wait a moment and try again.",
+      "no_scope": "Please select at least one scope.",
+      "generic": "The upload failed. Please try again."
+    }
+  },
+  "table": {
+    "label": "Results as a table",
+    "search": "Search clauses",
+    "verdict": "Verdict",
+    "topic": "Topic",
+    "allVerdicts": "All verdicts",
+    "allTopics": "All topics",
+    "rows": "{{count}} clauses",
+    "number": "No.",
+    "clause": "Clause",
+    "basis": "Legal basis",
+    "confidence": "Confidence",
+    "status": "Status",
+    "statusDone": "Checked",
+    "confidenceBands": {
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    },
+    "decision": "Decision",
+    "allDecisions": "All decisions"
+  },
+  "viewer": {
+    "toolbar": "Document tools",
+    "loading": "Loading document …",
+    "loadError": "The document could not be loaded.",
+    "page": "Page {{page}} of {{total}}",
+    "clause": "Clause {{name}}: {{state}}",
+    "retry": "Retry",
+    "retrying": "Retrying …",
+    "retryClause": "Check clause {{name}} again",
+    "search": {
+      "label": "Search the document",
+      "placeholder": "Search …",
+      "none": "No matches",
+      "position": "{{current}} / {{count}}",
+      "next": "Next match",
+      "previous": "Previous match"
+    },
+    "nav": {
+      "label": "Findings",
+      "position": "{{current}} / {{total}}",
+      "next": "Next finding",
+      "previous": "Previous finding"
+    },
+    "zoom": {
+      "label": "Zoom",
+      "in": "Zoom in",
+      "out": "Zoom out",
+      "reset": "Zoom {{percent}} % – reset to 100 %"
+    },
+    "steps": {
+      "label": "Review progress",
+      "upload": "Upload",
+      "read": "Read",
+      "split": "Split",
+      "done": "done",
+      "check": "Checking {{done}}/{{total}}",
+      "awaitingDecisions": "waiting for decisions",
+      "waiting": {
+        "rate_limit": "waiting for rate limit",
+        "daily_budget": "daily budget reached"
+      }
+    }
+  },
+  "hotkeys": {
+    "title": "Keyboard shortcuts",
+    "open": "Show keyboard shortcuts",
+    "close": "Close",
+    "description": "These shortcuts work in the review view while no input field is active.",
+    "next": "Next finding",
+    "previous": "Previous finding",
+    "search": "Focus search",
+    "escape": "Close details or clear search",
+    "help": "Show or hide this overview",
+    "keys": "Key",
+    "action": "Action",
+    "accept": "Accept finding",
+    "override": "Override finding",
+    "dismiss": "Dismiss finding"
+  },
+  "decision": {
+    "title": "Decision",
+    "status": {
+      "open": "Open",
+      "accepted": "Accepted",
+      "overridden": "Overridden",
+      "dismissed": "Dismissed",
+      "awaiting": "Decision needed"
+    },
+    "accept": "Accept",
+    "dismiss": "Dismiss",
+    "note": "Note (optional)",
+    "awaitingHint": "The AI is unsure about this clause. Please decide yourself.",
+    "statusFilter": "Decision",
+    "statusFilters": {
+      "all": "All",
+      "open": "Open",
+      "accepted": "Accepted",
+      "overridden": "Overridden",
+      "dismissed": "Dismissed"
+    },
+    "verdict": {
+      "valid": "Valid",
+      "potentially_void": "Potentially void",
+      "uncertain": "To review"
+    },
+    "current": {
+      "accept": "Accepted",
+      "dismiss": "Dismissed (not relevant)",
+      "override": "Overridden: {{verdict}}"
+    },
+    "override": {
+      "open": "Override",
+      "verdict": "Your verdict",
+      "basis": "Legal basis",
+      "noBasis": "No suggestions available.",
+      "basisHint": "With no selection the AI's § stays.",
+      "model": "AI verdict",
+      "needVerdict": "Please choose a verdict.",
+      "needChange": "Please choose a different verdict or a different §.",
+      "confirm": "Confirm override",
+      "cancel": "Cancel"
+    },
+    "error": {
+      "generic": "The decision could not be saved. Please try again."
+    }
+  },
+  "audit": {
+    "title": "History",
+    "loading": "Loading history …",
+    "loadError": "The history could not be loaded.",
+    "empty": "No decision yet.",
+    "unknown": "Unknown",
+    "unauthenticated": "not signed in",
+    "action": {
+      "accept": "Accepted",
+      "override": "Overridden",
+      "dismiss": "Dismissed"
+    },
+    "verdict": "Verdict",
+    "basis": "§",
+    "agentVersion": "Agent version",
+    "noVerdict": "none"
+  },
+  "progress": {
+    "label": "Decision progress",
+    "text": "{{decided}} of {{total}} decided",
+    "open": "Open findings",
+    "openVoid": "Potentially void open: {{count}}",
+    "openReview": "To review open: {{count}}",
+    "decided": "Decided: {{count}}",
+    "complete": "Complete review",
+    "completeDisabled": "Possible once every void and review finding is decided.",
+    "confirmTitle": "Complete the review?",
+    "confirmText": "Every finding is decided. The export follows in a later version; you return to the overview.",
+    "confirm": "Complete",
+    "cancel": "Cancel"
+  },
+  "agreement": {
+    "title": "Agreement with your decisions",
+    "version": "Agent version {{version}}",
+    "none": "No decisions yet.",
+    "unavailable": "Agreement is not available.",
+    "decided": "Decided: {{count}}",
+    "kept": "Kept: {{count}}",
+    "overridden": "Overridden: {{count}}",
+    "dismissed": "Dismissed: {{count}}",
+    "explain": "Share of decisions that kept the AI's verdict; dismissed findings do not count."
+  },
+  "reviewer": {
+    "title": "Your name",
+    "description": "It is stored with every decision in the history. There is no sign-in yet.",
+    "label": "Name",
+    "hint": "The name is stored in this browser.",
+    "save": "Save",
+    "skip": "Continue without a name",
+    "close": "Close",
+    "none": "No name set",
+    "set": "Set name",
+    "change": "Change name (current: {{name}})",
+    "unauthenticated": "not signed in"
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "config_hash": "7ba75d03b619fad9",
+  "source_commit": "9b847807ec38809088e496c7847f94b4266ddf56",
+  "corpus_rows": 3764,
+  "unassigned_corpus_rows": 5,
+  "normalized_rows": 3764,
+  "scoped": {
+    "clauses": 523,
+    "void": 39,
+    "contracts": 89,
+    "fragments": 1,
+    "foreign_law_clauses": 18,
+    "foreign_law_contracts": [
+      18,
+      29
+    ]
+  },
+  "splits": {
+    "train": {
+      "clauses": 419,
+      "void": 31
+    },
+    "test": {
+      "clauses": 104,
+      "void": 8
+    }
+  },
+  "published": {
+    "table": "clauses",
+    "table_rows": 523,
+    "dataset": "agb-de-lw-test-v1",
+    "dataset_items": 104,
+    "dry_run": false
+  },
+  "gate": [
+    {
+      "check": "scoped_clauses",
+      "got": 523,
+      "want": 523,
+      "passed": true
+    },
+    {
+      "check": "scoped_void",
+      "got": 39,
+      "want": 39,
+      "passed": true
+    },
+    {
+      "check": "dev_clauses",
+      "got": 419,
+      "want": 419,
+      "passed": true
+    },
+    {
+      "check": "dev_void",
+      "got": 31,
+      "want": 31,
+      "passed": true
+    },
+    {
+      "check": "held_out_clauses",
+      "got": 104,
+      "want": 104,
+      "passed": true
+    },
+    {
+      "check": "held_out_void",
+      "got": 8,
+      "want": 8,
+      "passed": true
+    }
+  ],
+  "gate_passed": true
+}

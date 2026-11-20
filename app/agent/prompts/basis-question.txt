@@ -1,0 +1,6 @@
+Ergibt sich die Unwirksamkeit dieser Klausel aus {citation}?
+
+Der nachstehende Auszug gibt den Inhalt dieser Norm wieder. Bejahe nur, wenn gerade diese Norm die Klausel erfasst und zu ihrer Unwirksamkeit führt - nicht schon dann, wenn die Norm dasselbe Thema betrifft.
+
+{citation}:
+{text}
