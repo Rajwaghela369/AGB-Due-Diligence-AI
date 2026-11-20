@@ -1,7 +1,6 @@
-"""Summary block and DD export (Phase 8, 8.A and 8.B). Wave 1 slice: export.
+"""Summary and due-diligence export endpoints.
 
-The routes are final; the bodies are `Service.summary` and `Service.export`, which raise
-NotImplementedError (501 `not_implemented`) until Wave 1 fills them in.
+The service layer supplies the summary and export implementations.
 """
 
 from typing import Annotated

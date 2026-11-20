@@ -2,8 +2,8 @@
 
 models:
   router:
-    provider: jina
-    name: jina-embeddings-v3
+    provider: gemini
+    name: gemini-decision-1
   # The judge runs on the Decisions API: typed questions, calibrated
   # probabilities, zero output tokens. Model id verified from
   # aistudio.google.com/docs/decisions-api.
@@ -34,9 +34,8 @@ prompts:
   label: evaluation
 
 retrieval:
-  # No-router retrieval measured primary@5 0.258, below the current 0.355.
-  # Keep the cheap Jina router (models.router) and force AGB-control
-  # paragraphs into every set.
+  # Topic routing uses the Gemini Decisions API; Jina remains the embedding provider
+  # for the legal-query search itself. Force AGB-control paragraphs into every set.
   top_k: 10
   always_include_topics: [general]
   always_include_paragraphs: [305, 305a, 305b, 305c, 306, 306a, 307, 308, 309, 310]
@@ -124,17 +123,15 @@ api:
 
 files:
   # Immutable source PDFs, one file per document (Phase 9, 9.D: per source hash, shared by
-  # documents of the same bytes). "local" keeps them under `root`; "s3" uses an
-  # S3-compatible bucket (app.store.s3): MinIO in Docker Compose, an EU provider in
-  # production. Credentials come from S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY, never here.
-  backend: local
-  # Docker mounts this as a volume.
+  # documents of the same bytes). Credentials come from S3_ACCESS_KEY_ID /
+  # S3_SECRET_ACCESS_KEY, never here.
+  backend: s3
   root: stores/files
   s3:
-    endpoint_url: http://localhost:9000  # MinIO; e.g. https://fsn1.your-objectstorage.com
+    endpoint_url: https://br-raspy-block-b924x5c2.storage.c-7.eu-central-1.aws.neon.tech
     region: eu-central-1
     bucket: agb-check-files
-    prefix: ""
+    prefix: "agb-check/"
     server_side_encryption: AES256
     presign_seconds: 300
     # proxy: the API streams the file; redirect: 307 to a presigned URL.

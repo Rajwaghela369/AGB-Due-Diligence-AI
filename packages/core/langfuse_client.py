@@ -2,7 +2,7 @@
 
 Named to avoid shadowing the `langfuse` package on import.
 
-Phase 9 (9.A): every client gets `mask=boundary().langfuse_mask`, so each observation's
+Every client gets `mask=boundary().langfuse_mask`, so each observation's
 input, output and metadata is masked before the SDK sends it. The hook reads the boundary
 at call time, so a client built before `configure` still masks. Scores' comments and
 dataset items are not observations; their writers mask them explicitly.

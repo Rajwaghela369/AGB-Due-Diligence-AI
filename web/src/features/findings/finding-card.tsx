@@ -14,7 +14,11 @@ import { FeedbackControl } from "./feedback-control";
 import { clauseTitle } from "./helpers";
 import { strongestBasis, useStatute } from "./use-statute";
 
-export function FindingCard(props: { finding: ReviewFinding; reviewId: string }) {
+export function FindingCard(props: {
+  finding: ReviewFinding;
+  reviewId: string;
+  onOpen?: (() => void) | undefined;
+}) {
   const { finding, reviewId } = props;
   const { t } = useTranslation();
   const style = riskStyle(finding);
@@ -53,12 +57,18 @@ export function FindingCard(props: { finding: ReviewFinding; reviewId: string })
     >
       <button
         type="button"
-        onClick={() => select(finding.position)}
+        onClick={() => {
+          select(finding.position);
+          props.onOpen?.();
+        }}
         onFocus={() => hover(finding.position)}
         onBlur={() => hover(null)}
         className="block w-full rounded-lg p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <span className="flex items-center gap-2 text-sm font-medium">
+        <span className="mb-1.5 block text-[0.94rem] font-semibold leading-snug">
+          {clauseTitle(finding)}
+        </span>
+        <span className="flex flex-wrap items-center gap-1.5 text-xs font-medium">
           <Icon
             className={cn("size-4 shrink-0", style.tone === "checking" && "animate-spin")}
             style={{ color: style.color }}
@@ -71,7 +81,6 @@ export function FindingCard(props: { finding: ReviewFinding; reviewId: string })
             </span>
           )}
         </span>
-        <span className="mt-1 block text-sm">{clauseTitle(finding)}</span>
         {isDecidable(finding) && (
           <span className="mt-1.5 block">
             <StatusBadge finding={finding} />
@@ -83,7 +92,7 @@ export function FindingCard(props: { finding: ReviewFinding; reviewId: string })
           </span>
         )}
         {reason && (
-          <span className="mt-1 line-clamp-1 block text-xs text-muted-foreground">{reason}</span>
+          <span className="mt-1 line-clamp-1 text-xs text-muted-foreground">{reason}</span>
         )}
         {style.tone === "failed" && (
           <span className="mt-1 block text-xs text-muted-foreground">

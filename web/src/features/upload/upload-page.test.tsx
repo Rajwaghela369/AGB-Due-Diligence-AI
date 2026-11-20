@@ -111,6 +111,7 @@ describe("UploadPage", () => {
 
   it("sends the selected AVV document type in multipart upload", async () => {
     let uploadedType = "";
+    let reviewBody: unknown;
     server.use(
       http.post(`${ORIGIN}/api/v1/documents`, async ({ request }) => {
         uploadedType = (await request.formData()).get("document_type") as string;
@@ -118,9 +119,12 @@ describe("UploadPage", () => {
           documentOut({ document: documentRecord({ document_type: "avv" }) }),
         );
       }),
-      http.post(`${ORIGIN}/api/v1/reviews`, () =>
-        HttpResponse.json({ review: review({ review_id: "avv-review", document_type: "avv" }) }),
-      ),
+      http.post(`${ORIGIN}/api/v1/reviews`, async ({ request }) => {
+        reviewBody = await request.json();
+        return HttpResponse.json({
+          review: review({ review_id: "avv-review", document_type: "avv" }),
+        });
+      }),
     );
     renderPage(<UploadPage />, "/upload");
     chooseFile();
@@ -129,6 +133,9 @@ describe("UploadPage", () => {
 
     expect(await screen.findByTestId("location")).toHaveTextContent("/reviews/avv-review");
     expect(uploadedType).toBe("avv");
+    expect(screen.queryByLabelText("Haftung")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Gewährleistung")).not.toBeInTheDocument();
+    expect(reviewBody).toEqual({ document_id: "doc-1", scope: [] });
   });
 
   it("accepts pasted text", async () => {

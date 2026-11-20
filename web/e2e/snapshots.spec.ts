@@ -34,7 +34,7 @@ html, body { font-family: Arial, Helvetica, sans-serif !important; }
 `;
 
 /** Upload date of the document, the only text that changes with the clock. */
-const CLOCK_TEXT = (page: Page) => page.locator("li span.mt-1:has(svg.lucide-calendar-days)");
+const CLOCK_TEXT = (page: Page) => page.getByTestId("document-date");
 
 /** Wall time and cache share vary with the run (and so does their width): pin the text. */
 const pinWallTime = (page: Page) =>
@@ -94,7 +94,7 @@ const ROUTES: Route[] = [
     name: "workspace",
     open: async (page) => {
       await page.goto(`/reviews/${reviewId}`);
-      await expect(page.getByTestId("risk-summary")).toBeVisible();
+      await expect(page.getByTestId("document-viewer")).toBeVisible();
       await expect(page.getByRole("region", { name: /^Seite 1 von/ })).toBeVisible();
     },
   },
@@ -102,7 +102,7 @@ const ROUTES: Route[] = [
     name: "workspace-table",
     open: async (page) => {
       await page.goto(`/reviews/${reviewId}`);
-      await expect(page.getByTestId("risk-summary")).toBeVisible();
+      await expect(page.getByTestId("document-viewer")).toBeVisible();
       const tab = page.getByRole("tab", { name: "Tabelle" });
       await tab.click();
       await expect(tab).toHaveAttribute("aria-selected", "true");

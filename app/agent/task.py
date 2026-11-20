@@ -1,8 +1,7 @@
-"""Wires the graph to real providers and exposes it as a harness task function.
+"""Wire the graph to providers and expose it as an evaluation task.
 
 The signature matches `evals.baseline.task`, so the harness, the scorers and the
-reports work on the agent without a single change - which is what makes the
-agent's number comparable to the Phase 3 baseline.
+reports work on the agent without a separate adapter.
 """
 
 from contextlib import suppress
@@ -71,7 +70,7 @@ def index_hash() -> str:
 def run_metadata(app_config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Everything needed to tell two runs apart after the fact.
 
-    The first Phase 4 run recorded only approach, split and item count, which
+    Run metadata includes the approach, split, model, prompt, and index details so
     made two runs with different prompts indistinguishable in Langfuse.
     """
     app_config = app_config or load_yaml(CONFIGS / "app.yaml")
@@ -126,7 +125,15 @@ def make_task(
         return decide(text, questions, model or judge_model, budget=budget, client=client)
 
     def router(text: str) -> str:
-        return classify_topic(text, model=router_model.get("name", "jina-embeddings-v3"))
+        try:
+            return classify_topic(
+                text,
+                model=router_model.get("name", "gemini-decision-1"),
+                budget=budget,
+                client=client,
+            )
+        except Exception:  # noqa: BLE001 - broad retrieval is safer than dropping a clause
+            return ""
 
     router_callable = router if router_model else None
 
@@ -176,7 +183,7 @@ def make_task(
     def run(*, item: Any, **_: Any) -> dict[str, Any]:
         clause = item["input"] if isinstance(item, dict) else item.input
         hashes[clause["clause_id"]] = content_hash(clause["text"])
-        # Phase 9 (9.A): one masking scope per clause, as in app.agent.run.make_judge:
+        # Use one masking scope per clause, matching the API judge:
         # clause text first, heading second, answers restored only from the clause text.
         with masking.scope(
             None,

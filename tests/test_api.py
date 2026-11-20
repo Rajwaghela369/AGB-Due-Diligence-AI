@@ -811,7 +811,7 @@ def test_build_app_wires_the_real_service_contract(monkeypatch, with_langfuse):
         (store, judge, limiter, expected_tracer),
         {
             "statutes": {},
-            "router_model": "jina-embeddings-v3",
+            "router_model": "gemini-decision-1",
             "feedback": application.state.feedback,
             "deliverable": deliverable_settings(config),
             "summary_model": summary_model,
@@ -821,8 +821,9 @@ def test_build_app_wires_the_real_service_contract(monkeypatch, with_langfuse):
             "prices": {"input": 0.0, "output": 0.0},
         },
     )
-    # Topics come from the Jina classifier under the configured model, batched.
+    # Topics come from the Gemini Decisions classifier under the configured model.
     assert router.func.__name__ == "classify_topics"
-    assert router.keywords == {"model": "jina-embeddings-v3"}
+    assert router.keywords["model"] == "gemini-decision-1"
+    assert router.keywords["budget"] is limiter
     assert application.state.feedback.langfuse is expected_tracer
     assert calls["files_root"] == ROOT / "stores/files"

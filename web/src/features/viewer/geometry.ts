@@ -54,7 +54,7 @@ export function zoomOut(zoom: number): number {
 
 /** pdf.js viewport scale for a zoom level. */
 export function viewportScale(zoom: number): number {
-  return clampZoom(zoom) * CSS_PER_POINT;
+  return zoom * CSS_PER_POINT;
 }
 
 /** The page's size in CSS pixels, unsnapped, so it matches pdf.js's viewport exactly. */

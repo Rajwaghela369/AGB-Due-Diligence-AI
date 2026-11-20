@@ -501,15 +501,18 @@ def test_embeddings_key_the_cache_on_the_original_and_send_the_masked_text(monke
 def test_the_topic_router_sends_masked_text(monkeypatch):
     sent = []
 
-    def post(url, *, headers, json, timeout):
-        boundary().require_masked(json["input"])
-        sent.extend(json["input"])
-        return Response(
-            {"data": [{"index": 0, "predictions": [{"label": "liability", "score": 0.9}]}]}
+    def decide(text, questions, model, **kwargs):
+        masked = boundary().outbound(text)
+        boundary().require_masked(masked)
+        sent.append(masked)
+        return llm.DecisionResult(
+            answers={"topic": llm.Answer(value="liability", confidence=0.9)},
+            input_tokens=10,
+            output_tokens=0,
+            model="fake",
         )
 
-    monkeypatch.setattr(routing.requests, "post", post)
-    monkeypatch.setattr(routing, "load_settings", lambda: SimpleNamespace(jina_api_key="k"))
+    monkeypatch.setattr(routing, "decide", decide)
     masking.configure(PresidioMasker(allow_regex_only=True))
     assert routing.classify_topics([CLAUSE]) == ["liability"]
     assert "Weber" not in sent[0]

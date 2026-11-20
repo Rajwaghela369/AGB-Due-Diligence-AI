@@ -1,184 +1,153 @@
 # AGB-Check
 
-Agentic review of German consumer terms and conditions (AGB): flags potentially void
-clauses, cites the BGB paragraph, and explains why. This repository contains an MVP
-close to production shape for evaluation and demonstration; it is not a production
-service or legal advice.
+AGB-Check reviews German consumer terms and conditions. It splits a document into
+clauses, retrieves relevant BGB provisions, produces grounded findings, and lets a
+lawyer accept, override, or dismiss uncertain results.
 
-## Documents
+The repository contains an evaluation-ready MVP. It is not legal advice and has not
+been validated as a production legal service.
 
-- **`docs/Metrics.md` - every number the project is judged on, and which two are misleading**
-- `docs/AGB-Check Agentic AGB Review for German Legal Due Diligence.md` - project brief, system design, evaluation
-- `docs/Data pipelines.md` - P1 knowledge base ingestion, P2 evaluation data preparation
-- `docs/Development Phases.md` - build order and the gate for each phase
-- `docs/Phase 1 Results.md` - knowledge base numbers, what the spikes settled, limitations
-- `docs/Phase 2 Results.md` - clause counts, the flag-not-drop decisions, answer-key caveats
-- `docs/Phase 3 Results.md` - the one-shot baseline, and why recall is the unstable half
-- `docs/Phase 4 Plan.md` - the agent: what it does, its runnability gate, and the continuous evaluation track
-- `docs/Phase 4 Results.md` - what Phase 4 built and the numbers measured so far
-- `docs/Phase 5 Plan.md` - the backend API: ingest, cache-first review runner, AG-UI stream, feedback
-- `docs/Phase 6 Plan.md` - the frontend: annotated document, findings, table, feedback
-- `docs/Phase 7-10 Plan.md` - decisions, deliverables, DSGVO hardening and the AVV stretch scope
-- `docs/Phase 9 Design.md` - privacy, deletion, storage and authentication design
-- `docs/Phase 9 API.md` - current privacy, storage and OIDC contracts
-- `docs/Phase 10 API.md` - AVV contract and implementation boundary
-
-## Layout
+## Architecture
 
 ```text
-packages/core/   shared schemas, config, invariants - imported by all, deploys nowhere
-pipelines/
-  p1_kb/         offline job: builds the BGB vector index
-  p2_eval/       offline job: builds the clause table and the Langfuse dataset
-app/
-  agent/         LangGraph agent
-  api/           FastAPI + AG-UI
-evals/           runs in CI against app/agent; not a pipeline
-configs/         versioned pipeline inputs, hashed into the store manifest
-data/            raw -> interim -> processed; only data/gold is committed
-stores/          index manifest; vectors in Qdrant Cloud, tables in Neon Postgres
-reports/         quality gate output, committed for its git history
+web/                  React review workspace
+app/api/              FastAPI API, SSE events, authentication boundary
+app/ingest/           PDF/DOCX/text validation, parsing, and clause splitting
+app/review/           Review lifecycle, caching, events, decisions, exports
+app/agent/            LangGraph workflow and AGB/AVV judges
+packages/core/        Provider clients, retrieval, masking, settings, shared contracts
+pipelines/            Offline legal-index and evaluation-data pipelines
+evals/                Baselines, agent evaluation, and scoring
+configs/              Runtime and pipeline configuration
+data/gold/            Committed evaluation and splitter fixtures
+reports/              Recorded evaluation outputs
 ```
 
-Boundaries are enforced by `.importlinter`, checked in CI: `app` and `pipelines` are
-siblings and may not import each other, pipelines write the stores, the app reads them.
+The main review path is:
 
-## Getting started
-
-Prerequisites: Python 3.12, `uv`, Docker Compose, Node.js with Corepack/pnpm, and
-access to the configured external services. The API and evaluation commands use
-Gemini, Jina, Qdrant, Neon Postgres and Langfuse; the browser checks use local fakes.
-
-```bash
-cp .env.example .env     # fill in the keys; see the comments in the file
-corepack enable
-cd web && pnpm install && cd ..
+```text
+upload → normalize → split into clauses → route topic → retrieve legal text
+       → structured decision → grounding check → explanation → lawyer decision/export
 ```
 
-Set `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` in `.env` before using `make api-up`;
-Compose starts MinIO for development even though the default application file backend
-is local. Then install the Python environment and run the local smoke gate:
+The LangGraph workflow is implemented in `app/agent/graph.py`. It uses a typed Gemini
+decision for AGB topic routing, Jina for legal-query embeddings, Qdrant for retrieval,
+and Gemini for the structured legal decision and German explanation. Review-start topic
+results are cached and reused by the graph, so a clause is not routed twice.
+
+AVV reviews use the same review infrastructure with a separate DSGVO norm set and
+multi-label Art. 28 obligation router.
+
+## Services
+
+The local Docker stack contains:
+
+- FastAPI API on `http://localhost:8000`
+- Gotenberg on `http://localhost:3000` for DOCX-to-PDF conversion
+
+The frontend runs through Vite, normally on `http://localhost:5173`.
+
+The application connects to configured external services for Neon PostgreSQL, Neon
+S3-compatible storage, Qdrant, Gemini, Jina, and Langfuse. MinIO is not required by the
+current Compose configuration.
+
+## Setup
+
+Requirements: Python 3.12, `uv`, Docker Compose, Node.js/Corepack, and credentials for
+the configured external services.
 
 ```bash
+cp .env.example .env
 make install
-make smoke               # Phase 0 gate
 ```
 
-## Running the agent
+Set credentials in the untracked `.env`. Keep secrets out of YAML, source files, and
+`.env.example`. The S3 bucket is configured in `configs/app.yaml`; credentials use the
+standard `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` variables. `AWS_ENDPOINT_URL_S3`
+and `AWS_REGION` override the YAML endpoint and region for deployments such as Neon Object
+Storage.
 
-The agent needs `GEMINI_API_KEY` (judge and explanation), `JINA_API_KEY` (routing and
-retrieval), Qdrant (the BGB index built by `make kb`), `DATABASE_URL` (clauses and
-verdicts) and the Langfuse keys (prompts and traces).
+## Run locally
+
+Start the API and Gotenberg:
 
 ```bash
-make seed-prompts        # once, and after any prompt change
-make eval-smoke          # 5 dev clauses end to end - the Phase 4 gate
-make eval                # the stratified 70-clause dev slice, for continuous evaluation
+make api-up
 ```
 
-Each clause produces one nested Langfuse trace (route, retrieve, judge, self-check,
-retry, explain) and a row in the Postgres `verdicts` table, keyed by clause content
-hash and `agent_version` and carrying the trace id. The run report lands in `reports/`:
-`p4_agent_dev5.json` for the smoke run, `p4_agent_dev70.json` for `make eval`.
-Models, thresholds and the retrieval policy live in `configs/app.yaml`; run size and
-quota in `configs/evals.yaml`.
-
-## Running the API
-
-The API needs the same keys as the agent (`GEMINI_API_KEY`, `JINA_API_KEY`, `QDRANT_URL`,
-`QDRANT_API_KEY`, `DATABASE_URL`) and `GOTENBERG_URL` for DOCX conversion. `LOG_FORMAT=json`
-is optional: the API always logs one JSON object per line, with `request_id`, `review_id`,
-`document_id` and `trace_id` where known.
+In another terminal, start the frontend:
 
 ```bash
-make api-up              # build and start the API and Gotenberg in Docker Compose
-make api                 # or: run the API locally with reload, Gotenberg from compose
-make api-down            # stop the compose stack; stored PDFs stay in the files volume
+cd web
+pnpm install
+pnpm dev
 ```
 
-- `http://localhost:8000/api/v1/health` is liveness and always returns 200.
-- `http://localhost:8000/api/v1/ready` checks Neon, Qdrant, Gemini and Jina in parallel,
-  each with a two-second deadline. It returns 503 and names the failing check.
+Open `http://localhost:5173`.
 
-The API runs with **one worker** (`--workers 1`). Review runs and their SSE event streams
-are held in process memory until they move to Postgres LISTEN/NOTIFY; a second worker
-would split a review's events from the clients watching it.
+The API health endpoints are:
 
-The image copies `data/processed/bgb_chunks.jsonl` into the build. That file is gitignored
-and is written by `make kb`, so run it (or copy the file in) before `make api-up`, or the
-build fails at that step. `.dockerignore` does not exclude it.
+```text
+GET /api/v1/health   liveness
+GET /api/v1/ready    dependency readiness
+```
 
-Limits live in `configs/app.yaml`: `ingest.max_upload_mb`, `api.cors_origins` (the only
-browser origin allowed), `api.rate_limit_per_minute` and `api.rate_limit_burst` (uploads
-and reviews per client IP), and `files.root` for the stored PDFs.
+## Authentication
 
-## MVP boundary and non-production defaults
+Authentication is opt-in. The backend validates OIDC bearer tokens and uses the token
+subject as the document owner. The frontend contains an optional Neon Managed Better
+Auth integration.
 
-The AGB review flow, API, browser workspace, human decisions, summaries, exports, chat,
-storage abstractions, deletion logic and OIDC validation are implemented and tested.
-The current `stage` branch is still an MVP: run the full browser gate before relying on
-an environment, and treat all findings as review assistance rather than legal advice.
+Leave authentication disabled for the default local MVP. To test Neon Auth, configure
+the following in `.env` with values from the Neon Console:
 
-The following defaults are deliberate demo-MVP choices and are outside this project's
-scope; they are not required for the evaluation application:
+```env
+VITE_NEON_AUTH_ENABLED=true
+AGB_AUTH_ENABLED=true
+VITE_NEON_AUTH_URL=https://<branch>.neonauth.<region>.aws.neon.tech/neondb/auth
+NEON_AUTH_ISSUER=<issuer>
+NEON_AUTH_AUDIENCE=<audience>
+NEON_AUTH_JWKS_URI=<jwks-url>
+```
 
-- `privacy.masking.enabled: false`, `privacy.retention.enabled: false`,
-  `auth.enabled: false`, and `files.backend: local` in `configs/app.yaml`.
-- Gemini token prices are `0` and `eur_per_usd` is `null`, so displayed cost is marked
-  as unconfirmed until prices and an exchange-rate policy are supplied.
-- MinIO and Keycloak in `docker-compose.yml` are development services. Production
-  storage, OIDC provider, TLS, secrets, retention periods and backup policy are
-  intentionally not included in this MVP.
-- The browser login flow is not enabled by the default configuration; Keycloak is an
-  API/development validation path only until the web client integration is completed.
-- Phase 10 AVV support is currently contract/schema groundwork on this branch. The AVV
-  agent/UI implementation is not part of the default AGB MVP path.
-- The API is intentionally configured for one worker because review events are held in
-  process memory until the Postgres event path is used consistently.
+Enable `http://localhost:5173` as a trusted origin in Neon Auth. Neon owns its
+`neon_auth` schema; this application does not duplicate or migrate those tables.
 
-## Current state
+## Tests and checks
 
-Reference numbers, with the caveats that matter, in `docs/Metrics.md`:
+```bash
+make lint          # Python lint, formatting, and import boundaries
+make test          # Python unit and contract tests
+make web-check     # frontend generation, lint, typecheck, tests, and build
+make e2e           # browser workflow against the fake-model test API
+make check         # complete local CI-style check
+```
 
-| Metric | Value | Where it stands |
-| --- | --- | --- |
-| Void F1, Phase 3 baseline (dev, 419 clauses) | **0.276** | target for continuous evaluation |
-| Retrieval primary@5 (real clauses) | 0.258 → **0.355** | improved in Phase 4 |
+Live evaluation commands make external model calls and require explicit quota planning:
 
+```bash
+make eval-smoke
+make eval
+```
 
-Phase 1 complete: `make kb` builds and validates the BGB knowledge base, primary@5 0.933
-against the 0.90 gate. See `docs/Phase 1 Results.md`, including the known limitations.
+## Offline pipelines
 
-Phase 2 complete: `make eval-data` builds the 523-clause scope slice, splits it 419/104
-and publishes the clause table plus the Langfuse answer key; `make eval-data-dry` asserts
-every gate and the label-leak invariant without writing to any store; `make recheck`
-re-scores retrieval on real clause text.
+```bash
+make kb             # build and validate the BGB legal index
+make eval-data      # prepare clause data and answer keys
+make eval-data-dry  # validate evaluation data without writing stores
+make recheck        # score retrieval on real clause text
+```
 
-That re-check is the headline Phase 2 finding: **primary@5 0.258** over 31 real void
-clauses, against Phase 1's synthetic 0.933. It is recorded, not gated. The gap decomposes
-into a reachability defect in the topic filter and a register mismatch between clauses and
-the prohibitions that void them - see `docs/Phase 2 Results.md`. Fixing it is the first
-Phase 4 experiment.
+## Current limitations
 
-Phase 3 complete: `make baseline` runs the one-shot classifier over the dev half and
-`make baseline-held-out` produces the gate number. The baseline scores **void F1 0.276
-on dev** (P 0.174 / R 0.677) and 0.304 on held-out - it over-calls void roughly five
-times for every correct call, so precision is what Phase 4 has to earn. The harness in
-`evals/` is permanent and agent-agnostic; Phase 4's graph plugs into it unchanged. See
-`docs/Phase 3 Results.md`.
+- Model quality is tracked through evaluation reports; findings require lawyer review.
+- Gemini/Jina credentials and external stores are required for live reviews.
+- The default configuration is an MVP configuration, not a production deployment.
+- Retention, masking, authentication, and storage settings must be reviewed before
+  processing real client documents.
+- Generated frontend bundles include a large PDF worker chunk; this is a build warning,
+  not a functional failure.
 
-Phases 4–9: the agentic RAG graph, backend API, browser workspace, human decisions,
-deliverables and DSGVO hardening are present on this branch. They close on runnability
-and test coverage rather than a production accuracy claim; void F1 and recall remain
-continuous-evaluation metrics. See the phase plans and `docs/Metrics.md`.
-
-Phase 10: the AVV profile, migration and API contract are present, but the AVV agent and
-UI work remain separate branch work. Do not describe AVV checking as part of the current
-AGB MVP until those branches are merged and the end-to-end gate passes.
-
-## Stack
-
-Python 3.12, uv, LangGraph, FastAPI, Qdrant Cloud for vectors, Neon Postgres for
-tables, Prefect Cloud for pipeline orchestration and run observability, Jina for
-embeddings and topic routing, Gemini for the judge (Decisions API) and the explanation, and Langfuse (Cloud EU) for traces,
-prompts, datasets and scores.
+Detailed design, API contracts, evaluation results, and phase history are maintained in
+`docs/`.

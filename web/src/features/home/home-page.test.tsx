@@ -153,6 +153,9 @@ describe("HomePage", () => {
     renderPage(<HomePage />);
 
     expect(await screen.findByText("Läuft")).toBeInTheDocument();
+    const statusFilter = screen.getByRole("combobox", { name: "Status filtern" });
+    fireEvent.change(statusFilter, { target: { value: "finished" } });
+    expect(screen.queryByText("vertrag.pdf")).toBeNull();
     expect(await screen.findByText("Abgeschlossen", {}, { timeout: 8000 })).toBeInTheDocument();
     await waitFor(() => expect(polls).toBe(2));
     expect(screen.getByText("4 von 4 Klauseln geprüft")).toBeInTheDocument();

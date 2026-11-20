@@ -1,4 +1,4 @@
-"""The review side of an AVV (Phase 10, 10.C): routing at start, the missing-obligation check.
+"""Review-level AVV routing and missing-obligation checks.
 
 An AVV review runs through the same runner, events and decisions as an AGB review. Two
 things are its own:

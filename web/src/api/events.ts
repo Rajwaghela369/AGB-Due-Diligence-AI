@@ -3,6 +3,7 @@
 import { applyPatch, type Operation } from "fast-json-patch";
 import { useCallback, useEffect, useState } from "react";
 
+import { getNeonAccessToken } from "../auth";
 import type { ClauseStatus } from "./aliases";
 import type { ClauseVerdict, Review, Type } from "./types.gen";
 
@@ -37,6 +38,7 @@ export interface ReviewStreamOptions {
   initialBackoffMs?: number;
   maxBackoffMs?: number;
   sleep?: (milliseconds: number, signal: AbortSignal) => Promise<void>;
+  getToken?: () => Promise<string | null>;
 }
 
 export interface ReviewStream {
@@ -81,6 +83,8 @@ async function consumeReviewStream(
     try {
       const headers = new Headers({ Accept: "text/event-stream" });
       if (lastEventId !== null) headers.set("Last-Event-ID", lastEventId);
+      const token = await options.getToken?.();
+      if (token) headers.set("Authorization", `Bearer ${token}`);
       const response = await (fetchImplementation ?? globalThis.fetch)(
         `${baseUrl}/api/v1/reviews/${encodeURIComponent(reviewId)}/events`,
         { headers, signal },
@@ -208,16 +212,20 @@ export function useReviewStream(reviewId: string | undefined) {
   useEffect(() => {
     if (reviewId === undefined) return;
     let progress: ReviewProgress | null = null;
-    const stream = connectReviewStream(reviewId, ({ state, event }) => {
-      if (event.type === "CUSTOM" && event.name === "progress") {
-        const value = (event.value ?? {}) as Partial<ReviewProgress>;
-        progress = {
-          waiting_reason: value.waiting_reason ?? null,
-          budget_left: value.budget_left ?? null,
-        };
-      }
-      setCurrent({ reviewId, generation, state, progress });
-    });
+    const stream = connectReviewStream(
+      reviewId,
+      ({ state, event }) => {
+        if (event.type === "CUSTOM" && event.name === "progress") {
+          const value = (event.value ?? {}) as Partial<ReviewProgress>;
+          progress = {
+            waiting_reason: value.waiting_reason ?? null,
+            budget_left: value.budget_left ?? null,
+          };
+        }
+        setCurrent({ reviewId, generation, state, progress });
+      },
+      { getToken: getNeonAccessToken },
+    );
     void stream.done.catch((reason: unknown) => {
       const error = reason instanceof Error ? reason : new Error(String(reason));
       setFailure({ reviewId, error });

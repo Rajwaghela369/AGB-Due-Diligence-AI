@@ -1,4 +1,4 @@
-"""Validating OIDC access tokens against the issuer's published keys (Phase 9, 9.E).
+"""Validate OIDC access tokens against the issuer's published keys.
 
 The API never talks to the identity provider per request. It reads the provider's
 discovery document once (`{issuer}/.well-known/openid-configuration`), caches the key set

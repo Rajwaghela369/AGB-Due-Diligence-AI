@@ -1,4 +1,4 @@
-"""Who the caller is (Phase 9, 9.E). Wave 2 slice: auth-scale.
+"""Authenticated-caller endpoint.
 
 While `auth.enabled` is false the answer is the configured default owner, unauthenticated,
 so the UI can show "not signed in" without a login existing. docs/Phase 9 API.md, "Login".

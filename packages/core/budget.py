@@ -1,13 +1,8 @@
-"""Request accounting for runs on a metered or free-tier quota.
+"""Request accounting for metered providers.
 
-The first Phase 4 run spent $5 of Anthropic credit and then failed 113 clauses
-with "credit balance is too low" — the run did not stop, it degraded, and the
-resulting F1 was computed over a half-finished experiment. A budget that raises
-*before* the call that would exceed it turns that into a deliberate stop: the
-report then says 70 of 419 attempted rather than 419 attempted and 229 broken.
-
-`rpm` paces calls against a sliding one-minute window, because a free tier
-rejects bursts even when the daily total is nowhere near its cap.
+Requests are reserved before execution, paced by a sliding one-minute window, and
+bounded by an optional daily or per-run budget. Exhaustion raises instead of silently
+turning provider failures into verdicts.
 """
 
 import threading
@@ -121,7 +116,7 @@ def from_config(run: dict) -> RequestBudget:
 
 
 class SharedLimiter:
-    """One rate limit and one daily request budget for the whole server (Phase 5 contract).
+    """One rate limit and one daily request budget shared by the server.
 
     `RequestBudget` is per run: two reviews at once would each pace themselves
     to the full rpm and together exceed the provider's limit. The service builds

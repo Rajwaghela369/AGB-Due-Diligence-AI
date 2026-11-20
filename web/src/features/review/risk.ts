@@ -42,7 +42,7 @@ const STYLES: Record<Tone, RiskStyle> = {
     color: "var(--muted-foreground)",
   },
   failed: { tone: "failed", icon: XCircle, label: "risk.failed", color: "var(--muted-foreground)" },
-  out: { tone: "out", icon: CircleSlash, label: "risk.out", color: "transparent" },
+  out: { tone: "out", icon: CircleSlash, label: "risk.out", color: "var(--muted-foreground)" },
 };
 
 export function toneOf(finding: Pick<ReviewFinding, "status" | "verdict">): Tone {

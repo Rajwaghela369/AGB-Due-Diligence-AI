@@ -99,7 +99,7 @@ function docxParts(file: string): { body: string; headers: string } {
 }
 
 async function openExport(page: Page) {
-  await page.getByTestId("review-summary").getByRole("button", { name: "Exportieren" }).click();
+  await page.getByRole("button", { name: "Exportieren" }).click();
   return page.getByRole("dialog");
 }
 
@@ -153,7 +153,7 @@ test("a raw document becomes a DD-ready export built from the lawyer's decisions
   expect(blocking.length).toBeGreaterThan(1);
 
   // 1. The final export is refused and names every undecided finding.
-  await expect(page.getByTestId("review-summary")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Exportieren" })).toBeVisible();
   const dialog = await openExport(page);
   // With open findings the dialog proposes a draft; ask for the final export on purpose.
   await expect(dialog.getByRole("checkbox")).toBeChecked();

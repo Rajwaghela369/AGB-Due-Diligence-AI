@@ -45,10 +45,13 @@ export function DecisionProgress({ review }: { review: Review }) {
   return (
     <div
       data-testid="decision-progress"
-      className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border bg-surface px-3 py-2"
+      className="flex flex-wrap items-center gap-x-5 gap-y-3 rounded-lg border border-border bg-surface px-4 py-3"
     >
       <ProgressBar review={review} />
-      <ul className="flex flex-wrap gap-x-3 text-xs" aria-label={t("progress.open")}>
+      <ul
+        className="flex flex-wrap gap-x-4 text-sm text-muted-foreground"
+        aria-label={t("progress.open")}
+      >
         <li data-testid="open-void">{t("progress.openVoid", { count: progress.openVoid })}</li>
         <li data-testid="open-review">
           {t("progress.openReview", { count: progress.openReview })}

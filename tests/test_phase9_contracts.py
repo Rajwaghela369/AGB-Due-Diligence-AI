@@ -58,6 +58,7 @@ from tests.test_review_runner import FakeJudge, StubLimiter
 from tests.test_store_files_migrate import FakeDb
 
 APP_CONFIG = load_yaml(CONFIGS / "app.yaml")
+LOCAL_FILE_CONFIG = {**APP_CONFIG, "files": {**APP_CONFIG.get("files", {}), "backend": "local"}}
 NOW = datetime(2026, 11, 17, tzinfo=UTC)
 
 
@@ -429,9 +430,11 @@ def test_the_memory_file_store_deletes_idempotently_and_does_not_sign():
 
 
 def test_the_file_store_is_chosen_by_config(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("AWS_ENDPOINT_URL_S3", "")
+    monkeypatch.setenv("AWS_REGION", "")
     monkeypatch.setenv("S3_ACCESS_KEY_ID", "test-key")
     monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "test-secret")
-    assert isinstance(file_store_from_config(APP_CONFIG, tmp_path), LocalFileStore)
+    assert isinstance(file_store_from_config(LOCAL_FILE_CONFIG, tmp_path), LocalFileStore)
     assert (tmp_path / "stores/files").is_dir()
     s3 = file_store_from_config(
         {"files": {"backend": "s3", "s3": {"bucket": "b", "region": "fr-par"}}}, tmp_path

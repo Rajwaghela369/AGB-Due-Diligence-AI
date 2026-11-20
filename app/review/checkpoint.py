@@ -1,4 +1,4 @@
-"""Where interrupted clauses wait: the LangGraph checkpointer (Phase 7, 7.B).
+"""LangGraph checkpoint storage for interrupted clauses.
 
 An `uncertain` clause stops its graph after `self_check` (see `app.agent.graph`), and the
 lawyer may decide hours and several restarts later, so in production the checkpoint lives

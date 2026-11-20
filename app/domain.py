@@ -1,4 +1,4 @@
-"""Shared types for the Phase 5 service: documents, clauses, reviews, events, feedback.
+"""Shared domain types for documents, clauses, reviews, events, and feedback.
 
 The bottom layer inside `app`: every other app package may import it, it imports
 nothing of ours but `core`. These shapes are the contract the parallel Phase 5
@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, model_validator
 
 # --- documents and clauses --------------------------------------------------
 
-# Phase 9 (9.E): the owner of every row written without a login, and of every row that
+# Default owner for rows written without a login and for legacy rows.
 # existed before migration 006. `auth.default_owner` in configs/app.yaml overrides it.
 DEFAULT_OWNER_ID = "local"
 
@@ -85,7 +85,7 @@ class Document(BaseModel):
     # Chosen once at upload. Existing documents and clients remain AGB reviews.
     document_type: DocumentType = "agb"
     created_at: datetime | None = None
-    # Phase 9 (9.E): who owns it. Before login every document belongs to the configured
+    # Owner of the document. Before login every document belongs to the configured
     # default owner (`auth.default_owner`, DEFAULT_OWNER_ID); migration 006 gives existing
     # rows that owner.
     owner_id: str = Field(default_factory=lambda: DEFAULT_OWNER_ID)
@@ -202,7 +202,7 @@ class Review(BaseModel):
     created_at: datetime | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
-    # Phase 9 (9.E): who started it; the document's owner in v1 (docs/Phase 9 Design.md).
+    # User who started the review; initially the document owner.
     owner_id: str = Field(default_factory=lambda: DEFAULT_OWNER_ID)
 
 

@@ -103,37 +103,40 @@ describe("useReview", () => {
     expect(findingRequests).toBeGreaterThan(requests);
   });
 
-  it("waits for stored findings and never streams a finished review", async () => {
-    server.use(
-      http.get("http://localhost/api/v1/reviews/r1/findings", () =>
-        HttpResponse.json({
-          review: { ...REVIEW, status: "finished" },
-          findings: [
-            {
-              position: 0,
-              status: "done",
-              clause: {
+  it.each(["finished", "awaiting_decisions"] as const)(
+    "keeps stored findings for a %s review without replaying earlier events",
+    async (status) => {
+      server.use(
+        http.get("http://localhost/api/v1/reviews/r1/findings", () =>
+          HttpResponse.json({
+            review: { ...REVIEW, status },
+            findings: [
+              {
                 position: 0,
-                number: "3.5",
-                heading: "3 Lieferung",
-                text: "3.5 Lieferung erfolgt.",
-                content_hash: "hash",
+                status: "done",
+                clause: {
+                  position: 0,
+                  number: "3.5",
+                  heading: "3 Lieferung",
+                  text: "3.5 Lieferung erfolgt.",
+                  content_hash: "hash",
+                },
+                verdict: null,
               },
-              verdict: null,
-            },
-          ],
-        } as FindingsOut),
-      ),
-    );
+            ],
+          } as FindingsOut),
+        ),
+      );
 
-    const { result } = renderHook(() => useReview("r1"), { wrapper: strictWrapper });
-    await waitFor(() => expect(result.current.isFinal).toBe(true));
-    await act(() => new Promise((resolve) => window.setTimeout(resolve, 10)));
+      const { result } = renderHook(() => useReview("r1"), { wrapper: strictWrapper });
+      await waitFor(() => expect(result.current.isFinal).toBe(true));
+      await act(() => new Promise((resolve) => window.setTimeout(resolve, 10)));
 
-    expect(streamOpens).toBe(0);
-    // The stored heading is never rewritten; titles are formatted at render time.
-    expect(result.current.findings[0]?.clause.heading).toBe("3 Lieferung");
-  });
+      expect(streamOpens).toBe(0);
+      // The stored heading is never rewritten; titles are formatted at render time.
+      expect(result.current.findings[0]?.clause.heading).toBe("3 Lieferung");
+    },
+  );
 
   it("refetches the details after awaiting_decisions and after a decision", async () => {
     let detailRequests = 0;

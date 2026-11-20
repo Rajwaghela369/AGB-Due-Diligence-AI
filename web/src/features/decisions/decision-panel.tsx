@@ -192,20 +192,14 @@ export function DecisionPanel({ reviewId, finding }: { reviewId: string; finding
     else void run({ action });
   }
 
-  // A request for override only opens the form, which is plain state: derive it while
-  // rendering. The other actions call the API, so they run from an effect.
-  const [seen, setSeen] = useState(0);
   const mine = request?.position === position ? request : null;
-  if (mine && mine.nonce !== seen) {
-    setSeen(mine.nonce);
-    if (mine.action === "override" && decidable) setOverriding(true);
-  }
   useEffect(() => {
     if (!mine) return;
     consume(mine.nonce);
-    // `run` sets state only after the request returns, and a request is acted on once.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (mine.action !== "override" && decidable && !pending) void run({ action: mine.action });
+    // Synchronize an external hotkey/card request with the local override form.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- external request boundary
+    if (mine.action === "override" && decidable) setOverriding(true);
+    else if (decidable && !pending) void run({ action: mine.action });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mine?.nonce]);
 

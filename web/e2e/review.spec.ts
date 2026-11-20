@@ -298,16 +298,45 @@ for (const theme of ["light", "dark"] as const) {
 for (const [width, height] of [
   [1440, 900],
   [820, 1180],
+  [390, 844],
+  [1024, 768],
+  [1600, 900],
 ] as const) {
   test(`page scrollY stays 0 when a finding is selected (${width}px)`, async ({ page }) => {
     await page.setViewportSize({ width, height });
     await page.goto(`/reviews/${reviewId}`);
-    await expect(page.getByTestId("risk-summary")).toBeVisible();
+    const reader = page.getByTestId("viewer-scroll");
+    await expect(reader.getByRole("region", { name: /^Seite 1 von/ })).toBeVisible();
+    await expect
+      .poll(() => reader.evaluate((el) => el.scrollWidth - el.clientWidth))
+      .toBeLessThanOrEqual(1);
+    if (width >= 1024) {
+      const columns = await page
+        .locator(".workspace-grid > *")
+        .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON()));
+      expect(columns[0]!.right).toBeLessThan(columns[1]!.left);
+      expect(columns[1]!.right).toBeLessThan(columns[2]!.left);
+      expect(columns[1]!.width).toBeGreaterThan(columns[0]!.width);
+      expect(columns[1]!.width).toBeGreaterThan(columns[2]!.width);
+    }
     if (width < 1024) await page.getByRole("tab", { name: "Fundstellen" }).click();
     const last = page.getByTestId("finding-card-30");
     await last.scrollIntoViewIfNeeded();
     await last.getByRole("button").first().click();
-    await page.waitForTimeout(500);
+    await expect(reader).toBeVisible();
+    await expect(reader.locator('[data-clause-anchor="30"]').first()).toBeInViewport();
+    if (width < 1024) await page.getByRole("tab", { name: "Entscheidung" }).click();
+    await expect(page.getByTestId("finding-drawer")).toBeVisible();
+    const summary = page.getByRole("heading", { name: "Zusammenfassung", exact: true });
+    await expect(summary).toBeVisible();
+    if (width >= 1024) {
+      const summaryBox = (await summary.boundingBox())!;
+      const decisionBox = (await page.getByTestId("finding-drawer").boundingBox())!;
+      const pdfBox = (await reader.boundingBox())!;
+      expect(summaryBox.y).toBeGreaterThanOrEqual(decisionBox.y + decisionBox.height);
+      expect(summaryBox.x).toBeGreaterThanOrEqual(pdfBox.x + pdfBox.width);
+    }
+    await expect(page.getByTestId("finding-card-30")).toHaveAttribute("data-selected", "true");
     const metrics = await page.evaluate(() => ({
       y: window.scrollY,
       scroll: document.documentElement.scrollHeight,
@@ -317,3 +346,25 @@ for (const [width, height] of [
     expect(metrics.scroll).toBeLessThanOrEqual(metrics.inner);
   });
 }
+
+test("the library restores search, status and sorting after opening a review", async ({ page }) => {
+  await page.goto("/");
+  const search = page.getByRole("textbox", { name: "Dokumente durchsuchen" });
+  await search.fill("psg");
+  await page.getByRole("combobox", { name: "Status filtern" }).selectOption("decisions");
+  await page.getByRole("button", { name: "Dokument", exact: true }).click();
+  const tableUrl = page.url();
+  await page
+    .getByRole("button", { name: /psg\.pdf/i })
+    .first()
+    .click();
+  await expect(page.getByTestId("document-viewer")).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(tableUrl);
+  await expect(search).toHaveValue("psg");
+  await expect(page.getByRole("columnheader", { name: "Dokument" })).toHaveAttribute(
+    "aria-sort",
+    "ascending",
+  );
+  await expect(page.getByRole("combobox", { name: "Status filtern" })).toHaveValue("decisions");
+});

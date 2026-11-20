@@ -1,10 +1,10 @@
-"""Judge one clause for the service. The only entry point `app/review` calls.
+"""Build and execute the clause judge used by the review service.
 
 The agent still knows nothing of documents, reviews or HTTP: it gets one
 clause's text and a parent observation, and returns one verdict. Built once per
 process and called from worker threads, so it must be thread-safe.
 
-Contract (Phase 5, Wave 0):
+Public contract:
 
     judge = make_judge(app_config=None, *, limiter, client=None, retriever=None,
                        router=None, tracer=None, caches=None)
@@ -31,7 +31,7 @@ Contract (Phase 5, Wave 0):
   kept, `reason_de=""`, `reason_unavailable=True`.
 - Nothing is persisted here; the runner owns persistence.
 
-Interrupts (Phase 7). `make_judge(..., checkpointer=saver)` compiles the graph with a
+With a checkpointer, `make_judge(..., checkpointer=saver)` compiles the graph with a
 LangGraph checkpointer, and `judge.interrupts` is then True: the runner passes
 `thread_id="{review_id}:{position}"`, and an `uncertain` verdict stops the graph after
 `self_check` with its state saved under that thread. The judge still returns the
@@ -166,7 +166,16 @@ def make_judge(
     def route_clause(text: str) -> str:
         if router is not None:
             return router(text)
-        return classify_topic(text, model=router_model.get("name", "jina-embeddings-v3"))
+        try:
+            return classify_topic(
+                text,
+                model=router_model.get("name", "gemini-decision-1"),
+                budget=limiter,
+                client=client,
+            )
+        except Exception:  # noqa: BLE001 - broad retrieval is safer than dropping a clause
+            log.warning("decision router failed; using broad retrieval", exc_info=True)
+            return ""
 
     def retrieve_clause(text: str, topic: str, policy: dict[str, Any], *, depth: int) -> Any:
         if retriever is not None:

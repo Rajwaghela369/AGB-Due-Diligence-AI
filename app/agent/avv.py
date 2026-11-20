@@ -1,4 +1,4 @@
-"""The AVV agent (Phase 10, 10.C): a data processing agreement against Art. 28(3) DSGVO.
+"""Judge AVV clauses against the Art. 28(3) DSGVO obligations.
 
 The AGB agent asks one question of a clause, "is it void?". An AVV is judged the other way
 round: the statute lists eight mandatory terms (lit. a-h), and a clause either carries one

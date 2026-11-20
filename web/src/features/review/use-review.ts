@@ -86,7 +86,8 @@ export function useReview(reviewId: string | undefined): ReviewData {
     enabled: reviewId !== undefined,
   });
   const storedFinal =
-    stored.data !== undefined && ["finished", "failed"].includes(stored.data.review.status);
+    stored.data !== undefined &&
+    ["finished", "awaiting_decisions", "failed"].includes(stored.data.review.status);
   const streamCandidate = stored.data !== undefined && !storedFinal ? reviewId : undefined;
   const [streamReviewId, setStreamReviewId] = useState<string>();
   useEffect(() => {
@@ -142,11 +143,10 @@ export function useReview(reviewId: string | undefined): ReviewData {
     )
       void refetchDetails();
   }, [refetchDetails, streamStatus]);
-  const [stale, setStale] = useState<{ decisions: number; state: unknown }>({
-    decisions: 0,
-    state: null,
-  });
-  if (stale.decisions !== decisions) setStale({ decisions, state: live.state });
+  // Capture the stream snapshot at the moment the decision count changes. Later stream
+  // events replace it, while the pre-decision snapshot stays frozen until the next decision.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- freeze the pre-decision stream snapshot
+  const stale = useMemo(() => ({ decisions, state: live.state }), [decisions]);
   // Live state received before the latest decision is older than the stored findings.
   const liveState = live.state !== null && live.state !== stale.state ? live.state : null;
   return useMemo(() => {

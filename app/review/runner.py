@@ -1,4 +1,4 @@
-"""One run of one review: cache first, judge the rest concurrently, emit every change.
+"""Run one review with cache-first judging, concurrency, and event emission.
 
 A run is a start, a resume after a restart, or a retry of failed clauses; all
 three are the same loop over a different set of positions. The run owns a
@@ -8,9 +8,8 @@ in flight: the service closes the shared limiter, which wakes any clause
 waiting on it with `LimiterClosed`, and such an interrupted clause is left
 `checking` (not failed) so the next process resumes it.
 
-`RUN_STARTED` and the first `STATE_SNAPSHOT` are appended synchronously by the
-service before the review is marked running (`announce`), so anyone who sees
-the review running also finds its new run in the event log.
+The run announces itself before the review is marked running, so every visible running
+review has a corresponding start event.
 
 Paying once. Clauses are judged under a per-(content_hash, agent_version) lock
 shared by every run in the process, with a cache re-check after taking it: a

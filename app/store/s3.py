@@ -1,9 +1,7 @@
-"""S3-compatible EU object storage for source files (Phase 9, 9.D).
+"""S3-compatible object storage for source files.
 
-One implementation for every S3-compatible provider: MinIO in Docker Compose for
-development and tests, and an EU provider (Hetzner, Scaleway or OVH) in production, chosen
-only by `files.s3.endpoint_url` and `files.s3.region` (decision #3). Nothing here may
-depend on a provider's extras, so moving provider is a configuration change.
+One implementation serves any compatible provider. The endpoint, region, bucket, and
+encryption settings come from `files.s3`; provider-specific features are not required.
 
 The contract (`app.store.interfaces.FileStore`):
 
@@ -14,16 +12,14 @@ The contract (`app.store.interfaces.FileStore`):
 - `presign` returns a GET URL valid for `expires_in` seconds; the API redirects to it or
   proxies the bytes (`files.s3.download`), see docs/Phase 9 API.md.
 
-Credentials come from the environment (`S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`), never
-from configs/app.yaml. Wave 0 ships the settings and a stub; the storage slice (Wave 1)
-writes the client (boto3, or the minio client) and `scripts/migrate_files_to_s3.py`.
+Credentials come from `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY`, never from YAML.
 """
 
 from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -228,11 +224,18 @@ def file_store_from_config(config: Mapping[str, Any], root: Path) -> FileStore:
     if backend == "s3":
         from core.settings import load_settings
 
-        s3_settings = S3Settings.from_config(config)
         settings = load_settings()
+        s3_settings = S3Settings.from_config(config)
+        if settings.aws_endpoint_url_s3 or settings.aws_region:
+            s3_settings = replace(
+                s3_settings,
+                endpoint_url=settings.aws_endpoint_url_s3 or s3_settings.endpoint_url,
+                region=settings.aws_region or s3_settings.region,
+            )
         if not settings.s3_access_key_id or not settings.s3_secret_access_key:
             raise ValueError(
-                "S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY must be set when files.backend is 's3'"
+                "AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY (or S3_ACCESS_KEY_ID/"
+                "S3_SECRET_ACCESS_KEY) must be set when files.backend is 's3'"
             )
         return S3FileStore(
             s3_settings,

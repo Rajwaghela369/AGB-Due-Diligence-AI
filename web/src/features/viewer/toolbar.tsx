@@ -27,6 +27,8 @@ export function ViewerToolbar(props: {
   activeHit: number;
   onHit: (delta: 1 | -1) => void;
   zoom: number;
+  onFit?: (() => void) | undefined;
+  fitted: boolean;
   onZoom: (zoom: number) => void;
 }) {
   const { t } = useTranslation();
@@ -71,12 +73,12 @@ export function ViewerToolbar(props: {
             type="search"
             value={props.query}
             placeholder={t("viewer.search.placeholder")}
-            className="h-8 w-44 bg-transparent outline-none"
+            className="h-8 w-28 bg-transparent outline-none"
             onChange={(event) => props.onQuery(event.target.value)}
             onKeyDown={onKeyDown}
           />
         </label>
-        <span aria-live="polite" className="min-w-20 text-xs text-muted-foreground tabular-nums">
+        <span aria-live="polite" className="text-xs text-muted-foreground tabular-nums">
           {searching &&
             (props.hitCount === 0
               ? t("viewer.search.none")
@@ -85,24 +87,28 @@ export function ViewerToolbar(props: {
                   count: props.hitCount,
                 }))}
         </span>
-        <button
-          type="button"
-          className={iconButton}
-          aria-label={t("viewer.search.previous")}
-          disabled={props.hitCount === 0}
-          onClick={() => props.onHit(-1)}
-        >
-          <ChevronUp aria-hidden="true" size={16} />
-        </button>
-        <button
-          type="button"
-          className={iconButton}
-          aria-label={t("viewer.search.next")}
-          disabled={props.hitCount === 0}
-          onClick={() => props.onHit(1)}
-        >
-          <ChevronDown aria-hidden="true" size={16} />
-        </button>
+        {searching && (
+          <>
+            <button
+              type="button"
+              className={iconButton}
+              aria-label={t("viewer.search.previous")}
+              disabled={props.hitCount === 0}
+              onClick={() => props.onHit(-1)}
+            >
+              <ChevronUp aria-hidden="true" size={16} />
+            </button>
+            <button
+              type="button"
+              className={iconButton}
+              aria-label={t("viewer.search.next")}
+              disabled={props.hitCount === 0}
+              onClick={() => props.onHit(1)}
+            >
+              <ChevronDown aria-hidden="true" size={16} />
+            </button>
+          </>
+        )}
       </div>
 
       <div className="flex items-center gap-1" role="group" aria-label={t("viewer.nav.label")}>
@@ -115,6 +121,7 @@ export function ViewerToolbar(props: {
         >
           <ChevronLeft aria-hidden="true" size={16} />
         </button>
+        <span className="text-xs text-muted-foreground">{t("findings.title")}</span>
         <span className="min-w-14 text-center tabular-nums" data-testid="finding-position">
           {t("viewer.nav.position", {
             current: index === -1 ? "–" : index + 1,
@@ -137,6 +144,16 @@ export function ViewerToolbar(props: {
         role="group"
         aria-label={t("viewer.zoom.label")}
       >
+        {props.onFit && (
+          <button
+            type="button"
+            aria-pressed={props.fitted}
+            className="rounded px-2 py-1 aria-pressed:bg-muted"
+            onClick={props.onFit}
+          >
+            {t("workspace.fit")}
+          </button>
+        )}
         <button
           type="button"
           className={iconButton}

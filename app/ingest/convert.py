@@ -1,4 +1,4 @@
-"""Convert inert DOCX bytes through Gotenberg without coupling ingest to HTTP in tests."""
+"""Convert DOCX bytes through Gotenberg without coupling ingest to HTTP in tests."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""The headless Phase 4 graph: route, retrieve, judge, check, maybe retry, explain, finish.
+"""LangGraph workflow for one clause: route, retrieve, judge, validate, explain, finish.
 
 Built on the Gemini Decisions API, which answers typed questions with calibrated
 probabilities and generates no text. That shapes the design in three ways.
@@ -12,20 +12,20 @@ question.
 Grounding cannot be hallucinated. The candidate chunk ids come from our
 retriever and become the question keys, so a citation we never showed the model
 has no way into the answer. The old design asked a text model to pick from an
-enum and checked afterwards; here there is nothing to check.
+retrieval supplied the evidence, so the judge cannot invent a citation.
 
 Confidence is calibrated by the API rather than self-reported by a model, which
 is what finally makes the `uncertain` threshold mean something.
 
-The router is an embedding classifier, not an LLM call, and its topic is only a
-hint: `general` chunks and the AGB-control paragraphs (§§ 305-310) are always in
-the candidate set, so a mis-routed clause costs ranking, not evidence. Searching
+The router is a typed Gemini decision, and its topic is only a hint: `general` chunks
+and the AGB-control paragraphs (§§ 305-310) are always in the candidate set, so a
+mis-routed clause costs ranking, not evidence. Searching
 every chunk with no topic filter was measured and ranked worse (primary@5 0.258
 against 0.355). Nothing in this module reads the clause's own `topics` field -
 those labels are the annotators' answer key, not an input the agent is allowed
 to see.
 
-Waiting for the lawyer (Phase 7). Compiled with a checkpointer, the graph stops
+When a checkpointer is configured, the graph stops
 after `self_check` when the verdict is `uncertain`: an `await_decision` node calls
 LangGraph's `interrupt()` and the state is checkpointed under the caller's thread id.
 `interrupt()` inside a node was chosen over `interrupt_after=["self_check"]` because
@@ -261,7 +261,10 @@ def build_graph(
         with _observe(
             invocation_tracer(runtime), "route", input={"clause": clause["text"]}
         ) as observation:
-            topic = router(clause["text"]) if router else ""
+            # API reviews tag clauses once before the runner starts. Reuse that trusted
+            # review topic so the graph does not pay for a second routing call. Offline
+            # evaluation items do not carry `topic`, so they still exercise the router.
+            topic = clause.get("topic") or (router(clause["text"]) if router else "")
             _update(observation, output={"topic": topic})
         return {"topic": topic}
 

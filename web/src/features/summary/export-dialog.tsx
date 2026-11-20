@@ -1,6 +1,6 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { AlertCircle, Download, X } from "lucide-react";
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ApiError, api, type ExportFormat } from "../../api/client";
@@ -41,11 +41,11 @@ export function ExportDialog({
   const [format, setFormat] = useState<ExportFormat>("docx");
   const [draft, setDraft] = useState(defaultDraft);
   const formatName = useId();
-  const [seenDraft, setSeenDraft] = useState(defaultDraft);
-  if (seenDraft !== defaultDraft) {
-    setSeenDraft(defaultDraft);
+  useEffect(() => {
+    // The summary can be refreshed while the export dialog is open.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync server-provided default
     setDraft(defaultDraft);
-  }
+  }, [defaultDraft]);
   const [pending, setPending] = useState(false);
   const [blocked, setBlocked] = useState<ExportBlocker[] | null>(null);
   const [reason, setReason] = useState<string | null>(null);
@@ -85,7 +85,13 @@ export function ExportDialog({
   };
 
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
+    <DialogPrimitive.Root
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) setDraft(defaultDraft);
+      }}
+    >
       <DialogPrimitive.Trigger asChild>
         <Button type="button">{children}</Button>
       </DialogPrimitive.Trigger>

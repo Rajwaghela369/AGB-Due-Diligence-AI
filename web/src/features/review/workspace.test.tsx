@@ -133,16 +133,22 @@ describe("review workspace layout", () => {
     await waitFor(() => expect(button).toHaveFocus());
   });
 
-  it("renders the drawer in the panel column and goes back to the list (bug 1)", async () => {
+  it("keeps the queue alongside the inspector while a finding is open", async () => {
     await renderWorkspace();
     fireEvent.click(within(screen.getByTestId("finding-card-0")).getAllByRole("button")[0]!);
     const drawer = await screen.findByTestId("finding-drawer");
     const column = drawer.parentElement as HTMLElement;
-    expect(column).toContainElement(screen.getByTestId("findings-panel"));
+    expect(column).not.toContainElement(screen.getByTestId("findings-panel"));
+    expect(column.closest(".workspace-grid")).toContainElement(
+      screen.getByTestId("findings-panel"),
+    );
+    expect(column.parentElement).toContainElement(
+      screen.getByRole("heading", { name: "Zusammenfassung" }),
+    );
     // Not a floating dialog, and the document stays beside it.
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByTestId("document-viewer")).toBeInTheDocument();
-    expect(screen.getByTestId("findings-panel")).toHaveClass("hidden");
+    expect(screen.getByTestId("findings-panel")).not.toHaveClass("hidden");
     fireEvent.click(within(drawer).getByRole("button", { name: "Fundstellen" }));
     await waitFor(() => expect(screen.queryByTestId("finding-drawer")).toBeNull());
     expect(screen.getByTestId("findings-panel")).not.toHaveClass("hidden");

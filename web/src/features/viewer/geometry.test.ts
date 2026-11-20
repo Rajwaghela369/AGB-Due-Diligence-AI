@@ -79,9 +79,8 @@ describe("rect → CSS box", () => {
     expect(rectToCssBox(inverted, A4, 1)).toEqual(rectToCssBox(line, A4, 1));
   });
 
-  it("clamps zoom to the 75%–200% range", () => {
-    expect(rectToCssBox(line, A4, 0.1)).toEqual(rectToCssBox(line, A4, 0.75));
-    expect(rectToCssBox(line, A4, 5)).toEqual(rectToCssBox(line, A4, 2));
+  it("places highlights at the fitted page scale on narrow screens", () => {
+    expect(rectToCssBox(line, A4, 0.5)).toEqual({ left: 48, top: 96, width: 288, height: 8 });
   });
 
   it("accounts for a page whose view box does not start at the origin", () => {

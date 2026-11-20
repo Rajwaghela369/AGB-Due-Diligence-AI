@@ -57,7 +57,7 @@ export function UploadPage() {
       setError("empty");
       return;
     }
-    if (!liability && !warranty) {
+    if (documentType === "agb" && !liability && !warranty) {
       setError("no_scope");
       return;
     }
@@ -74,9 +74,12 @@ export function UploadPage() {
         });
         return;
       }
-      const scope = [liability && "liability", warranty && "warranty"].filter(Boolean) as Array<
-        "liability" | "warranty"
-      >;
+      const scope =
+        documentType === "agb"
+          ? ([liability && "liability", warranty && "warranty"].filter(Boolean) as Array<
+              "liability" | "warranty"
+            >)
+          : [];
       const review = await api.reviews.start({ document_id: document.document.document_id, scope });
       navigate(`/reviews/${review.review.review_id}`);
     } catch (caught) {
@@ -193,27 +196,29 @@ export function UploadPage() {
           </span>
         </label>
       </fieldset>
-      <fieldset className="space-y-2 rounded-xl border border-border p-4">
-        <legend className="px-1 font-medium">{t("upload.scope")}</legend>
-        <label className="flex items-center gap-2">
-          <input
-            className="accent-accent"
-            type="checkbox"
-            checked={liability}
-            onChange={(event) => setLiability(event.target.checked)}
-          />
-          {t("upload.liability")}
-        </label>
-        <label className="flex items-center gap-2">
-          <input
-            className="accent-accent"
-            type="checkbox"
-            checked={warranty}
-            onChange={(event) => setWarranty(event.target.checked)}
-          />
-          {t("upload.warranty")}
-        </label>
-      </fieldset>
+      {documentType === "agb" ? (
+        <fieldset className="space-y-2 rounded-xl border border-border p-4">
+          <legend className="px-1 font-medium">{t("upload.scope")}</legend>
+          <label className="flex items-center gap-2">
+            <input
+              className="accent-accent"
+              type="checkbox"
+              checked={liability}
+              onChange={(event) => setLiability(event.target.checked)}
+            />
+            {t("upload.liability")}
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              className="accent-accent"
+              type="checkbox"
+              checked={warranty}
+              onChange={(event) => setWarranty(event.target.checked)}
+            />
+            {t("upload.warranty")}
+          </label>
+        </fieldset>
+      ) : null}
       {error ? (
         <p
           role="alert"

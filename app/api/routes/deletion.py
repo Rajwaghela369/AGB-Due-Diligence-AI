@@ -1,4 +1,4 @@
-"""Deleting a document and everything only it used (Phase 9, 9.B). Wave 1 slice: deletion.
+"""Document deletion endpoints.
 
 The body is `Service.delete_document` (`app.review.deletion`): a reference-counted
 deletion in one transaction, then the external erasures. docs/Phase 9 API.md, "Deletion",

@@ -1,5 +1,7 @@
 /** Typed access to the frozen Phase 5 endpoint surface and its uniform errors. */
 
+import { getNeonAccessToken } from "../auth";
+
 import type {
   AgreementOut,
   AuditOut,
@@ -55,6 +57,7 @@ export class ApiError extends Error {
 export interface ApiClientOptions {
   baseUrl?: string;
   fetch?: typeof fetch;
+  getToken?: () => Promise<string | null>;
 }
 
 const configuredBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
@@ -62,11 +65,13 @@ const configuredBaseUrl = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, ""
 export function createApiClient(options: ApiClientOptions = {}) {
   const baseUrl = (options.baseUrl ?? configuredBaseUrl).replace(/\/$/, "");
   const fetchImplementation = options.fetch;
+  const getToken = options.getToken;
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
+    const requestInit = await withBearer(init, getToken);
     const response = await (fetchImplementation ?? globalThis.fetch)(
       `${baseUrl}/api/v1${path}`,
-      init,
+      requestInit,
     );
     if (!response.ok) {
       throw new ApiError(response.status, await errorBody(response));
@@ -95,8 +100,10 @@ export function createApiClient(options: ApiClientOptions = {}) {
         return request(`/documents/${encodeURIComponent(documentId)}`);
       },
       async file(documentId: string): Promise<Blob> {
+        const requestInit = await withBearer(undefined, getToken);
         const response = await (fetchImplementation ?? globalThis.fetch)(
           `${baseUrl}/api/v1/documents/${encodeURIComponent(documentId)}/file`,
+          requestInit,
         );
         if (!response.ok) throw new ApiError(response.status, await errorBody(response));
         return response.blob();
@@ -113,8 +120,10 @@ export function createApiClient(options: ApiClientOptions = {}) {
       },
       /** The pasted text of a text document; clause offsets index into this exact string. */
       async text(documentId: string): Promise<string> {
+        const requestInit = await withBearer(undefined, getToken);
         const response = await (fetchImplementation ?? globalThis.fetch)(
           `${baseUrl}/api/v1/documents/${encodeURIComponent(documentId)}/file`,
+          requestInit,
         );
         if (!response.ok) throw new ApiError(response.status, await errorBody(response));
         return response.text();
@@ -173,9 +182,13 @@ export function createApiClient(options: ApiClientOptions = {}) {
         const query = new URLSearchParams({ format });
         if (options.draft) query.set("draft", "true");
         const name = options.reviewer?.trim();
+        const requestInit = await withBearer(
+          name ? { headers: { "X-Reviewer": encodeURIComponent(name) } } : undefined,
+          getToken,
+        );
         const response = await (fetchImplementation ?? globalThis.fetch)(
           `${baseUrl}/api/v1/reviews/${encodeURIComponent(reviewId)}/export?${query.toString()}`,
-          name ? { headers: { "X-Reviewer": encodeURIComponent(name) } } : undefined,
+          requestInit,
         );
         if (!response.ok) throw new ApiError(response.status, await errorBody(response));
         return {
@@ -200,9 +213,13 @@ export function createApiClient(options: ApiClientOptions = {}) {
         const name = options.reviewer?.trim();
         const headers: Record<string, string> = { Accept: "text/event-stream" };
         if (name) headers["X-Reviewer"] = encodeURIComponent(name);
+        const requestInit = await withBearer(
+          { ...jsonRequest("POST", input, headers), signal: options.signal ?? null },
+          getToken,
+        );
         const response = await (fetchImplementation ?? globalThis.fetch)(
           `${baseUrl}/api/v1/reviews/${encodeURIComponent(reviewId)}/clauses/${position}/chat`,
-          { ...jsonRequest("POST", input, headers), signal: options.signal ?? null },
+          requestInit,
         );
         if (!response.ok) throw new ApiError(response.status, await errorBody(response));
         return response;
@@ -278,5 +295,17 @@ function jsonRequest(
   };
 }
 
-export const api = createApiClient();
+export const api = createApiClient({ getToken: getNeonAccessToken });
 export type ApiClient = ReturnType<typeof createApiClient>;
+
+async function withBearer(
+  init: RequestInit | undefined,
+  getToken: (() => Promise<string | null>) | undefined,
+): Promise<RequestInit | undefined> {
+  if (!getToken) return init;
+  const token = await getToken();
+  if (!token) return init;
+  const headers = new Headers(init?.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  return { ...init, headers };
+}

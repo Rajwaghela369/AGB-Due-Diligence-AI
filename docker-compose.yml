@@ -16,7 +16,6 @@ services:
       - files:/app/stores/files
     depends_on:
       - gotenberg
-      - minio
     restart: unless-stopped
     healthcheck:
       test:
@@ -41,38 +40,6 @@ services:
     # conversion path (DOCX uploads fail with conversion_failed until Gotenberg answers).
     restart: unless-stopped
 
-  minio:
-    # S3-compatible development storage. Production uses the same API at an EU provider.
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
-    ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
-    volumes:
-      - minio:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-    restart: unless-stopped
-
-  minio-init:
-    # Creates the development bucket once; `--ignore-existing` makes restarts harmless.
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
-    depends_on:
-      minio:
-        condition: service_healthy
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
-    entrypoint: >-
-      /bin/sh -c "mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD
-      && mc mb --ignore-existing local/agb-check-files"
-
   keycloak:
     # Development login (9.E, decision #2). Only with `docker compose --profile auth up
     # keycloak`; the API checks tokens against it once `auth.enabled: true`. Production
@@ -91,4 +58,3 @@ services:
 
 volumes:
   files:
-  minio:

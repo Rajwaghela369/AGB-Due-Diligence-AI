@@ -1,33 +1,11 @@
-"""Provider-neutral model calls: typed decisions, and generated text.
+"""Provider-neutral model calls for typed decisions and generated text.
 
-Two shapes, because the agent needs two different things:
+`decide` returns structured probabilities without generated output. `complete` returns
+generated text such as a German explanation. Provider failures become result errors so a
+single clause can fail independently; budget exhaustion propagates as a control signal.
 
-`decide` wraps the Gemini Decisions API, which answers closed questions with
-calibrated probabilities and generates **zero output tokens**. One forward pass
-answers every question, so asking "is this void?" and "which topic?" together
-costs barely more than asking one. That is what makes a free-tier run of the
-whole dev half affordable, and it replaces both the router LLM call and the
-judge's verdict.
-
-`complete` wraps ordinary generation, for the one thing decisions cannot give
-us: the German reason a reviewer reads.
-
-Neither function raises on a provider error. A failed call is returned as a
-result carrying `error`, so one bad clause costs recall instead of killing the
-run — the lesson of the Phase 3 baseline, and of the Phase 4 run that lost 116
-clauses to an unhandled parse error.
-
-`BudgetExceeded` is the one exception that does propagate. It is our own
-control signal rather than a provider fault, and swallowing it would recreate
-the failure this module exists to prevent: the $5 Anthropic run did not stop
-when it ran out, it degraded, and returned a verdict-shaped error for every
-remaining clause. A run out of allowance should stop.
-
-Phase 9 (9.A): client text leaves only masked. `decide` masks `text`, `complete` and
-`complete_stream` mask `user` through `core.masking.boundary()`, and restore the
-placeholders in the answer before returning it, so callers never see a placeholder or hold
-the map. A masker failure is a failed result and nothing is sent. System prompts and
-decision questions are our own templates (and statute texts) and pass as they are.
+All client text is masked inside this module before it leaves the process. Responses are
+restored only for values allowed by the active masking scope.
 """
 
 import json

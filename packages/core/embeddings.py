@@ -1,6 +1,6 @@
 """Embedding access through the Jina API. Nothing runs locally.
 
-Phase 9 (9.A): each text is masked (`core.masking.boundary()`) after its cache key is
+Each text is masked (`core.masking.boundary()`) after its cache key is
 computed, so the key stays on the original text and only masked text reaches Jina. Masking
 is off in processes that never configure it, such as the knowledge-base build over statutes.
 """

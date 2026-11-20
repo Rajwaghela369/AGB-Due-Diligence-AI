@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
 import { App } from "./app";
+import { NeonAuthProvider } from "./auth-provider";
 import "./i18n";
 import "./styles.css";
 
@@ -13,7 +14,9 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <App />
+        <NeonAuthProvider>
+          <App />
+        </NeonAuthProvider>
       </BrowserRouter>
     </QueryClientProvider>
   </StrictMode>,

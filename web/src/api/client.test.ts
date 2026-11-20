@@ -3,6 +3,20 @@ import { describe, expect, it, vi } from "vitest";
 import { createApiClient } from "./client";
 
 describe("API client", () => {
+  it("attaches a bearer token to REST requests when configured", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(Response.json({}));
+    const client = createApiClient({
+      baseUrl: "https://api.example",
+      fetch: fetchMock,
+      getToken: async () => "neon-jwt",
+    });
+
+    await client.health();
+
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer neon-jwt");
+  });
+
   it("parses the backend ErrorBody", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(JSON.stringify({ code: "not_found", message: "Prüfung fehlt" }), {

@@ -1,10 +1,10 @@
-"""Local-disk FileStore: content-addressed blobs under one root.
+"""Local-disk file store for content-addressed blobs.
 
 Keys are chosen by the caller (the document id for a PDF), so a blob is
 immutable: `put` of an existing key changes nothing. Writes go to a temp file
 in the same directory and are renamed into place, so a reader or a crash never
-sees a half-written file. Phase 9 adds EU object storage (`app.store.s3`) behind the
-same protocol, chosen by `files.backend`; `delete` and `presign` are Phase 9 Wave 1.
+sees a half-written file. The S3 implementation follows the same protocol and is
+selected by `files.backend`.
 """
 
 import os

@@ -1,62 +1,70 @@
-"""Low-cost topic routing through Jina's zero-shot classifier.
-
-Phase 9 (9.A): every clause is masked (`core.masking.boundary()`) before it is sent; the
-topic does not depend on whose name is in the clause.
-"""
+"""Context-aware topic routing through the Gemini Decisions API."""
 
 from typing import Any
 
-import requests
-
+from core.budget import RequestBudget
+from core.llm import DecisionResult, decide
 from core.logging import get_logger
-from core.masking import boundary
-from core.settings import load_settings
 
 log = get_logger("core.routing")
-ENDPOINT = "https://api.jina.ai/v1/classify"
 LABELS = ("liability", "warranty", "other")
-BATCH_SIZE = 64  # inputs per classify request
+ROUTING_QUESTIONS = {
+    "topic": {
+        "type": "choice",
+        "instructions": (
+            "Ordne die Klausel nach ihrem tatsächlichen Regelungsgegenstand genau einem "
+            "Thema zu. Wähle 'other', wenn kein Thema eindeutig passt."
+        ),
+        "criteria": {
+            "liability": "Haftung, Haftungsausschluss, Schadensersatz oder Verantwortlichkeit",
+            "warranty": "Gewährleistung, Mängelrechte, Garantie, Reparatur oder Ersatzlieferung",
+            "other": "Ein anderes Thema oder keine eindeutige Zuordnung",
+        },
+    }
+}
 
 
-def classify_topics(texts: list[str], *, model: str = "jina-embeddings-v3") -> list[str]:
-    """One topic per text, in order; a request per `BATCH_SIZE` texts rather than per text."""
+def _topic(result: DecisionResult) -> str:
+    if result.error:
+        raise RuntimeError(f"topic decision failed: {result.error}")
+    answer = result.answers.get("topic")
+    if answer is None or answer.value not in LABELS:
+        value = answer.value if answer else None
+        raise RuntimeError(f"decision router returned unknown topic {value!r}")
+    return str(answer.value)
+
+
+def classify_topics(
+    texts: list[str],
+    *,
+    model: str = "gemini-decision-1",
+    budget: RequestBudget | None = None,
+    client: Any = None,
+) -> list[str]:
+    """Classify each clause with one typed Gemini choice question."""
     if not texts:
         return []
-    settings = load_settings()
-    if not settings.jina_api_key:
-        raise RuntimeError("JINA_API_KEY is not set; copy .env.example to .env")
-    topics: list[str] = []
-    for start in range(0, len(texts), BATCH_SIZE):
-        batch = [boundary().outbound(text) for text in texts[start : start + BATCH_SIZE]]
-        boundary().require_masked(batch)
-        response = requests.post(
-            ENDPOINT,
-            headers={
-                "Authorization": f"Bearer {settings.jina_api_key}",
-                "Content-Type": "application/json",
-            },
-            json={"model": model, "labels": list(LABELS), "input": batch},
-            timeout=60,
+    topics = [
+        _topic(
+            decide(
+                text,
+                ROUTING_QUESTIONS,
+                {"provider": "gemini", "name": model},
+                budget=budget,
+                client=client,
+            )
         )
-        response.raise_for_status()
-        payload: dict[str, Any] = response.json()
-        data = payload.get("data", [])
-        if len(data) != len(batch):
-            raise RuntimeError(f"Jina classifier returned {len(data)} results for {len(batch)}")
-        for item in sorted(data, key=lambda item: item.get("index", 0)):
-            topics.append(_top_label(item.get("predictions", [])))
+        for text in texts
+    ]
     log.info("classified %d clauses", len(texts))
     return topics
 
 
-def classify_topic(text: str, *, model: str = "jina-embeddings-v3") -> str:
-    return classify_topics([text], model=model)[0]
-
-
-def _top_label(predictions: list[dict[str, Any]]) -> str:
-    if not predictions:
-        raise RuntimeError("Jina classifier returned no predictions")
-    topic = max(predictions, key=lambda item: float(item["score"]))["label"]
-    if topic not in LABELS:
-        raise RuntimeError(f"Jina classifier returned unknown topic {topic!r}")
-    return str(topic)
+def classify_topic(
+    text: str,
+    *,
+    model: str = "gemini-decision-1",
+    budget: RequestBudget | None = None,
+    client: Any = None,
+) -> str:
+    return classify_topics([text], model=model, budget=budget, client=client)[0]

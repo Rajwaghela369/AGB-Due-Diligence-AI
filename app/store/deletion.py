@@ -1,10 +1,10 @@
-"""Reference-counted deletion and retention queries (Phase 9, 9.B and 9.C).
+"""Reference-counted deletion and retention queries.
 
 Both implementations of `app.store.interfaces.DeletionRepo` live here, apart from the other
 repositories, because deletion is the one operation that crosses every table: the memory
 fake needs the internals of every memory repository, and the Postgres version is one
-transaction over all of them. docs/Phase 9 API.md, "Deletion", is the contract;
-docs/Phase 9 Design.md explains reference counting, the outbox and the tombstones.
+transaction over all of them. The deletion outbox removes external blobs, traces, and
+checkpoints after the database transaction commits.
 """
 
 from __future__ import annotations

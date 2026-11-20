@@ -1,12 +1,5 @@
-// The review workspace layout (Phase 6 plan, "Review workspace"). Owned by the
-// orchestrator: each panel lives in its own feature folder and receives the same
-// `ReviewData`, and all of them share selection through `useReviewUi`.
-//
-// The workspace fills the viewport below the header and the page itself never scrolls: the
-// document and the right column scroll internally. The right column is master/detail: the
-// findings list, or the drawer for the selected clause. Below 1024px only one of the two
-// areas shows, switched by a pair of tabs.
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { Download, FileText } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useParams } from "react-router-dom";
 
@@ -17,9 +10,10 @@ import { ReviewCost } from "../cost/review-cost";
 import { ReviewerControl, ReviewerDialogHost } from "../decisions/reviewer-control";
 import { FindingDrawer } from "../findings/finding-drawer";
 import { FindingsPanel } from "../findings/findings-panel";
-import { SummaryBlock } from "../summary/summary-block";
+import { ExportDialog } from "../summary/export-dialog";
 import { FindingsTable } from "../table/findings-table";
 import { DocumentViewer } from "../viewer/document-viewer";
+import { clauseTitle } from "./clause-title";
 import { WorkspaceHotkeys } from "./hotkeys";
 import { riskStyle } from "./risk";
 import { useReviewUi } from "./store";
@@ -49,184 +43,216 @@ const tabClass = cn(
   "aria-selected:font-medium",
 );
 
-type Pane = "document" | "findings";
-
-/** Height from the top of the workspace to the bottom of the viewport, minus the page padding. */
-function useFillHeight(ref: React.RefObject<HTMLElement | null>): number | undefined {
-  const [height, setHeight] = useState<number>();
-  useLayoutEffect(() => {
-    const measure = () => {
-      const el = ref.current;
-      if (!el) return;
-      const bottom = parseFloat(getComputedStyle(el.parentElement ?? el).paddingBottom) || 0;
-      setHeight(Math.max(window.innerHeight - el.getBoundingClientRect().top - bottom, 0));
-    };
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [ref]);
-  return height;
-}
+type Pane = "document" | "findings" | "decision";
 
 export function ReviewWorkspace() {
-  const { t } = useTranslation();
   const { id } = useParams();
-  // Set by the upload page when the same file was reviewed before: no new review ran.
-  const alreadyReviewed = Boolean(
-    (useLocation().state as { alreadyReviewed?: boolean } | null)?.alreadyReviewed,
-  );
+  return <Desk key={id} id={id} />;
+}
+
+function Desk({ id }: { id: string | undefined }) {
+  const { t } = useTranslation();
   const review = useReview(id);
+  const alreadyReviewed = Boolean(useLocation().state?.alreadyReviewed);
   const view = useReviewUi((s) => s.view);
   const setView = useReviewUi((s) => s.setView);
-  const reset = useReviewUi((s) => s.reset);
-
   const selected = useReviewUi((s) => s.selected);
+  const select = useReviewUi((s) => s.select);
   const [pane, setPane] = useState<Pane>("document");
-  const fillRef = useRef<HTMLDivElement>(null);
-  const fillHeight = useFillHeight(fillRef);
-
-  useEffect(() => reset, [id, reset]);
-  // On a narrow screen, picking a finding jumps to the document so the clause is in view.
-  const [seenSelected, setSeenSelected] = useState(selected);
-  if (selected !== seenSelected) {
-    setSeenSelected(selected);
-    if (selected !== null) setPane("document");
-  }
-
-  if (review.error) {
-    return <p role="alert">{t("workspace.loadError")}</p>;
-  }
-  if (review.isLoading || review.review === null) {
-    return <p aria-busy="true">{t("workspace.loading")}</p>;
-  }
-  const counts = review.review.counts;
-
-  return (
-    <div
-      ref={fillRef}
-      style={fillHeight === undefined ? undefined : { height: fillHeight }}
-      className={cn(
-        "workspace-fill flex h-[calc(100dvh-14rem)] flex-col gap-3",
-        // Wide screens: break out of the page's max width so the right column can grow.
-        "min-[1600px]:relative min-[1600px]:left-1/2 min-[1600px]:w-[calc(100vw-3rem)]",
-        "min-[1600px]:max-w-[120rem] min-[1600px]:-translate-x-1/2",
-      )}
+  useEffect(() => {
+    const unsubscribe = useReviewUi.subscribe((s, prev) => {
+      if (s.decisionRequest && s.decisionRequest !== prev.decisionRequest) setPane("decision");
+      else if (s.selected !== prev.selected && s.selected !== null) setPane("document");
+    });
+    return () => {
+      unsubscribe();
+      useReviewUi.getState().reset();
+    };
+  }, []);
+  if (review.error) return <p role="alert">{t("workspace.loadError")}</p>;
+  if (!review.review || review.isLoading) return <p aria-busy="true">{t("workspace.loading")}</p>;
+  const record = review.review;
+  const summary = review.summary;
+  const filename =
+    review.document?.document.filename ?? summary?.filename ?? t("workspace.document");
+  const finding = selected === null ? null : review.byPosition.get(selected);
+  const open = review.findings.filter(
+    (f) =>
+      f.position !== selected &&
+      f.findingStatus === "open" &&
+      (f.verdict?.verdict === "potentially_void" || f.verdict?.verdict === "uncertain"),
+  );
+  const nextOpen = open.find((f) => f.position > (selected ?? -1)) ?? open[0];
+  const tabs = (["document", "table"] as const).map((v) => (
+    <button
+      key={v}
+      type="button"
+      role="tab"
+      aria-selected={view === v}
+      className={tabClass}
+      onClick={() => setView(v)}
     >
+      {t(v === "document" ? "workspace.viewDocument" : "workspace.viewTable")}
+    </button>
+  ));
+  return (
+    <div className="review-workspace workspace-fill" data-pane={pane}>
       <ReviewerDialogHost />
-      {review.summary && (
-        // The summary must not push the panes out of the fixed-height workspace: it scrolls.
-        <div
-          tabIndex={0}
-          className="max-h-[22dvh] shrink-0 overflow-y-auto rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <SummaryBlock reviewId={review.review.review_id} summary={review.summary} />
+      <header className="desk-heading">
+        <div className="min-w-0">
+          <p className="desk-label">{t("pages.review.title")}</p>
+          <h1 title={filename}>
+            <FileText aria-hidden size={21} />
+            <span className="truncate">{filename}</span>
+          </h1>
         </div>
+        {summary && (
+          <ExportDialog reviewId={record.review_id} defaultDraft={summary.draft}>
+            <Download aria-hidden size={16} />
+            {t("export.action")}
+          </ExportDialog>
+        )}
+      </header>
+      {alreadyReviewed && (
+        <p role="status" className="text-sm">
+          {t("workspace.alreadyReviewed")}
+        </p>
       )}
-      <div role="tablist" aria-label={t("workspace.panes")} className="flex gap-2 lg:hidden">
-        {(
-          [
-            ["document", "workspace.viewDocument", pane === "document" && view === "document"],
-            ["table", "workspace.viewTable", pane === "document" && view === "table"],
-            ["findings", "findings.title", pane === "findings"],
-          ] as const
-        ).map(([key, label, active]) => (
+      <nav className="desk-mobile" role="tablist" aria-label={t("workspace.panes")}>
+        {(["findings", "document", "decision"] as const).map((p) => (
           <button
-            key={key}
             role="tab"
             type="button"
-            aria-selected={active}
-            onClick={() => {
-              if (key === "findings") setPane("findings");
-              else {
-                setPane("document");
-                setView(key);
-              }
-            }}
+            key={p}
+            aria-selected={p === pane}
             className={tabClass}
+            onClick={() => setPane(p)}
           >
-            {t(label)}
+            {t(
+              p === "findings"
+                ? "findings.title"
+                : p === "document"
+                  ? "workspace.document"
+                  : "decision.title",
+            )}
           </button>
         ))}
-      </div>
-      <div className="workspace-grid grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
-        <section
-          className={cn("min-h-0 flex-col", pane === "document" ? "flex" : "hidden lg:flex")}
-          aria-label={t("workspace.document")}
-        >
-          {alreadyReviewed && (
-            <p role="status" className="mb-2 text-sm text-muted-foreground">
-              {t("workspace.alreadyReviewed")}
-            </p>
-          )}
-          <div className="mb-2">
-            <DecisionProgress review={review.review} />
-          </div>
-          <ul className="mb-2 flex flex-wrap items-center gap-2 text-sm" data-testid="risk-summary">
-            {SUMMARY.map(({ key, count, style }) => {
-              const Icon = style.icon;
-              const muted = style.tone === "out";
-              return (
-                <li
-                  key={key}
-                  className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-2.5 py-0.5"
-                  style={muted ? undefined : { color: style.color, borderColor: style.color }}
-                >
-                  <Icon aria-hidden className="size-4 shrink-0" />
-                  <span>{t(`workspace.counts.${key}`, { count: counts?.[count] ?? 0 })}</span>
-                </li>
-              );
-            })}
-          </ul>
-          <div className="mb-2 flex items-center gap-2">
-            <div
-              role="tablist"
-              aria-label={t("workspace.views")}
-              className="flex gap-2 max-lg:hidden"
-            >
-              <button
-                role="tab"
-                type="button"
-                aria-selected={view === "document"}
-                onClick={() => setView("document")}
-                className={tabClass}
-              >
-                {t("workspace.viewDocument")}
-              </button>
-              <button
-                role="tab"
-                type="button"
-                aria-selected={view === "table"}
-                onClick={() => setView("table")}
-                className={tabClass}
-              >
-                {t("workspace.viewTable")}
-              </button>
-            </div>
-            <div className="ml-auto flex items-center gap-1">
-              <ReviewerControl />
-              <WorkspaceHotkeys />
-            </div>
-          </div>
-          <div className="mb-2">
-            <ReviewCost
-              review={review.review}
-              pricing={review.pricing}
-              costEur={review.costEur}
-              wallTimeMs={review.wallTimeMs}
-              cacheHitRate={review.cacheHitRate}
-              compact
-            />
+      </nav>
+      <div className="workspace-grid">
+        <div className="desk-queue flex">
+          <FindingsPanel
+            review={review}
+            onOpen={() => {
+              setView("document");
+              setPane("document");
+            }}
+          />
+        </div>
+        <section className="desk-paper" aria-label={t("workspace.document")}>
+          <div className="desk-views" role="tablist" aria-label={t("workspace.views")}>
+            {tabs}
           </div>
           {view === "document" ? (
-            <DocumentViewer documentId={review.review.document_id} review={review} />
+            <DocumentViewer
+              key={record.document_id}
+              documentId={record.document_id}
+              review={review}
+            />
           ) : (
             <FindingsTable review={review} />
           )}
         </section>
-        <div className={cn("min-h-0 flex-col", pane === "findings" ? "flex" : "hidden lg:flex")}>
-          <FindingsPanel review={review} />
-          <FindingDrawer review={review} />
-        </div>
+        <aside className="desk-right" aria-label={t("pages.review.title")}>
+          <section className="desk-inspector" aria-label={t("decision.title")}>
+            <FindingDrawer review={review} onBack={() => setPane("findings")} />
+            {!finding && (
+              <div className="desk-prompt">
+                <h2>{t("decision.title")}</h2>
+                {nextOpen ? (
+                  <>
+                    <p className="font-medium">{clauseTitle(nextOpen.clause)}</p>
+                    <p className="line-clamp-3 text-sm leading-relaxed text-muted-foreground">
+                      {nextOpen.clause.text}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{t("workspace.selectFinding")}</p>
+                )}
+              </div>
+            )}
+            {nextOpen && (!finding || finding.findingStatus !== "open") && (
+              <button type="button" className="desk-next" onClick={() => select(nextOpen.position)}>
+                {t("workspace.nextOpen")}
+              </button>
+            )}
+          </section>
+          <section className="desk-overview" aria-labelledby="review-summary-title">
+            <h2 id="review-summary-title">{t("summary.title")}</h2>
+            <div
+              className="desk-summary-body"
+              tabIndex={0}
+              role="region"
+              aria-label={t("summary.title")}
+            >
+              <p className="text-sm leading-relaxed">
+                {summary?.recommendation ?? t("home.status." + record.status)}
+              </p>
+              <ul data-testid="risk-summary">
+                {SUMMARY.map(({ key, count, style }) => (
+                  <li key={key} style={{ color: style.color }}>
+                    <style.icon aria-hidden size={17} />
+                    {t("workspace.counts." + key, { count: record.counts?.[count] ?? 0 })}
+                  </li>
+                ))}
+              </ul>
+
+              <DecisionProgress review={record} />
+              {summary?.top_risks?.length ? (
+                <div>
+                  <h3>{t("summary.topRisks")}</h3>
+                  {summary.top_risks.map((r) => (
+                    <button
+                      type="button"
+                      key={r.position}
+                      className="desk-risk-link"
+                      onClick={() => select(r.position)}
+                    >
+                      {review.byPosition.get(r.position)?.clause.heading ?? r.number}{" "}
+                      <span className="block line-clamp-2 text-sm text-muted-foreground">
+                        {r.excerpt}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {summary?.void_groups?.length ? (
+                <div>
+                  <h3>{t("summary.voidGroups")}</h3>
+                  {summary.void_groups.map((group) => (
+                    <p key={group.key} className="text-sm">
+                      {group.label} ({group.findings.length})
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+              <footer className="desk-tools">
+                <ReviewerControl />
+                <WorkspaceHotkeys />
+                <details>
+                  <summary>{t("home.table.usage")}</summary>
+                  <ReviewCost
+                    review={record}
+                    pricing={review.pricing}
+                    costEur={review.costEur}
+                    wallTimeMs={review.wallTimeMs}
+                    cacheHitRate={review.cacheHitRate}
+                    compact
+                  />
+                </details>
+              </footer>
+            </div>
+          </section>
+        </aside>
       </div>
     </div>
   );

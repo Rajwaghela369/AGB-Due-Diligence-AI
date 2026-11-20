@@ -160,8 +160,10 @@ def kb_ingest(dataset_config: str = FULL_CONFIG, publish: bool = True) -> None:
 
     selected = select_norms(fetched.path, kb["source"], fetched.revision)
     chunks = chunk_norms(selected)
-    indexed = build_index(chunks, kb, lineage)
-    checked = check_retrieval(indexed, kb)
+    # Build and validate against the same BGB-only configuration. The separate AVV
+    # configuration in kb.yaml must not change the BGB index lineage.
+    indexed = build_index(chunks, bgb_kb, lineage)
+    checked = check_retrieval(indexed, bgb_kb)
 
     create_table_artifact(
         key="p1-kb-ingest-summary",

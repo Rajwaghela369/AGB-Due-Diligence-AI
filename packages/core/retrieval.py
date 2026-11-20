@@ -37,13 +37,33 @@ def _kb() -> dict[str, Any]:
     return load_yaml(CONFIGS / "kb.yaml")
 
 
+def _expected_index_hash(collection: str, kb: dict[str, Any]) -> str:
+    """Return the lineage hash for the index selected by `collection`."""
+    bgb = kb["store"]
+    if collection in {bgb["alias"], bgb["collection"]}:
+        bgb_kb = {key: value for key, value in kb.items() if key != "dsgvo_avv"}
+        return index_config_hash(bgb_kb, load_yaml(CONFIGS / "kb_paragraphs.yaml"))
+
+    avv = kb.get("dsgvo_avv")
+    if avv is not None and collection in {avv["store"]["alias"], avv["store"]["collection"]}:
+        index_config = {
+            "source": avv["source"],
+            "embedding": kb["embedding"],
+            "store": avv["store"],
+            "chunking": avv["chunking"],
+        }
+        return config_hash(index_config)
+
+    return index_config_hash(kb, load_yaml(CONFIGS / "kb_paragraphs.yaml"))
+
+
 def paragraph_key(value: str | int) -> str:
     """The `paragraph` payload value for a section reference.
 
     The P1 chunker stores paragraphs as "§ 305", "§ 309" - the citation form,
     not the bare number - so a policy written as `[305, 305a]` has to be mapped
     before it can match anything. Sending "305" matches no chunk and raises
-    nothing, which is how the first Phase 4 draft shipped a no-op.
+    nothing, which would silently return no candidates.
     """
     text = str(value).strip()
     if text.startswith("§"):
@@ -75,8 +95,8 @@ def build_filter(topic: str, policy: dict[str, Any]) -> Filter:
     must = [FieldCondition(key="kind", match=MatchValue(value=store.KIND_CHUNK))]
 
     # No topic and no forced paragraphs: search every chunk rather than none.
-    # Phase 2 measured the cost of narrowing - 7 of 31 answers were unreachable
-    # because the right chunk was tagged differently from the clause.
+    # A topic is only a ranking hint; broad fallback keeps mis-tagged legal norms
+    # reachable.
     if not should:
         return Filter(must=must)
     return Filter(must=must, should=should)
@@ -84,7 +104,7 @@ def build_filter(topic: str, policy: dict[str, Any]) -> Filter:
 
 def _assert_manifest(qdrant: Any, collection: str, kb: dict[str, Any]) -> None:
     """Refuse an index built from a different configuration than the one in the repo."""
-    expected = index_config_hash(kb, load_yaml(CONFIGS / "kb_paragraphs.yaml"))
+    expected = _expected_index_hash(collection, kb)
     if _validated.get(collection) == expected:
         return
 

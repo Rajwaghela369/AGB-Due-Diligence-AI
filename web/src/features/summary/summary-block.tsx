@@ -55,7 +55,7 @@ export function SummaryBlock({ reviewId, summary }: { reviewId: string; summary:
         aria-labelledby="review-summary-title"
         data-testid="review-summary"
         data-collapsed="true"
-        className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2"
+        className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 shadow-sm"
       >
         {toggleButton}
         <h2 id="review-summary-title" className="text-base font-semibold">
@@ -76,13 +76,13 @@ export function SummaryBlock({ reviewId, summary }: { reviewId: string; summary:
       aria-labelledby="review-summary-title"
       data-testid="review-summary"
       data-collapsed="false"
-      className="rounded-xl border border-border bg-surface p-4"
+      className="rounded-xl border border-border bg-surface p-5 shadow-sm"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-2">
           {toggleButton}
           <div id="review-summary-body">
-            <h2 id="review-summary-title" className="text-lg font-semibold">
+            <h2 id="review-summary-title" className="text-xl font-semibold tracking-tight">
               {t("summary.title")}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">{summary.recommendation}</p>
@@ -93,7 +93,7 @@ export function SummaryBlock({ reviewId, summary }: { reviewId: string; summary:
           {t("export.action")}
         </ExportDialog>
       </div>
-      <dl className="mt-4 grid gap-2 sm:grid-cols-3">
+      <dl className="mt-5 grid gap-3 sm:grid-cols-3">
         {[
           ["potentially_void", counts.potentially_void ?? 0],
           ["uncertain", counts.uncertain ?? 0],
@@ -107,7 +107,7 @@ export function SummaryBlock({ reviewId, summary }: { reviewId: string; summary:
           return (
             <div
               key={verdict}
-              className="flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-sm"
+              className="flex items-center gap-3 rounded-lg border border-border/70 bg-muted/70 px-3 py-3 text-sm"
             >
               <Icon aria-hidden className="size-4" style={{ color: style.color }} />
               <dt>{t(style.label)}</dt>

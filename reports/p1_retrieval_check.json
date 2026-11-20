@@ -2,12 +2,31 @@
   "collection": "bgb_agb_v1",
   "embedding_model": "jina-embeddings-v5-text-small",
   "query_task": "retrieval.query",
+  "policy": {
+    "top_k": 10,
+    "always_include_topics": [
+      "general"
+    ],
+    "always_include_paragraphs": [
+      305,
+      "305a",
+      "305b",
+      "305c",
+      306,
+      "306a",
+      307,
+      308,
+      309,
+      310
+    ],
+    "search_depth": 20
+  },
   "metrics": {
     "queries": 30.0,
-    "primary_at_1": 0.4333,
-    "primary_at_3": 0.7667,
-    "primary_at_5": 0.9333,
-    "mrr": 0.6286,
+    "primary_at_1": 0.4,
+    "primary_at_3": 0.7333,
+    "primary_at_5": 0.9,
+    "mrr": 0.5969,
     "query_tokens": 1111.0
   },
   "queries": [
@@ -99,7 +118,7 @@
         "bgb-309-8-b",
         "bgb-280-abs1",
         "bgb-309-12",
-        "bgb-280-abs3"
+        "bgb-309-6"
       ]
     },
     {
@@ -132,13 +151,13 @@
       "query_id": "gq-10",
       "topic": "liability",
       "expected": "bgb-276-abs3",
-      "rank": 1,
+      "rank": 2,
       "top5": [
+        "bgb-308-3",
         "bgb-276-abs3",
-        "bgb-310-abs3",
-        "bgb-280-abs1",
-        "bgb-280-abs3",
-        "bgb-309-8-b"
+        "bgb-308-8",
+        "bgb-309-2",
+        "bgb-310-abs3"
       ]
     },
     {
@@ -158,13 +177,13 @@
       "query_id": "gq-12",
       "topic": "liability",
       "expected": "bgb-309-8-a",
-      "rank": 2,
+      "rank": 4,
       "top5": [
         "bgb-309-8-b",
+        "bgb-308-3",
+        "bgb-309-2",
         "bgb-309-8-a",
-        "bgb-280-abs1",
-        "bgb-309-11",
-        "bgb-307-abs1"
+        "bgb-308-8"
       ]
     },
     {
@@ -184,13 +203,13 @@
       "query_id": "gq-14",
       "topic": "general",
       "expected": "bgb-305c-abs1",
-      "rank": 5,
+      "rank": null,
       "top5": [
-        "bgb-305-abs2",
-        "bgb-307-abs1",
-        "bgb-305-abs1",
-        "bgb-310-abs3",
-        "bgb-305c-abs1"
+        "bgb-308-1b",
+        "bgb-309-9",
+        "bgb-308-1",
+        "bgb-308-1a",
+        "bgb-309-8-b"
       ]
     },
     {
@@ -203,7 +222,7 @@
         "bgb-306-abs1",
         "bgb-306-abs2",
         "bgb-307-abs1",
-        "bgb-307-abs3"
+        "bgb-309-13"
       ]
     },
     {
@@ -331,9 +350,9 @@
       "top5": [
         "bgb-476-abs1",
         "bgb-476-abs2",
+        "bgb-309-2",
         "bgb-309-8-b",
-        "bgb-442-abs1",
-        "bgb-435"
+        "bgb-309-4"
       ]
     },
     {

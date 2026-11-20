@@ -17,6 +17,22 @@ const queuedState: ReviewState = {
 };
 
 describe("review event stream", () => {
+  it("attaches the Neon bearer token to each SSE connection", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(sseResponse([sse("RUN_FINISHED", { type: "RUN_FINISHED" })]));
+
+    const stream = connectReviewStream("review-1", () => undefined, {
+      fetch: fetchMock,
+      getToken: async () => "neon-jwt",
+      sleep: async () => undefined,
+    });
+    await stream.done;
+
+    const init = fetchMock.mock.calls[0]?.[1];
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer neon-jwt");
+  });
+
   it("resumes a dropped stream without advancing the id for a reconnect snapshot", async () => {
     const first = sseResponse([
       sse("STATE_SNAPSHOT", { type: "STATE_SNAPSHOT", snapshot: queuedState }, "1"),

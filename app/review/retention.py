@@ -1,4 +1,4 @@
-"""The retention policy and the nightly job (Phase 9, 9.B orphan sweep and 9.C retention).
+"""Retention policy and the scheduled cleanup job.
 
 A data class (`app.domain.DataClass`) is deleted once its period in `retention.*_days` has
 passed; null keeps it until a user deletes it. Expired documents and reviews go through the

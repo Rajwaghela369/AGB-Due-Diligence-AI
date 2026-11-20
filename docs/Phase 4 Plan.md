@@ -46,15 +46,16 @@ generating judge:
 - **Per-chunk probabilities** instead of one enum pick — and grounding cannot be
   hallucinated, because we supply the chunk list.
 - **Calibrated confidence from the API**, so the 0.6 abstention threshold means something.
-- **No router LLM call.** Routing is a Jina-embedding topic classifier, so it costs one
-  embedding, not a generation. Its topic is a hint, never a gate: `general` chunks and
-  §§ 305–310 are always in the candidate set, so a mis-routed clause costs ranking, not
-  evidence.
+- **Context-aware decision router.** Routing is a typed Gemini Decisions question over
+  the clause, not a free-form generation. Its topic is a hint, never a gate: `general`
+  chunks and §§ 305–310 are always in the candidate set, so a mis-routed clause costs
+  ranking, not evidence. API reviews cache the topic before the runner and the graph
+  reuses it, so each new clause pays one route decision, not two.
 
 ### The graph
 
 ```
-route: classify topic (Jina embedding, no LLM)
+route: classify topic (Gemini Decisions choice)
   -> retrieve top_k = 10 from {topic, general} + §§ 305–310 always included
   -> ONE decide() call: {is_void: noul} + {chunk_id: noul} per candidate
   -> threshold -> verdict, legal_basis (by probability), calibrated confidence
@@ -63,8 +64,9 @@ route: classify topic (Jina embedding, no LLM)
   -> persist verdict keyed by (clause content hash, agent_version)
 ```
 
-**Cost per clause:** 2 Jina embeddings (route, query) + 1 Decisions call + ~0.3 text
-calls.
+**Cost per new clause:** 1 Gemini Decisions route call + 1 Jina query embedding + 1
+Gemini Decisions legal-judgment call + ~0.3 text calls. Cached review topics and verdicts
+avoid those calls on repeats.
 
 ### Verified SDK surface
 
@@ -113,7 +115,9 @@ requests per run and raises *before* the call that would exceed `run.request_bud
 
 ### 4.D · Retrieval policy — done
 
-`top_k: 10`; §§ 305–310 always reachable; the topic filter stays, fed by the Jina router.
+`top_k: 10`; §§ 305–310 always reachable; the topic filter stays, fed by the Gemini
+decision router. The AVV obligation router remains a separate multi-label embedding
+router because AVV clauses can satisfy several Art. 28 obligations at once.
 Experiment 1 on real clause text: primary@5 **0.258 → 0.355**, MRR 0.142 → 0.194
 (`reports/p2_retrieval_recheck.json`). Removing the topic filter entirely was measured
 too and scored 0.258, below 0.355, so the router was kept.

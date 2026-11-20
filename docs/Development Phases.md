@@ -63,7 +63,7 @@ One-shot classifier, no retrieval, run as a Langfuse experiment. Scorers for pre
 
 ### Phase 4 · Agentic RAG core
 
-Headless LangGraph graph: topic router (Jina embedding) → retrieve BGB → judge (Gemini Decisions API, one call) → self-check → retry retrieval once → explain (`reason_de`, void verdicts only) → finish. Uncertain verdicts are marked and skipped for now. Prompts versioned in Langfuse, one trace per clause, verdicts persisted to Neon Postgres keyed by content hash and `agent_version`.
+Headless LangGraph graph: context-aware topic router (Gemini Decisions API) → retrieve BGB → judge (Gemini Decisions API, one call) → self-check → retry retrieval once → explain (`reason_de`, void verdicts only) → finish. Uncertain verdicts are marked and skipped for now. Prompts versioned in Langfuse, one trace per clause, verdicts persisted to Neon Postgres keyed by content hash and `agent_version`.
 
 **Gate:** the agent is runnable — `make eval-smoke` completes on 5 dev clauses with zero task failures, every void verdict is grounded in a retrieved chunk, each clause has one nested Langfuse trace whose id is on its `verdicts` row, and `make check` is green. See `docs/Phase 4 Plan.md`.
 

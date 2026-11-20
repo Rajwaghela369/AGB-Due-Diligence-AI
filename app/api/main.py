@@ -163,7 +163,21 @@ def build_app() -> FastAPI:
     config = load_yaml(CONFIGS / "app.yaml")
     configure_logging(json_logs=True)
     environment = load_settings()
-    # Phase 9 (9.A): the masking boundary every model and trace payload passes through;
+    # Keep the checked-in YAML provider-neutral. Deployment can opt into Neon Auth by
+    # supplying all OIDC values in .env; no Neon-managed tables are touched here.
+    neon_issuer = getattr(environment, "neon_auth_issuer", "")
+    neon_audience = getattr(environment, "neon_auth_audience", "")
+    neon_jwks_uri = getattr(environment, "neon_auth_jwks_uri", "")
+    if neon_issuer and neon_audience:
+        oidc = config.setdefault("auth", {}).setdefault("oidc", {})
+        oidc["issuer"] = neon_issuer.rstrip("/")
+        oidc["audience"] = neon_audience
+        if neon_jwks_uri:
+            oidc["jwks_uri"] = neon_jwks_uri
+    auth_enabled = getattr(environment, "auth_enabled", None)
+    if auth_enabled is not None:
+        config.setdefault("auth", {})["enabled"] = auth_enabled
+    # Configure the masking boundary every model and trace payload passes through;
     # None (masking off) until `privacy.masking.enabled`. The masker loads now, not on the
     # first clause: a missing spaCy model or Presidio stops the start (MaskerUnavailable)
     # unless `privacy.masking.allow_regex_only` accepts the regex layer alone.
@@ -175,7 +189,7 @@ def build_app() -> FastAPI:
     apply_pending(default_owner=setting(config, "auth.default_owner", DEFAULT_OWNER_ID))
     store = postgres_store(file_store_from_config(config, ROOT))
     statutes = load_statutes(PROCESSED / "bgb_chunks.jsonl")
-    # Phase 10: the DSGVO norm set of AVV reviews (avv-kb); absent until it is built, and
+    # Load the DSGVO norm set for AVV reviews when the offline index is available; and
     # then AVV overrides cannot cite a replacement basis.
     dsgvo_path = PROCESSED / "dsgvo_chunks.jsonl"
     avv_statutes = load_statutes(dsgvo_path) if dsgvo_path.exists() else {}
@@ -185,8 +199,9 @@ def build_app() -> FastAPI:
     tracer = None
     if environment.langfuse_public_key and environment.langfuse_secret_key:
         tracer = langfuse_client.client()
-    # Interrupted (uncertain) clauses wait in Postgres, so a decision resumes them after a
-    # restart (Phase 7, 7.B). Tables are created or migrated here, once per process.
+    # Interrupted clauses wait in Postgres, so a decision resumes them after a
+    # Restarted reviews resume from their Postgres checkpoints. Apply migrations once
+    # during process startup.
     checkpointer = postgres_checkpointer()
     judge = make_judge(
         config,
@@ -202,7 +217,12 @@ def build_app() -> FastAPI:
         raise RuntimeError("the judge cannot erase checkpoints")
     feedback = FeedbackService(store, tracer)
     corrections = Corrections(tracer, CorrectionSettings.from_config(config))
-    router_model = setting(config, "models.router.name", "jina-embeddings-v3")
+    router_model = setting(config, "models.router.name", "gemini-decision-1")
+    embedding_model = (
+        load_yaml(CONFIGS / "kb.yaml")
+        .get("embedding", {})
+        .get("model", "jina-embeddings-v5-text-small")
+    )
     service = build_service(
         store,
         judge,
@@ -210,7 +230,7 @@ def build_app() -> FastAPI:
         tracer,
         statutes=statutes,
         **avv_service,
-        router=partial(classify_topics, model=router_model),
+        router=partial(classify_topics, model=router_model, budget=limiter),
         router_model=router_model,
         feedback=feedback,
         deliverable=deliverable_settings(config),
@@ -230,7 +250,7 @@ def build_app() -> FastAPI:
         settings=config,
         readiness=production_probes(
             alias=setting(config, "store.alias", "bgb_agb"),
-            router_model=router_model,
+            router_model=embedding_model,
             explain_model=setting(config, "models.explain.name", "gemini-3.8-flash"),
         ),
         on_shutdown=[checkpointer.close],

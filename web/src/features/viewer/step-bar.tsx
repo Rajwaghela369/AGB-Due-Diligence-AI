@@ -38,18 +38,19 @@ export function StepBar(props: {
       aria-label={t("viewer.steps.label")}
       className="flex flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-2 text-xs"
     >
-      {finished.map((step) => (
-        <Fragment key={step}>
-          <li className="flex items-center gap-1 text-muted-foreground">
-            <Check aria-hidden="true" size={13} className="text-valid" />
-            {t(`viewer.steps.${step}`)}
-            <span className="sr-only">{t("viewer.steps.done")}</span>
-          </li>
-          <li aria-hidden="true" className="text-muted-foreground">
-            →
-          </li>
-        </Fragment>
-      ))}
+      {!judgingComplete &&
+        finished.map((step) => (
+          <Fragment key={step}>
+            <li className="flex items-center gap-1 text-muted-foreground">
+              <Check aria-hidden="true" size={13} className="text-valid" />
+              {t(`viewer.steps.${step}`)}
+              <span className="sr-only">{t("viewer.steps.done")}</span>
+            </li>
+            <li aria-hidden="true" className="text-muted-foreground">
+              →
+            </li>
+          </Fragment>
+        ))}
       <li className="flex items-center gap-2 font-medium" aria-current="step">
         {judgingComplete ? (
           <Check aria-hidden="true" size={13} className="text-valid" />
@@ -61,12 +62,14 @@ export function StepBar(props: {
           />
         )}
         {t("viewer.steps.check", { done, total })}
-        <progress
-          className="h-1.5 w-24 overflow-hidden rounded-full accent-[var(--accent)]"
-          max={Math.max(total, 1)}
-          value={done}
-          aria-label={t("viewer.steps.check", { done, total })}
-        />
+        {!judgingComplete && (
+          <progress
+            className="h-1.5 w-24 overflow-hidden rounded-full accent-[var(--accent)]"
+            max={Math.max(total, 1)}
+            value={done}
+            aria-label={t("viewer.steps.check", { done, total })}
+          />
+        )}
       </li>
       {awaitingDecisions && (
         <li className="text-muted-foreground">

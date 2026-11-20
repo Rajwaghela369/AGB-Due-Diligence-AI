@@ -1,4 +1,4 @@
-"""Cost and time figures for the UI (Phase 8, 8.D), derived from stored rows and config.
+"""Cost and timing figures derived from stored rows and configuration.
 
 Nothing here is stored: the verdicts keep their tokens and latency, the review keeps
 `cost_usd` and its timestamps, and the prices live in `configs/app.yaml`. Deriving the

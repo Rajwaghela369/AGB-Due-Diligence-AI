@@ -67,7 +67,7 @@ def get_findings(review_id: str, request: Request) -> FindingsOut:
     return FindingsOut(
         review=review,
         findings=service.findings(review_id),
-        # Phase 10: AVV document-level findings; always empty for AGB.
+        # AVV document-level findings are empty for AGB reviews.
         missing_obligations=(
             service.missing_obligations(review_id) if review.document_type == "avv" else []
         ),

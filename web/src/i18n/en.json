@@ -41,6 +41,9 @@
     "out": "Out of scope"
   },
   "workspace": {
+    "fit": "Fit width",
+    "nextOpen": "Next open finding",
+    "date": "Date",
     "loading": "Loading review…",
     "loadError": "The review could not be loaded.",
     "document": "Document",
@@ -54,7 +57,8 @@
     },
     "alreadyReviewed": "Already reviewed: results from the stored review, with no new AI requests.",
     "views": "Views",
-    "panes": "Areas"
+    "panes": "Areas",
+    "selectFinding": "Select a finding to review the clause."
   },
   "findings": {
     "title": "Findings",
@@ -86,7 +90,11 @@
     "title": "AVV obligations",
     "description": "Obligations found in the document and obligations missing under Article 28(3) GDPR.",
     "filter": "Filter AVV obligations",
-    "filters": { "all": "All", "open": "Open", "fulfilled": "Fulfilled" },
+    "filters": {
+      "all": "All",
+      "open": "Open",
+      "fulfilled": "Fulfilled"
+    },
     "obligation": "Obligation",
     "allObligations": "All obligations",
     "fulfilled": "Fulfilled",
@@ -185,6 +193,30 @@
       "finished": "Finished",
       "failed": "Failed",
       "awaiting_decisions": "Decisions pending"
+    },
+    "table": {
+      "label": "Reviews as a table",
+      "title": "Documents and reviews",
+      "count": "{{count}} reviews",
+      "search": "Search documents",
+      "status": "Filter by status",
+      "document": "Document",
+      "risk": "Findings",
+      "progress": "Progress",
+      "usage": "Usage",
+      "action": "Action",
+      "empty": "No reviews match this filter.",
+      "filters": {
+        "all": "All",
+        "active": "Active",
+        "decisions": "Pending decisions",
+        "finished": "Done",
+        "failed": "Failed",
+        "unreviewed": "Unreviewed"
+      },
+      "reset": "Clear filters",
+      "count_one": "1 review",
+      "count_other": "{{count}} reviews"
     }
   },
   "upload": {

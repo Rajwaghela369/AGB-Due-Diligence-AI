@@ -76,6 +76,26 @@ def test_void_above_threshold_is_grounded_and_ordered_by_probability():
     assert result["check"] == "accept"
 
 
+def test_graph_reuses_a_review_topic_without_routing_again():
+    seen = []
+    clause = {**CLAUSE, "topic": "warranty"}
+
+    def retriever(text, topic, policy, depth=20):
+        seen.append(topic)
+        return [_chunk("bgb-309-7-a")]
+
+    graph = build_graph(
+        router=lambda _text: pytest.fail("stored review topic should avoid a second route call"),
+        decider=lambda *args, **kwargs: _decision(0.2, 0.9, {}),
+        retriever=retriever,
+        policy=POLICY,
+    )
+    result = graph.invoke({"clause": clause, "retries": 0})["result"]
+
+    assert result["verdict"] == "valid"
+    assert seen == ["warranty"]
+
+
 def test_void_below_threshold_is_valid():
     result = _run(lambda *a, **k: _decision(0.2, 0.8, {"bgb-309-7-a": 0.1}))
 

@@ -33,7 +33,7 @@ export function PdfView(props: {
   activeHit: number;
   interaction: ClauseInteraction;
   scrollRoot: RefObject<HTMLDivElement | null>;
-  onReady: () => void;
+  onReady: (width: number) => void;
   onHitCount: (count: number) => void;
 }) {
   const { t } = useTranslation();
@@ -84,10 +84,13 @@ export function PdfView(props: {
     };
   }, [file.data]);
 
-  const firstLoaded = pages[0] !== null && pages[0] !== undefined;
+  const width = pages.reduce(
+    (max, page) => (page ? Math.max(max, pageCssSize(page.view, 1).width) : max),
+    0,
+  );
   useEffect(() => {
-    if (firstLoaded) onReady();
-  }, [firstLoaded, onReady]);
+    if (width) onReady(width);
+  }, [width, onReady]);
 
   const byPage = useMemo(() => clausesByPage(props.findings), [props.findings]);
   const hitsByPage = usePdfSearch(doc, pages, props.query);
@@ -112,7 +115,7 @@ export function PdfView(props: {
   const knownView = pages.find((page) => page !== null)?.view ?? FALLBACK_VIEW;
   const offsets = hitOffsets(hitsByPage);
   return (
-    <div className="flex flex-col items-center gap-4 py-4">
+    <div className="flex w-max min-w-full flex-col items-center gap-4 px-4 py-5">
       {pages.map((page, index) => {
         const pageNumber = index + 1;
         const hits = hitsByPage[index] ?? [];

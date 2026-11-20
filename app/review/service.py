@@ -1,4 +1,4 @@
-"""The review service the API talks to (`app.review.interfaces.ReviewService`).
+"""Application service for document reviews.
 
 It owns the runs: each is a background thread, registered in `_runs` under one
 lock that also covers the decisions that must not interleave — "is a review of
@@ -121,21 +121,19 @@ class Service:
         self.judge = judge
         self.limiter = limiter
         self.statutes = statutes  # kept for the API; the runner itself does not read statutes
-        # Phase 10: the DSGVO chunks AVV overrides and exports cite (None: not loaded).
+        # DSGVO chunks used by AVV reviews; absent when the offline index is unavailable.
         self.avv_statutes = avv_statutes
         self.router = router  # None: clauses keep no topic and every in-scope clause is judged
         self.router_model = router_model
         self.feedback = feedback  # app.review.feedback.FeedbackService, used by `decide`
         self.corrections = corrections
-        # Phase 9 (9.E): `auth.oidc.admin_role`, which may delete any owner's documents.
+        # Role allowed to delete any owner's documents.
         self.admin_role: str | None = None
-        # Phase 8: summary, export and chat settings, and the two generating models
-        # (None: no LLM recommendation; no chat, which the API answers with 503).
+        # Summary, export, and chat settings.
         self.deliverable = deliverable or DeliverableSettings()
         self.summary_model = summary_model
         self.chat_model = chat_model
-        # Phase 9 (9.C): the retention periods `sweep` applies; the Langfuse client
-        # (`tracer`) is also what deletion erases traces, scores and dataset items with.
+        # Retention settings and the tracing client used by deletion.
         self.retention = retention_policy or RetentionSettings()
         self.tracer = tracer
         self.bus = EventBus(store, recheck_seconds=recheck_seconds)
@@ -149,8 +147,7 @@ class Service:
             prices=dict(prices or {}),
             poll_seconds=poll_seconds,
         )
-        # Phase 10 (10.C): the AVV agent (`app.agent.avv.AvvJudge`), by default the one
-        # `make_judge` attached as `judge.avv`. AVV runs share every other dependency.
+        # AVV runs share the service dependencies with the AGB judge.
         self.avv_judge = avv_judge if avv_judge is not None else getattr(judge, "avv", None)
         self._avv_ctx = (
             dataclasses.replace(self._ctx, judge=self.avv_judge)
@@ -204,13 +201,14 @@ class Service:
             if active is not None:
                 return active
             review_id = uuid.uuid4().hex
+            review_scope = [] if document.document_type == "avv" else list(scope)
             review = self.store.reviews.create(
                 Review(
                     review_id=review_id,
                     document_id=document_id,
                     agent_version=version,
                     document_type=document.document_type,
-                    scope=list(scope),
+                    scope=review_scope,
                     obligations=(
                         self.avv_judge.profile.codes if document.document_type == "avv" else []
                     ),
@@ -383,7 +381,7 @@ class Service:
             )
         return self.bus.subscribe(review_id, after_seq, follow=follow, first=first)
 
-    # --- Phase 7: decisions (Wave 1 implements these; signatures are the contract) -----
+    # --- Decisions ----------------------------------------------------------------------
 
     def decide(
         self,
@@ -706,7 +704,7 @@ class Service:
         update = {"reason_de": explained.reason_de, "reason_unavailable": not explained.reason_de}
         return decision.model_copy(update=update), cost
 
-    # --- Phase 8: the bodies live in their slices' modules -----------------------
+    # --- Summaries, exports, and chat ---------------------------------------------------
 
     def summary(self, review_id: str) -> ReviewSummary:
         """See `ReviewService.summary`; implemented in `app.review.summary`."""
@@ -735,7 +733,7 @@ class Service:
         """See `ReviewService.chat`; implemented in `app.review.chat`."""
         return start_chat(self, review_id, position, message, reviewer, request_id=request_id)
 
-    # --- Phase 9: deletion and retention, implemented in their slice's modules ----
+    # --- Deletion and retention ---------------------------------------------------------
 
     def delete_document(
         self, document_id: str, principal: Principal, *, dry_run: bool = False

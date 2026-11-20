@@ -1,4 +1,4 @@
-"""The per-finding rewrite chat (Phase 8, 8.C).
+"""Per-finding rewrite chat.
 
 One streamed model call per message. The lawyer asks about one finding („Formuliere 6.1
 rechtskonform um“); the model sees the clause, the cited statute texts, the decision and

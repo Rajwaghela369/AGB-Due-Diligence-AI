@@ -1,9 +1,9 @@
-"""The masking boundary: personal data never leaves the server unmasked (Phase 9, 9.A).
+"""The masking boundary: personal data never leaves the server unmasked.
 
 Every byte of client text that goes to a model provider (Gemini through `core.llm`, Jina
 through `core.embeddings` and `core.routing`) or to Langfuse passes through the one
 `MaskingBoundary` here, so there is a single place to get right and a single place to test.
-docs/Phase 9 Design.md explains the choices; in short:
+The rules are:
 
 - **Where.** Inside the outbound functions themselves, not at their call sites. A call
   site that forgets to mask cannot exist, because no call site masks: `core.llm.decide`

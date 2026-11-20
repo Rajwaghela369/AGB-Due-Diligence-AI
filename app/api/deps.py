@@ -13,7 +13,7 @@ from app.domain import DEFAULT_OWNER_ID, Document, Principal, Review, Reviewer, 
 
 log = get_logger("api.auth")
 
-# Who decides, until login (Phase 9). The UI sends the name the lawyer entered once,
+# Who decides when authentication is disabled. The UI sends the name the lawyer entered once,
 # percent-encoded UTF-8 (`encodeURIComponent`), since header values are Latin-1 only.
 REVIEWER_HEADER = "X-Reviewer"
 MAX_REVIEWER_LENGTH = 100
@@ -89,7 +89,7 @@ def verifier(request: Request) -> OidcVerifier:
 
 
 def principal(request: Request) -> Principal:
-    """The caller (Phase 9, 9.E). With `auth.enabled` false, the configured default owner,
+    """Resolve the caller. With `auth.enabled` false, use the configured default owner,
     unauthenticated, exactly as before login existed.
 
     With login on, the `Authorization: Bearer` OIDC access token, validated against

@@ -1,6 +1,6 @@
-"""File to clauses with positions. Implemented in validate, convert, parse and split.
+"""Convert uploaded files into normalized, positioned clauses.
 
-Public surface (the Phase 5 contract):
+Public surface:
 
     ingest_file(data, filename, *, store, document_type="agb", owner_id=DEFAULT_OWNER_ID)
     ingest_text(text, filename, *, store, document_type="agb", owner_id=DEFAULT_OWNER_ID)
@@ -11,7 +11,7 @@ Public surface (the Phase 5 contract):
 "archive_too_large", "encrypted", "no_text_layer", "conversion_failed", "parse_failed",
 "parse_timeout", "empty".
 
-Documents are per owner (Phase 9, 9.E): the id is `document_id_for(source_hash, owner_id)`,
+Documents are per owner: the id is `document_id_for(source_hash, owner_id)`,
 so a second user uploading the same bytes gets a document (and reviews) of their own, while
 the stored file stays keyed by the bytes (`blob_key`) and is shared.
 """

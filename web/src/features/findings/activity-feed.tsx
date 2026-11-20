@@ -2,7 +2,7 @@
 // already merge the stream into stored data, so it opens no stream of its own. The first
 // snapshot is the baseline: a reload shows an empty feed, not a replay.
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ClauseStatus } from "../../api/aliases";
@@ -26,26 +26,27 @@ export function ActivityFeed({ findings }: { findings: ReviewFinding[] }) {
   const [open, setOpen] = useState(false);
   const [tracker, setTracker] = useState<Tracker>({ seen: null, log: [] });
 
-  // Adjusting state while rendering is React's documented way to derive from changing props.
-  if (findings.length > 0) {
-    const next = new Map(findings.map((f) => [f.position, f.status]));
-    if (tracker.seen === null) {
-      setTracker({ seen: next, log: [] });
-    } else {
+  useEffect(() => {
+    if (findings.length === 0) return;
+    // This is intentionally a local history of prop changes, not derived display state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- append activity history
+    setTracker((current) => {
+      const next = new Map(findings.map((f) => [f.position, f.status]));
+      if (current.seen === null) return { seen: next, log: [] };
       const added: Entry[] = [];
       for (const f of findings) {
-        if (tracker.seen.get(f.position) !== f.status) {
+        if (current.seen.get(f.position) !== f.status) {
           added.push({
-            key: tracker.log.length + added.length,
+            key: current.log.length + added.length,
             position: f.position,
             title: clauseTitle(f),
             status: f.status,
           });
         }
       }
-      if (added.length > 0) setTracker({ seen: next, log: [...tracker.log, ...added] });
-    }
-  }
+      return added.length > 0 ? { seen: next, log: [...current.log, ...added] } : current;
+    });
+  }, [findings]);
 
   const Chevron = open ? ChevronDown : ChevronRight;
   return (

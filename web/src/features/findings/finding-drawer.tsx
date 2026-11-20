@@ -1,8 +1,4 @@
-// The detail view for the selected clause (Phase 6, 6.D and 6.F). It is the detail half of a
-// master/detail panel: it replaces the findings list inside the right column, so the clause
-// in the document and its finding are always side by side. It is not a modal, so the
-// document stays clickable and selecting another clause just swaps the content. Esc or the
-// back button returns to the list.
+// The selected finding stays alongside the PDF and queue on desktop.
 import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -97,17 +93,39 @@ function DrawerBody({
         )}
       </div>
 
-      <section>
-        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {t("drawer.clause")}
-        </h3>
+      {verdict && (
+        <>
+          <section>
+            <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t("drawer.reasoning")}
+            </h3>
+            {decision?.reason_de ? (
+              <p className="text-sm leading-relaxed">{decision.reason_de}</p>
+            ) : decision?.reason_unavailable ? (
+              <p className="text-sm leading-relaxed">{t("drawer.reasonUnavailable")}</p>
+            ) : verdict.reason_unavailable && verdict.verdict === "potentially_void" ? (
+              <RegenerateReason reviewId={reviewId} position={finding.position} />
+            ) : verdict.reason_unavailable ? (
+              <p className="text-sm leading-relaxed">{t("drawer.reasonUnavailable")}</p>
+            ) : (
+              <p className="text-sm leading-relaxed">
+                {verdict.reason_de?.trim() || t("drawer.reasonUnavailable")}
+              </p>
+            )}
+          </section>
+
+          <DecisionPanel reviewId={reviewId} finding={finding} />
+        </>
+      )}
+      <details>
+        <summary className="cursor-pointer text-sm font-medium">{t("drawer.clause")}</summary>
         <p
           className="font-contract whitespace-pre-line leading-relaxed"
           data-testid="drawer-clause"
         >
           {finding.clause.text}
         </p>
-      </section>
+      </details>
 
       {verdict && (
         <>
@@ -125,25 +143,6 @@ function DrawerBody({
               <p className="text-sm text-muted-foreground">{t("drawer.noBasis")}</p>
             )}
           </section>
-
-          <section>
-            <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t("drawer.reasoning")}
-            </h3>
-            {decision?.reason_de ? (
-              <p className="text-sm leading-relaxed">{decision.reason_de}</p>
-            ) : decision?.reason_unavailable ? (
-              <p className="text-sm leading-relaxed">{t("drawer.reasonUnavailable")}</p>
-            ) : verdict.reason_unavailable && verdict.verdict === "potentially_void" ? (
-              <RegenerateReason reviewId={reviewId} position={finding.position} />
-            ) : verdict.reason_unavailable ? (
-              <p className="text-sm leading-relaxed">{t("drawer.reasonUnavailable")}</p>
-            ) : (
-              <p className="text-sm leading-relaxed">{verdict.reason_de}</p>
-            )}
-          </section>
-
-          <DecisionPanel reviewId={reviewId} finding={finding} />
 
           {(finding.status === "done" || finding.status === "awaiting_decision") && (
             <RewriteChat reviewId={reviewId} finding={finding} />
@@ -167,7 +166,7 @@ function DrawerBody({
 }
 
 /** Detail view for the selected clause: verdict, statute text, reasoning, feedback (6.D, 6.F). */
-export function FindingDrawer({ review }: { review: ReviewData }) {
+export function FindingDrawer({ review, onBack }: { review: ReviewData; onBack?: () => void }) {
   const { t } = useTranslation();
   const selected = useReviewUi((s) => s.selected);
   const select = useReviewUi((s) => s.select);
@@ -187,6 +186,10 @@ export function FindingDrawer({ review }: { review: ReviewData }) {
     document.addEventListener("focusin", onFocusIn);
     return () => document.removeEventListener("focusin", onFocusIn);
   }, []);
+  useEffect(() => {
+    const panel = backRef.current?.closest("section");
+    if (panel) panel.scrollTop = 0;
+  }, [selected]);
   useEffect(() => {
     if (!open) return;
     backRef.current?.focus({ preventScroll: true });
@@ -212,18 +215,23 @@ export function FindingDrawer({ review }: { review: ReviewData }) {
     <section
       aria-label={clauseTitle(finding)}
       data-testid="finding-drawer"
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-lg border border-border bg-surface p-4"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-xl border border-border bg-surface p-5 shadow-sm"
     >
       <button
         ref={backRef}
         type="button"
-        onClick={() => select(null)}
+        onClick={() => {
+          select(null);
+          onBack?.();
+        }}
         className="mb-3 inline-flex w-fit items-center gap-1 rounded-md px-1.5 py-1 text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ArrowLeft className="size-4" aria-hidden />
         {t("findings.title")}
       </button>
-      <h2 className="mb-4 text-base font-semibold">{clauseTitle(finding)}</h2>
+      <h2 className="mb-5 text-xl font-semibold leading-tight tracking-tight">
+        {clauseTitle(finding)}
+      </h2>
       <p className="sr-only">{t("drawer.description")}</p>
       <DrawerBody
         key={finding.position}

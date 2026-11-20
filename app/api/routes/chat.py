@@ -1,10 +1,8 @@
-"""The per-finding rewrite chat (Phase 8, 8.C), streamed over SSE. Wave 1 slice: chat.
+"""Per-finding rewrite chat streamed over SSE.
 
 A POST that answers with `text/event-stream`: the browser reads it with `fetch`, since
-EventSource cannot POST. Everything that can fail before the model is asked fails as an
-ordinary JSON error; once streaming, a failure is a `RUN_ERROR` event
-(docs/Events.md, "Rewrite chat"). Until Wave 1, `Service.chat` raises NotImplementedError
-(501 `not_implemented`).
+EventSource cannot POST. Failures before the model is asked are ordinary JSON errors;
+failures during streaming are `RUN_ERROR` events.
 """
 
 import json

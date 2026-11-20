@@ -130,11 +130,39 @@ def test_factory_reads_credentials_only_from_environment(monkeypatch, tmp_path):
     assert store._secret_access_key == "secret-from-env"
 
 
+def test_factory_accepts_standard_aws_variables_and_overrides_endpoint(monkeypatch, tmp_path):
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "aws-key")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "aws-secret")
+    monkeypatch.setenv("AWS_ENDPOINT_URL_S3", "https://storage.example")
+    monkeypatch.setenv("AWS_REGION", "eu-west-1")
+    monkeypatch.setenv("S3_ACCESS_KEY_ID", "")
+    monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "")
+
+    store = file_store_from_config(
+        {
+            "files": {
+                "backend": "s3",
+                "s3": {"endpoint_url": "https://yaml.example", "region": "eu-central-1"},
+            }
+        },
+        tmp_path,
+    )
+
+    assert store._access_key_id == "aws-key"
+    assert store._secret_access_key == "aws-secret"
+    assert store.settings.endpoint_url == "https://storage.example"
+    assert store.settings.region == "eu-west-1"
+
+
 @pytest.mark.parametrize("missing", ["S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"])
 def test_s3_backend_requires_explicit_credentials(monkeypatch, tmp_path, missing):
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "")
     monkeypatch.setenv("S3_ACCESS_KEY_ID", "present")
     monkeypatch.setenv("S3_SECRET_ACCESS_KEY", "present")
-    monkeypatch.delenv(missing)
+    # An operator's .env is loaded by pydantic-settings; blank the variable explicitly
+    # so this contract remains independent of local credentials.
+    monkeypatch.setenv(missing, "")
 
     with pytest.raises(ValueError, match=missing):
         file_store_from_config({"files": {"backend": "s3"}}, tmp_path)

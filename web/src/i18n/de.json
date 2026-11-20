@@ -41,6 +41,9 @@
     "out": "Außerhalb des Prüfumfangs"
   },
   "workspace": {
+    "fit": "Seitenbreite",
+    "nextOpen": "Nächste offene Fundstelle",
+    "date": "Datum",
     "loading": "Prüfung wird geladen …",
     "loadError": "Die Prüfung konnte nicht geladen werden.",
     "document": "Dokument",
@@ -54,7 +57,8 @@
     },
     "alreadyReviewed": "Bereits geprüft: Ergebnis aus der gespeicherten Prüfung, ohne neue KI-Anfragen.",
     "views": "Ansichten",
-    "panes": "Bereiche"
+    "panes": "Bereiche",
+    "selectFinding": "Wählen Sie eine Fundstelle, um die Klausel zu prüfen."
   },
   "findings": {
     "title": "Fundstellen",
@@ -86,7 +90,11 @@
     "title": "AVV-Pflichten",
     "description": "Erkannte und im Dokument fehlende Pflichten aus Art. 28 Abs. 3 DSGVO.",
     "filter": "AVV-Pflichten filtern",
-    "filters": { "all": "Alle", "open": "Offen", "fulfilled": "Erfüllt" },
+    "filters": {
+      "all": "Alle",
+      "open": "Offen",
+      "fulfilled": "Erfüllt"
+    },
     "obligation": "Pflicht",
     "allObligations": "Alle Pflichten",
     "fulfilled": "Erfüllt",
@@ -185,6 +193,30 @@
       "finished": "Abgeschlossen",
       "failed": "Fehlgeschlagen",
       "awaiting_decisions": "Entscheidungen offen"
+    },
+    "table": {
+      "label": "Prüfungen als Tabelle",
+      "title": "Dokumente und Prüfungen",
+      "count": "{{count}} Prüfungen",
+      "search": "Dokumente durchsuchen",
+      "status": "Status filtern",
+      "document": "Dokument",
+      "risk": "Bewertungen",
+      "progress": "Fortschritt",
+      "usage": "Verbrauch",
+      "action": "Aktion",
+      "empty": "Keine Prüfungen entsprechen dem Filter.",
+      "filters": {
+        "all": "Alle",
+        "active": "Aktiv",
+        "decisions": "Offene Entscheidungen",
+        "finished": "Fertig",
+        "failed": "Fehlgeschlagen",
+        "unreviewed": "Ungeprüft"
+      },
+      "reset": "Filter zurücksetzen",
+      "count_one": "1 Prüfung",
+      "count_other": "{{count}} Prüfungen"
     }
   },
   "upload": {
